@@ -1,0 +1,27 @@
+project:
+  name: "DCASS"
+  version: "0.1.0"
+  random_seed: 42
+
+paths:
+  # We use relative paths for local dev, but these can be absolute on a server
+  raw_data: "data/raw"
+  processed_data: "data/processed"
+  embeddings: "data/embeddings"
+  index: "data/processed/faiss.index"
+  chunks: "data/processed/chunks.json"
+
+corpus:
+  text:
+    enabled: true
+    # We will point this to your new download folder
+    source_dir: "data/raw/text/wikipedia" 
+    extensions: [".txt"]
+    min_chunk_length: 50
+    chunk_window: 3
+    chunk_stride: 1
+  
+model:
+  name: "all-MiniLM-L6-v2"
+  device: "cpu"  # Change to "cuda" if you have an NVIDIA GPU
+  batch_size: 32
