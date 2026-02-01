@@ -1,9 +1,9 @@
 import csv
 from pathlib import Path
 
-CAPTIONS_CSV = Path("C:\\Users\\kappa\\OneDrive\\capstone\\dcass\\data\\metadata\\captions.csv")
-IMAGES_DIR = Path("C:\\Users\\kappa\\OneDrive\\capstone\\dcass\\data\\raw\\flickr8k\\images")
-OUTPUT_CSV = Path("C:\\Users\\kappa\\OneDrive\\capstone\\dcass\\data\\metadata\\captions_clean.csv")
+CAPTIONS_CSV = Path("")
+IMAGES_DIR = Path("")
+OUTPUT_CSV = Path("")
 
 valid_rows = []
 removed_rows = 0
