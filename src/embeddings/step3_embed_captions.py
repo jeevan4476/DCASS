@@ -6,8 +6,8 @@ import numpy as np
 from tqdm import tqdm
 
 # -------- Paths --------
-CAPTIONS_CSV = Path("")
-OUTPUT_DIR = Path("")
+CAPTIONS_CSV = Path("data/metadata/captions.csv")
+OUTPUT_DIR = Path("data/embeddings")
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 

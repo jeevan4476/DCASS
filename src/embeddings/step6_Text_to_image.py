@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 
 # -------- Paths --------
-EMB_DIR = Path("")
+EMB_DIR = Path("data/embeddings")
 FAISS_INDEX_PATH = EMB_DIR / "faiss_image.index"
 IMAGE_IDS_PATH = EMB_DIR / "image_ids.txt"
 

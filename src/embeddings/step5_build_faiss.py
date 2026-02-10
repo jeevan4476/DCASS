@@ -3,7 +3,7 @@ import faiss
 from pathlib import Path
 
 # -------- Paths --------
-EMB_DIR = Path("")
+EMB_DIR = Path("data/embeddings")
 IMAGE_EMB_PATH = EMB_DIR / "image_embeddings.npy"
 FAISS_INDEX_PATH = EMB_DIR / "faiss_image.index"
 

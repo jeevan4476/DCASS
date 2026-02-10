@@ -1,9 +1,9 @@
 import csv
 from pathlib import Path
 
-CAPTIONS_CSV = Path("")
-IMAGES_DIR = Path("")
-OUTPUT_CSV = Path("")
+CAPTIONS_CSV = Path("data/metadata/captions.csv")
+IMAGES_DIR = Path("data/images")
+OUTPUT_CSV = Path("data/metadata/verified_captions.csv")
 
 valid_rows = []
 removed_rows = 0

@@ -3,7 +3,7 @@ import csv
 from pathlib import Path
 
 # -------- Paths --------
-EMB_DIR = Path("")
+EMB_DIR = Path("data/embedding")
 
 IMAGE_EMB = np.load(EMB_DIR / "image_embeddings.npy")
 CAPTION_EMB = np.load(EMB_DIR / "caption_embeddings.npy")

@@ -7,9 +7,9 @@ from PIL import Image
 from tqdm import tqdm
 
 # -------- Paths (match your structure) --------
-CAPTIONS_CSV = Path("")
-IMAGES_DIR = Path("")
-OUTPUT_DIR = Path("")
+CAPTIONS_CSV = Path("data/metadata/captions.csv")
+IMAGES_DIR = Path("data/images")
+OUTPUT_DIR = Path("data/embeddings")
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
