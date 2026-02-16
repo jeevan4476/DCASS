@@ -15,11 +15,13 @@ Usage:
     python scripts/build_indices.py
     python scripts/build_indices.py --modality image
     python scripts/build_indices.py --modality text --batch-size 64
+    python scripts/build_indices.py --include-wikipedia  # Add Wikipedia sentences
 """
 
 import os
 import sys
 import argparse
+import json
 import time
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -141,23 +143,26 @@ def build_image_index(
     return True
 
 
-def build_text_index_from_captions(
+def build_text_index(
     data_dir: Path,
     output_dir: Path,
     batch_size: int = 64,
-    max_items: Optional[int] = None
+    max_items: Optional[int] = None,
+    include_wikipedia: bool = False,
+    wikipedia_dir: Optional[Path] = None,
 ) -> bool:
     """
     Build FAISS index for text using CLIP.
     
-    Uses Flickr captions as the text corpus and embeds them
-    using CLIP's text encoder for cross-modal compatibility.
+    Uses Flickr captions + optionally Wikipedia sentences.
     
     Args:
         data_dir: Directory containing Flickr8k data
         output_dir: Directory to save index files
         batch_size: Batch size for embedding generation
         max_items: Maximum items to process
+        include_wikipedia: Whether to include Wikipedia sentences
+        wikipedia_dir: Directory containing Wikipedia data
         
     Returns:
         True if successful
@@ -167,38 +172,67 @@ def build_text_index_from_captions(
     from src.corpus.index.unified_index import ModalityIndex
     
     print("\n" + "=" * 60)
-    print("Building Text Index (CLIP embeddings from captions)")
+    print("Building Text Index (CLIP embeddings)")
     print("=" * 60)
     
-    # Load data
-    print(f"\nLoading captions from {data_dir}...")
+    all_texts = []
+    
+    # Load Flickr captions
+    print(f"\nLoading Flickr captions from {data_dir}...")
     loader = FlickrLoader(data_dir)
     items = list(loader.load())
     
-    if not items:
-        print("No items loaded.")
-        return False
+    if items:
+        for item in items:
+            for i, caption in enumerate(item.get("captions", [])):
+                if caption.strip():
+                    all_texts.append({
+                        "id": f"{item['id']}_cap{i}",
+                        "text": caption.strip(),
+                        "content": caption.strip(),
+                        "source": "flickr8k",
+                        "image_id": item["id"],
+                        "modality": "text"
+                    })
+        print(f"  Loaded {len(all_texts)} Flickr captions")
     
-    # Extract unique captions
-    captions = []
-    for item in items:
-        for i, caption in enumerate(item.get("captions", [])):
-            if caption.strip():  # Skip empty captions
-                captions.append({
-                    "id": f"{item['id']}_cap{i}",
-                    "text": caption.strip(),
-                    "content": caption.strip(),  # content field for consistency
-                    "source": "flickr8k",
-                    "image_id": item["id"],
+    # Load Wikipedia sentences if requested
+    if include_wikipedia:
+        wiki_dir = wikipedia_dir or Path("data/raw/wikipedia")
+        wiki_file = wiki_dir / "sentences.json"
+        
+        if wiki_file.exists():
+            print(f"\nLoading Wikipedia sentences from {wiki_file}...")
+            with open(wiki_file, "r", encoding="utf-8") as f:
+                wiki_sentences = json.load(f)
+            
+            # Add Wikipedia sentences
+            for sent in wiki_sentences:
+                all_texts.append({
+                    "id": sent.get("id", f"wiki_{len(all_texts)}"),
+                    "text": sent["text"],
+                    "content": sent["text"],
+                    "source": "wikipedia",
+                    "article": sent.get("article", ""),
                     "modality": "text"
                 })
+            
+            print(f"  Loaded {len(wiki_sentences)} Wikipedia sentences")
+        else:
+            print(f"\nWarning: Wikipedia data not found at {wiki_file}")
+            print("  Run: python scripts/download_wikipedia.py")
+    
+    if not all_texts:
+        print("No text data loaded.")
+        return False
+    
+    print(f"\nTotal texts to index: {len(all_texts)}")
     
     if max_items:
-        captions = captions[:max_items]
+        all_texts = all_texts[:max_items]
+        print(f"  Limited to {max_items} items")
     
-    print(f"Extracted {len(captions)} captions")
-    
-    # Initialize CLIP embedder (same model for both text and images!)
+    # Initialize CLIP embedder
     print("\nInitializing CLIP embedder (ViT-B/32) for text...")
     embedder = ImageEmbedder(model_name="ViT-B/32")
     
@@ -209,12 +243,11 @@ def build_text_index_from_captions(
     all_embeddings = []
     all_metadata = []
     
-    for i in range(0, len(captions), batch_size):
-        batch = captions[i:i + batch_size]
+    for i in range(0, len(all_texts), batch_size):
+        batch = all_texts[i:i + batch_size]
         texts = [c["text"] for c in batch]
         
         try:
-            # Use CLIP's text encoder
             embeddings = embedder.encode_text(texts)
             
             if embeddings is not None:
@@ -224,8 +257,8 @@ def build_text_index_from_captions(
             print(f"\n  Warning: Failed to encode batch {i}: {e}")
             continue
         
-        processed = min(i + batch_size, len(captions))
-        print(f"  Processed {processed}/{len(captions)} captions...", end="\r")
+        processed = min(i + batch_size, len(all_texts))
+        print(f"  Processed {processed}/{len(all_texts)} texts...", end="\r")
     
     print()
     
@@ -237,7 +270,7 @@ def build_text_index_from_captions(
     print(f"Embeddings shape: {embeddings_array.shape}")
     
     elapsed = time.time() - start_time
-    print(f"Embedding time: {elapsed:.1f}s ({len(captions)/elapsed:.1f} items/s)")
+    print(f"Embedding time: {elapsed:.1f}s ({len(all_texts)/elapsed:.1f} items/s)")
     
     # Build index
     print("\nBuilding FAISS index...")
@@ -250,6 +283,13 @@ def build_text_index_from_captions(
     
     index.build(embeddings_array, all_metadata)
     index.save()
+    
+    # Print source breakdown
+    sources = {}
+    for m in all_metadata:
+        src = m.get("source", "unknown")
+        sources[src] = sources.get(src, 0) + 1
+    print(f"\nText sources: {sources}")
     
     print(f"\nText index saved to {output_dir}")
     return True
@@ -270,8 +310,8 @@ Examples:
     # Build only image index
     python scripts/build_indices.py --modality image
     
-    # Build only text index (from Flickr captions)
-    python scripts/build_indices.py --modality text
+    # Build text index with Wikipedia sentences
+    python scripts/build_indices.py --modality text --include-wikipedia
     
     # Quick test with limited items
     python scripts/build_indices.py --max-items 100
@@ -313,6 +353,19 @@ Examples:
         help="Maximum items to process (for testing)"
     )
     
+    parser.add_argument(
+        "--include-wikipedia", "-w",
+        action="store_true",
+        help="Include Wikipedia sentences in text index"
+    )
+    
+    parser.add_argument(
+        "--wikipedia-dir",
+        type=Path,
+        default=Path("data/raw/wikipedia"),
+        help="Wikipedia data directory"
+    )
+    
     args = parser.parse_args()
     
     # Ensure output directory exists
@@ -330,11 +383,13 @@ Examples:
             success = False
     
     if args.modality in ["text", "all"]:
-        if not build_text_index_from_captions(
+        if not build_text_index(
             args.data_dir,
             args.output_dir,
             args.batch_size,
-            args.max_items
+            args.max_items,
+            include_wikipedia=args.include_wikipedia,
+            wikipedia_dir=args.wikipedia_dir,
         ):
             success = False
     

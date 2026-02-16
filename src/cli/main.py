@@ -6,13 +6,15 @@ CLI CONTRACT
 ------------
 Commands:
   encode <message>           - Encode a message into mixed media sequence
+  encode-h <message>         - Hierarchical encoding with synonym expansion
   decode <media_ids>         - Decode a media sequence  
   distribute <message> [profile] - Encode and distribute with timing
   status                     - Show index status
 
-KEY FEATURE: Mixed-Modality Encoding
-By default, encoding uses modality="auto" which searches ALL indices
-and returns a MIX of images and texts for each message chunk.
+KEY FEATURES:
+1. Mixed-Modality Encoding - searches ALL indices, returns MIX of images and texts
+2. Hierarchical Encoding - uses synonym expansion and concept decomposition
+3. Score Normalization - fair comparison across modalities
 
 Example:
   Input: "Secret meeting at dawn in the park"
@@ -32,19 +34,27 @@ sys.path.insert(0, str(PROJECT_ROOT))
 Modality = Literal["text", "image", "audio", "auto"]
 
 
-def run_encode(message: str, modality: Modality = "auto"):
+def run_encode(message: str, modality: Modality = "auto", hierarchical: bool = False):
     """
     Encode a message using mixed-modality search.
     
     By default (modality="auto"), searches ALL indices and returns
     the best match regardless of type. This produces a mixed sequence.
+    
+    Args:
+        message: Message to encode
+        modality: Target modality
+        hierarchical: Use hierarchical encoding with synonyms
     """
     from src.engine.encoder import SemanticEncoder
     
-    print("\n[DCASS] Mixed-Modality Semantic Encoding")
+    mode_name = "Hierarchical" if hierarchical else "Mixed-Modality"
+    print(f"\n[DCASS] {mode_name} Semantic Encoding")
     print("-" * 50)
     print(f"Input: {message}")
     print(f"Mode: {modality} {'(mixed image+text)' if modality == 'auto' else ''}")
+    if hierarchical:
+        print("Features: synonym expansion, concept decomposition")
     print()
     
     # Create encoder with specified modality
@@ -57,16 +67,19 @@ def run_encode(message: str, modality: Modality = "auto"):
         print(f"Details: {e}")
         return None
     
-    # Encode message
-    encoded = encoder.encode(message)
+    # Encode message (hierarchical or basic)
+    if hierarchical:
+        encoded = encoder.encode_hierarchical(message)
+    else:
+        encoded = encoder.encode(message)
     
     # Display results
     print("Encoded Sequence:")
     print("-" * 50)
     
     for i, result in enumerate(encoded.sequence, 1):
-        modality_icon = "🖼️" if result.modality == "image" else "📝"
-        print(f"{i}. [{result.modality.upper()}] {modality_icon}")
+        modality_icon = "IMG" if result.modality == "image" else "TXT"
+        print(f"{i}. [{modality_icon}]")
         
         # Show content (truncated for text)
         content = result.content
@@ -77,6 +90,12 @@ def run_encode(message: str, modality: Modality = "auto"):
         
         if i <= len(encoded.chunks):
             print(f"   Chunk: '{encoded.chunks[i-1]}'")
+        
+        # Show matched query if hierarchical
+        if hierarchical and "matched_query" in result.metadata:
+            matched = result.metadata["matched_query"]
+            if matched != encoded.chunks[i-1] if i <= len(encoded.chunks) else True:
+                print(f"   Matched via: '{matched}'")
         print()
     
     # Show statistics
@@ -87,6 +106,10 @@ def run_encode(message: str, modality: Modality = "auto"):
     print(f"  Avg similarity: {stats['avg_similarity']:.4f}")
     print(f"  Mixed modality: {stats['is_mixed_modality']}")
     print(f"  Distribution: {stats['modality_distribution']}")
+    
+    if hierarchical and "variants_per_chunk" in encoded.metadata:
+        total_variants = sum(encoded.metadata["variants_per_chunk"])
+        print(f"  Query variants tried: {total_variants}")
     print()
     
     return encoded
@@ -237,30 +260,32 @@ def print_usage():
     """Print usage information."""
     print("\nDCASS - Dynamic Context-Aware Semantic Steganography")
     print("=" * 55)
-    print("\n🔑 KEY FEATURE: Mixed-Modality Encoding")
-    print("   Messages are encoded as a MIX of images AND texts!")
+    print("\nKEY FEATURES:")
+    print("  - Mixed-Modality: Messages encoded as MIX of images AND texts")
+    print("  - Hierarchical: Synonym expansion + concept decomposition")
+    print("  - Score Normalization: Fair cross-modal comparison")
     print()
     print("Usage:")
     print("  python -m src.cli.main <command> [args]")
     print("\nCommands:")
-    print("  encode <message>              Encode message to mixed media sequence")
+    print("  encode <message>              Basic mixed-modality encoding")
+    print("  encode-h <message>            Hierarchical encoding (with synonyms)")
     print("  decode <id1> <id2> ...        Decode media sequence")
     print("  distribute <message> [profile] Encode and distribute with timing")
     print("  status                        Show index status")
-    print("\nProfiles for distribute:")
-    print("  casual  - Relaxed timing (default)")
-    print("  steady  - Regular intervals")
-    print("  bursty  - Burst activity")
     print("\nExamples:")
     print('  python -m src.cli.main encode "Meet at dawn in the park"')
-    print('  # Output might be: [image, text, image] - mixed!')
+    print('  # Output: [image, text, image] - mixed!')
     print()
-    print('  python -m src.cli.main distribute "Secret message" bursty')
+    print('  python -m src.cli.main encode-h "Secret meeting about the financial transaction"')
+    print('  # Uses synonyms: "covert gathering", "money exchange", etc.')
+    print()
     print("  python -m src.cli.main status")
     print("\nSetup:")
     print("  1. python scripts/download_flickr8k.py")
-    print("  2. python scripts/build_indices.py")
-    print("  3. python -m src.cli.main encode 'your message'")
+    print("  2. python scripts/download_wikipedia.py  # Optional: +50K sentences")
+    print("  3. python scripts/build_indices.py --include-wikipedia")
+    print("  4. python -m src.cli.main encode 'your message'")
     print()
 
 
@@ -278,7 +303,15 @@ def main():
             print("Usage: python -m src.cli.main encode <message>")
             return
         message = sys.argv[2]
-        run_encode(message)
+        run_encode(message, hierarchical=False)
+    
+    elif command == "encode-h" or command == "encode-hierarchical":
+        if len(sys.argv) < 3:
+            print("Error: Message required")
+            print("Usage: python -m src.cli.main encode-h <message>")
+            return
+        message = sys.argv[2]
+        run_encode(message, hierarchical=True)
     
     elif command == "decode":
         if len(sys.argv) < 3:

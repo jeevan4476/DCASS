@@ -4,26 +4,40 @@ Semantic Encoder
 The main encoder class for DCASS. Encodes secret messages into
 sequences of unmodified media references using semantic similarity.
 
-KEY FEATURE: Mixed-Modality Encoding
-When modality="auto", each message chunk is matched against ALL
-modalities (images AND texts), and the best match is selected
-regardless of type. This produces a heterogeneous sequence like:
-[image, text, image, image, text]
+KEY FEATURES:
+
+1. Mixed-Modality Encoding
+   When modality="auto", each message chunk is matched against ALL
+   modalities (images AND texts), and the best match is selected
+   regardless of type. This produces a heterogeneous sequence like:
+   [image, text, image, image, text]
+
+2. Hierarchical Encoding
+   Each chunk can be searched with multiple query variants:
+   - Original chunk
+   - Synonym expansions
+   - Concrete decompositions
+   The best match across all variants is selected.
+
+3. Synonym Expansion
+   Abstract concepts are expanded to concrete visual descriptions
+   for better matching against visual media.
 
 This makes detection much harder because:
 1. No media files are modified (zero-modification steganography)
 2. The output is a MIX of different media types
 3. There's no predictable pattern in modality selection
+4. Same message can encode to different media with synonyms
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Literal
+from typing import List, Optional, Dict, Any, Literal, Tuple
 from pathlib import Path
 import json
 import hashlib
 
 from src.corpus.index.unified_index import UnifiedSemanticIndex, SearchResult
-from src.engine.chunker import SemanticChunker
+from src.engine.chunker import SemanticChunker, EnhancedChunk
 
 
 # Type alias for valid modalities
@@ -366,6 +380,129 @@ class SemanticEncoder:
             "modality_distribution": encoded.modality_distribution,
             "is_mixed_modality": encoded.is_mixed_modality
         }
+    
+    def encode_hierarchical(
+        self,
+        message: str,
+        modality: Optional[Modality] = None,
+        k_candidates: int = 1,
+        diversity_penalty: float = 0.0,
+        min_score_threshold: float = 0.3,
+    ) -> EncodedMessage:
+        """
+        Encode using hierarchical search with synonym expansion.
+        
+        For each chunk:
+        1. Generate synonym expansions and concrete decompositions
+        2. Search with each variant query
+        3. Select the best match across all variants
+        
+        This significantly improves matching for abstract concepts.
+        
+        Args:
+            message: The secret message to encode
+            modality: Which modality to use ("auto" for mixed)
+            k_candidates: Number of candidates per query
+            diversity_penalty: Penalty for reusing media
+            min_score_threshold: Minimum score to accept a match
+            
+        Returns:
+            EncodedMessage with best matches from hierarchical search
+        """
+        if not self._loaded:
+            raise RuntimeError("Index not loaded. Call load() first.")
+        
+        modality = modality or self.default_modality
+        
+        # Use enhanced chunking with synonym expansion
+        enhanced_chunker = SemanticChunker(
+            strategy=self.chunker.strategy,
+            expand_synonyms=True,
+            decompose_concepts=True,
+            hierarchical=True,
+        )
+        
+        enhanced_chunks = enhanced_chunker.chunk_enhanced(message)
+        chunks = [c.normalized for c in enhanced_chunks]
+        
+        if not enhanced_chunks:
+            enhanced_chunks = [EnhancedChunk(
+                original=message.strip().lower(),
+                normalized=message.strip().lower(),
+            )]
+            chunks = [message.strip().lower()]
+        
+        # Encode each chunk with hierarchical search
+        sequence: List[SearchResult] = []
+        used_ids: set = set()
+        search_modality: Literal["text", "image", "audio", "auto"] = modality  # type: ignore
+        
+        for enhanced in enhanced_chunks:
+            # Get all query variants
+            variants = enhanced.all_variants()
+            
+            # Search with each variant and collect candidates
+            all_candidates: List[Tuple[str, SearchResult]] = []
+            
+            for variant in variants:
+                candidates = self.index.search(
+                    variant,
+                    modality=search_modality,
+                    k=k_candidates,
+                )
+                for c in candidates:
+                    all_candidates.append((variant, c))
+            
+            # Apply diversity penalty
+            if diversity_penalty > 0 and used_ids:
+                filtered = []
+                for variant, c in all_candidates:
+                    if c.id in used_ids:
+                        adjusted_score = c.score * (1 - diversity_penalty)
+                        adjusted = SearchResult(
+                            id=c.id,
+                            score=adjusted_score,
+                            modality=c.modality,
+                            content=c.content,
+                            metadata={**c.metadata, "matched_query": variant}
+                        )
+                        filtered.append((variant, adjusted))
+                    else:
+                        c.metadata["matched_query"] = variant
+                        filtered.append((variant, c))
+                all_candidates = filtered
+            
+            # Sort by score and select best
+            all_candidates.sort(key=lambda x: x[1].score, reverse=True)
+            
+            if all_candidates:
+                best_variant, best_result = all_candidates[0]
+                
+                # Only accept if above threshold
+                if best_result.score >= min_score_threshold:
+                    best_result.metadata["matched_query"] = best_variant
+                    best_result.metadata["original_chunk"] = enhanced.original
+                    sequence.append(best_result)
+                    used_ids.add(best_result.id)
+        
+        # Build metadata
+        metadata = {
+            "chunk_strategy": self.chunker.strategy,
+            "encoding_method": "hierarchical",
+            "k_candidates": k_candidates,
+            "diversity_penalty": diversity_penalty,
+            "min_score_threshold": min_score_threshold,
+            "message_hash": hashlib.sha256(message.encode()).hexdigest()[:16],
+            "variants_per_chunk": [len(c.all_variants()) for c in enhanced_chunks],
+        }
+        
+        return EncodedMessage(
+            original_message=message,
+            chunks=chunks,
+            sequence=sequence,
+            modality_used=modality,
+            metadata=metadata
+        )
     
     def __repr__(self) -> str:
         loaded_str = "loaded" if self._loaded else "not loaded"
