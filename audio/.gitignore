@@ -1,0 +1,17 @@
+# Large binaries / data
+*.wav
+*.npy
+*.zip
+*.index
+
+# Datasets
+audio_data/
+raw_audio/
+hf_audio_dataset/
+
+# Virtual env
+faiss_audio_env/
+
+# Cache
+__pycache__/
+*.pyc
