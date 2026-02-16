@@ -1,54 +1,34 @@
-# DCASS System Diagrams
+# DCASS Architecture Diagrams
 
-This directory contains all Mermaid diagrams for the DCASS (Dynamic Context-Aware Semantic Steganography) system, created for **Phase 3 Review**.
+This directory contains Mermaid diagrams documenting the DCASS system architecture for Phase 3 Review.
 
-## Diagram Index
+## Quick Reference
 
-| Diagram | File | Description |
-|---------|------|-------------|
-| Architecture | [architecture.md](./architecture.md) | Full system architecture with all layers |
-| Class Diagram | [class_diagram.md](./class_diagram.md) | All classes, attributes, methods, relationships |
-| ER Diagram | [er_diagram.md](./er_diagram.md) | Data entities, relationships, storage mapping |
-| Use Cases | [use_cases.md](./use_cases.md) | Actors and use cases with implementation status |
-| Sequences | [sequences.md](./sequences.md) | Sequence diagrams for all major flows |
+| Diagram | Description |
+|---------|-------------|
+| [architecture.md](architecture.md) | High-level system architecture (4 layers) |
+| [class_diagram.md](class_diagram.md) | Class relationships and dependencies |
+| [sequence_encode.md](sequence_encode.md) | Encoding flow sequence |
+| [sequence_decode.md](sequence_decode.md) | Decoding flow sequence |
+| [sequence_distribute.md](sequence_distribute.md) | Distribution pipeline flow |
+| [er_diagram.md](er_diagram.md) | Data entity relationships |
 
 ## How to View
 
-These diagrams use **Mermaid** syntax. To render them:
+These diagrams use [Mermaid](https://mermaid.js.org/) syntax. You can view them:
 
-1. **GitHub**: Mermaid renders automatically in markdown preview
+1. **GitHub/GitLab**: Renders automatically in markdown preview
 2. **VS Code**: Install "Markdown Preview Mermaid Support" extension
-3. **Online**: Use [Mermaid Live Editor](https://mermaid.live/)
-4. **CLI**: Use `mmdc` (Mermaid CLI) to export as PNG/SVG
+3. **Online**: Paste into [Mermaid Live Editor](https://mermaid.live/)
 
-## Implementation Status Legend
+## Architecture Overview
 
-| Color | Meaning |
-|-------|---------|
-| Green | Implemented |
-| Red/Pink | Not Implemented |
-| Orange | Partial/Basic |
+DCASS (Dynamic Context-Aware Semantic Steganography) encodes secret messages by selecting sequences of **unmodified media** from a corpus, making it resistant to traditional steganalysis.
 
-## Quick Links
-
-### Core Flows
-- [Basic Encoding](./sequences.md#1-basic-encoding-flow)
-- [Hierarchical Encoding](./sequences.md#2-hierarchical-encoding-flow-with-synonyms)
-- [Decoding](./sequences.md#3-decoding-flow)
-- [Full Pipeline](./sequences.md#6-full-pipeline-flow-end-to-end)
-
-### Planned Features
-- [GAN Scheduler](./sequences.md#7-gan-scheduler-flow-planned---not-implemented)
-- [RL Policy Agent](./sequences.md#8-rl-policy-agent-flow-planned---not-implemented)
-
-## Summary Statistics
-
-| Category | Total | Implemented | Not Implemented |
-|----------|-------|-------------|-----------------|
-| Classes | 20 | 16 | 4 |
-| Use Cases | 23 | 16 | 7 |
-| Sequence Flows | 8 | 6 | 2 |
-
----
-
-*Generated for DCASS Capstone Project - Phase 3 Review*
+```
+Message → Chunker → Encoder → Media Sequence → Distribution → Channels
+                                    ↓
+                              Receiver
+                                    ↓
+                    Media IDs → Decoder → Reconstructed Meaning
+```

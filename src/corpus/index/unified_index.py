@@ -1,745 +1,386 @@
+# src/corpus/index/unified_index.py
 """
-Unified Semantic Index
+UnifiedSemanticIndex - Multi-modal FAISS index with score normalization.
 
-CLIP-based unified embedding space for cross-modal semantic search.
+This module provides a unified interface for searching across image, text, 
+and audio modalities using CLIP/CLAP embeddings.
 
-KEY DESIGN: All modalities (text, images) are embedded into the SAME 
-vector space using CLIP. This allows direct comparison of similarity
-scores across modalities.
-
-When encoding a message:
-1. Each chunk is embedded using CLIP's text encoder
-2. Search ALL indices (text and image) simultaneously  
-3. Pick the BEST match regardless of modality
-4. Result: Mixed sequence of images AND texts
-
-SCORE NORMALIZATION:
-CLIP text-to-text similarity is naturally higher than text-to-image.
-To enable fair comparison, we normalize scores within each modality
-using calibration statistics and apply optional modality boosting.
-
-This makes detection harder because the output is heterogeneous.
+Architecture:
+    Query → CLIP encode → Search each index → Normalize scores → Merge & rank → Return top-k
 """
+
+from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Dict, List, Optional, Union, Literal, Any, Tuple
-from dataclasses import dataclass, field
 import numpy as np
+import faiss
+from pathlib import Path
+from dataclasses import dataclass, field
+from typing import Optional, Literal
 
-try:
-    import faiss
-except ImportError:
-    faiss = None  # type: ignore
+import torch
+import clip
+
+Modality = Literal["image", "text", "audio"]
 
 
 @dataclass
-class SearchResult:
-    """
-    Represents a single search result from the index.
-    
-    Attributes:
-        id: Unique identifier of the matched item
-        score: Similarity score (higher is better, normalized 0-1)
-        modality: Which index this came from ('text', 'image', 'audio')
-        content: The content (text string or file path)
-        metadata: Additional metadata dict
-    """
+class MediaItem:
+    """Represents a media item from the corpus."""
     id: str
-    score: float
-    modality: str
-    content: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    modality: Modality
+    content: str  # path for image/audio, text content for text
+    score: float  # raw similarity score
+    normalized_score: float  # normalized score (0-1)
+    metadata: dict = field(default_factory=dict)
     
     def __repr__(self) -> str:
-        return f"SearchResult(id={self.id}, score={self.score:.4f}, modality={self.modality})"
-
-
-class ModalityIndex:
-    """
-    Wrapper for a single-modality FAISS index.
-    
-    All indices use CLIP embeddings (512-dim) for unified vector space.
-    This allows cross-modal comparison of similarity scores.
-    
-    Attributes:
-        modality: The modality type ('text', 'image', 'audio')
-        index_path: Path to the FAISS index file
-        metadata_path: Path to the metadata JSON file
-    """
-    
-    def __init__(
-        self,
-        modality: str,
-        index_path: Path,
-        metadata_path: Path
-    ):
-        """
-        Initialize a modality index.
-        
-        Args:
-            modality: The modality type
-            index_path: Path to save/load FAISS index
-            metadata_path: Path to save/load metadata JSON
-        """
-        self.modality = modality
-        self.index_path = Path(index_path)
-        self.metadata_path = Path(metadata_path)
-        self.index: Optional[Any] = None  # faiss.Index
-        self.metadata: List[Dict[str, Any]] = []
-    
-    def build(self, embeddings: np.ndarray, metadata: List[Dict[str, Any]]) -> None:
-        """
-        Build index from embeddings and metadata.
-        
-        IMPORTANT: Embeddings must be CLIP embeddings (512-dim, normalized).
-        
-        Args:
-            embeddings: numpy array of shape (n_items, 512), L2-normalized
-            metadata: List of metadata dicts, one per item
-        """
-        if faiss is None:
-            raise ImportError("faiss is required. Install with: pip install faiss-cpu")
-        
-        dim = embeddings.shape[1]
-        
-        # Use IndexFlatIP for cosine similarity (vectors must be L2-normalized)
-        self.index = faiss.IndexFlatIP(dim)
-        
-        # Normalize embeddings to unit length for cosine similarity
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        normalized = embeddings / (norms + 1e-8)
-        
-        self.index.add(normalized.astype("float32"))
-        self.metadata = metadata
-        
-        print(f"Built {self.modality} index: {self.index.ntotal} items, {dim}-dim")
-    
-    def save(self) -> None:
-        """Save index and metadata to disk."""
-        if self.index is None:
-            raise RuntimeError("No index to save. Call build() first.")
-        
-        if faiss is None:
-            raise ImportError("faiss is required")
-        
-        # Create parent directories
-        self.index_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Save FAISS index
-        faiss.write_index(self.index, str(self.index_path))
-        
-        # Save metadata as JSON
-        with open(self.metadata_path, "w", encoding="utf-8") as f:
-            json.dump(self.metadata, f, indent=2, ensure_ascii=False)
-        
-        print(f"Saved {self.modality} index to {self.index_path}")
-    
-    def load(self) -> None:
-        """Load index and metadata from disk."""
-        if faiss is None:
-            raise ImportError("faiss is required")
-        
-        if not self.index_path.exists():
-            raise FileNotFoundError(f"Index not found: {self.index_path}")
-        
-        if not self.metadata_path.exists():
-            raise FileNotFoundError(f"Metadata not found: {self.metadata_path}")
-        
-        # Load FAISS index
-        self.index = faiss.read_index(str(self.index_path))
-        
-        # Load metadata
-        with open(self.metadata_path, "r", encoding="utf-8") as f:
-            self.metadata = json.load(f)
-        
-        print(f"Loaded {self.modality} index: {self.index.ntotal} items")
-    
-    def search(self, query_embedding: np.ndarray, k: int = 5) -> List[SearchResult]:
-        """
-        Search this index for similar items.
-        
-        Args:
-            query_embedding: Query vector of shape (1, dim) or (dim,), L2-normalized
-            k: Number of results to return
-            
-        Returns:
-            List of SearchResult objects
-        """
-        if self.index is None:
-            raise RuntimeError("Index not loaded. Call load() first.")
-        
-        # Ensure correct shape
-        if query_embedding.ndim == 1:
-            query_embedding = query_embedding.reshape(1, -1)
-        
-        # Normalize query
-        norm = np.linalg.norm(query_embedding)
-        if norm > 0:
-            query_embedding = query_embedding / norm
-        
-        # Search
-        scores, indices = self.index.search(
-            query_embedding.astype("float32"), k
-        )
-        
-        # Build results
-        results = []
-        for score, idx in zip(scores[0], indices[0]):
-            if idx == -1:  # FAISS returns -1 for empty slots
-                continue
-            
-            meta = self.metadata[idx]
-            results.append(SearchResult(
-                id=meta["id"],
-                score=float(score),  # Already cosine similarity (0 to 1)
-                modality=self.modality,
-                content=meta.get("content", ""),
-                metadata=meta
-            ))
-        
-        return results
-    
-    @property
-    def size(self) -> int:
-        """Return number of items in index."""
-        if self.index is None:
-            return 0
-        return self.index.ntotal
-    
-    def exists(self) -> bool:
-        """Check if index files exist on disk."""
-        return self.index_path.exists() and self.metadata_path.exists()
+        return f"MediaItem({self.modality}:{self.id}, score={self.normalized_score:.3f})"
 
 
 class ScoreNormalizer:
     """
-    Normalizes similarity scores across modalities for fair comparison.
+    Normalizes similarity scores across different modalities.
     
-    PROBLEM: CLIP text-to-text similarity scores are naturally higher (~0.8-0.9)
-    than text-to-image similarity (~0.25-0.35). This causes text to always win.
+    Problem: CLIP similarity scores vary significantly by modality:
+        - text-to-text: ~0.6-0.9
+        - text-to-image: ~0.2-0.4
+        - text-to-audio: ~0.2-0.4
     
-    SOLUTION: Apply per-modality normalization using calibration statistics
-    and optional modality boosting.
+    Solution: Z-score normalization + sigmoid scaling per modality.
     
-    Methods:
-    1. Z-score normalization: (score - mean) / std
-    2. Min-max normalization: (score - min) / (max - min)
-    3. Percentile normalization: rank-based scaling
-    4. Modality boosting: multiply by modality-specific factor
-    
-    Default calibration values are based on empirical CLIP measurements.
+    Each modality has calibration parameters (mean, std) learned from
+    typical query results. These are used to normalize raw scores to
+    a comparable 0-1 range.
     """
     
-    # Empirical calibration statistics for CLIP ViT-B/32
-    # Based on Flickr8k dataset measurements (actual measured values)
+    # Default calibration values based on empirical observations
+    # Format: {modality: (mean, std)}
     DEFAULT_CALIBRATION = {
-        "text": {
-            "mean": 0.79,
-            "std": 0.05,
-            "min": 0.68,
-            "max": 0.87,
-            "boost": 1.0,  # No boost for text (baseline)
-        },
-        "image": {
-            "mean": 0.27,
-            "std": 0.04,
-            "min": 0.18,
-            "max": 0.35,
-            "boost": 1.0,  # Normalized scores don't need boost with combined method
-        },
-        "audio": {
-            "mean": 0.30,
-            "std": 0.08,
-            "min": 0.10,
-            "max": 0.50,
-            "boost": 1.0,
-        }
+        "image": (0.28, 0.06),   # CLIP text-to-image typical range
+        "text": (0.65, 0.15),    # CLIP text-to-text typical range  
+        "audio": (0.25, 0.08),   # CLAP text-to-audio typical range
     }
     
-    def __init__(
-        self,
-        method: Literal["zscore", "minmax", "boost", "combined"] = "combined",
-        calibration: Optional[Dict[str, Dict[str, float]]] = None,
-        image_boost: float = 2.2,
-        diversity_ratio: float = 0.0,
-    ):
+    def __init__(self, calibration: dict[str, tuple[float, float]] = None):
         """
-        Initialize the score normalizer.
-        
         Args:
-            method: Normalization method to use:
-                - "zscore": Z-score normalization
-                - "minmax": Min-max to [0, 1]
-                - "boost": Simple modality boosting
-                - "combined": Z-score + clipping (recommended)
-            calibration: Optional custom calibration stats per modality
-            image_boost: Boost factor for image scores (used with "boost" method)
-            diversity_ratio: Force minimum ratio of each modality (0.0-1.0)
+            calibration: Dict mapping modality to (mean, std) tuple.
+                        Uses DEFAULT_CALIBRATION if not provided.
         """
-        self.method = method
-        self.calibration = calibration or self.DEFAULT_CALIBRATION
-        self.image_boost = image_boost
-        self.diversity_ratio = diversity_ratio
+        self.calibration = calibration or self.DEFAULT_CALIBRATION.copy()
     
-    def normalize(
-        self,
-        results: List[SearchResult],
-        modality: str
-    ) -> List[SearchResult]:
+    def normalize(self, score: float, modality: Modality) -> float:
         """
-        Normalize scores for a single modality.
+        Normalize a raw similarity score to 0-1 range.
         
         Args:
-            results: List of search results from one modality
-            modality: The modality name
+            score: Raw similarity score from FAISS search
+            modality: The modality of the result
             
         Returns:
-            Results with normalized scores
+            Normalized score in [0, 1] range
         """
-        if not results:
-            return results
+        if modality not in self.calibration:
+            # Fallback: no normalization
+            return float(np.clip(score, 0, 1))
         
-        cal = self.calibration.get(modality, self.calibration["text"])
+        mean, std = self.calibration[modality]
         
-        normalized = []
-        for r in results:
-            if self.method == "zscore":
-                # Z-score normalization
-                new_score = (r.score - cal["mean"]) / (cal["std"] + 1e-8)
-                # Shift to positive range [0, ~2] for comparison
-                new_score = (new_score + 2) / 4  # Rough scaling
-            
-            elif self.method == "minmax":
-                # Min-max normalization to [0, 1]
-                new_score = (r.score - cal["min"]) / (cal["max"] - cal["min"] + 1e-8)
-                new_score = max(0.0, min(1.0, new_score))
-            
-            elif self.method == "boost":
-                # Simple boosting
-                new_score = r.score * cal["boost"]
-            
-            elif self.method == "combined":
-                # Combined: Z-score normalization + sigmoid + boost
-                z = (r.score - cal["mean"]) / (cal["std"] + 1e-8)
-                # Sigmoid to squash to [0, 1]
-                new_score = 1 / (1 + np.exp(-z))
-                # Apply small boost for underrepresented modalities
-                new_score = new_score * cal.get("boost", 1.0)
-            
-            else:
-                new_score = r.score
-            
-            normalized.append(SearchResult(
-                id=r.id,
-                score=float(new_score),
-                modality=r.modality,
-                content=r.content,
-                metadata={**r.metadata, "raw_score": r.score}
-            ))
+        # Z-score normalization
+        if std > 0:
+            z_score = (score - mean) / std
+        else:
+            z_score = 0.0
         
-        return normalized
+        # Sigmoid to map to [0, 1]
+        normalized = 1 / (1 + np.exp(-z_score))
+        
+        return float(normalized)
     
-    def normalize_cross_modal(
-        self,
-        results_by_modality: Dict[str, List[SearchResult]],
-        k: int = 5
-    ) -> List[SearchResult]:
+    def update_calibration(self, modality: Modality, scores: list[float]):
         """
-        Normalize and merge results from multiple modalities.
+        Update calibration for a modality based on observed scores.
         
         Args:
-            results_by_modality: Dict mapping modality to results
-            k: Number of results to return
-            
-        Returns:
-            Merged and sorted results with normalized scores
+            modality: Modality to update
+            scores: List of observed raw scores
         """
-        all_normalized = []
-        
-        for modality, results in results_by_modality.items():
-            normalized = self.normalize(results, modality)
-            all_normalized.extend(normalized)
-        
-        # Sort by normalized score
-        all_normalized.sort(key=lambda x: x.score, reverse=True)
-        
-        # Apply diversity constraint if specified
-        if self.diversity_ratio > 0:
-            all_normalized = self._apply_diversity(all_normalized, k)
-        
-        return all_normalized[:k]
-    
-    def _apply_diversity(
-        self,
-        results: List[SearchResult],
-        k: int
-    ) -> List[SearchResult]:
-        """
-        Apply diversity constraint to ensure minimum modality representation.
-        
-        Args:
-            results: Sorted results
-            k: Target number of results
-            
-        Returns:
-            Diversified results
-        """
-        if not results:
-            return results
-        
-        # Count modalities
-        modalities = set(r.modality for r in results)
-        min_per_modality = max(1, int(k * self.diversity_ratio))
-        
-        # Select minimum from each modality first
-        selected = []
-        remaining = []
-        counts: Dict[str, int] = {m: 0 for m in modalities}
-        
-        for r in results:
-            if counts[r.modality] < min_per_modality:
-                selected.append(r)
-                counts[r.modality] += 1
-            else:
-                remaining.append(r)
-        
-        # Fill remaining slots with best overall
-        remaining.sort(key=lambda x: x.score, reverse=True)
-        while len(selected) < k and remaining:
-            selected.append(remaining.pop(0))
-        
-        # Re-sort by score
-        selected.sort(key=lambda x: x.score, reverse=True)
-        return selected
+        if scores:
+            mean = float(np.mean(scores))
+            std = float(np.std(scores))
+            if std > 0.01:  # Avoid division by near-zero
+                self.calibration[modality] = (mean, std)
 
 
 class UnifiedSemanticIndex:
     """
-    Unified multi-modal semantic index using CLIP embeddings.
+    Unified multi-modal semantic index for DCASS.
     
-    KEY FEATURE: All modalities share the same CLIP embedding space.
-    This enables TRUE cross-modal search where we can directly compare
-    similarity scores between text and images.
-    
-    When modality="auto":
-    - Searches ALL loaded indices simultaneously
-    - Returns best matches REGARDLESS of modality
-    - Results can be mixed: [image, text, image, text, ...]
-    
-    This is the core of DCASS's steganographic approach:
-    - Message chunks map to a MIX of images and texts
-    - Makes pattern detection much harder
+    Manages FAISS indices for multiple modalities (image, text, audio)
+    and provides a unified search interface with score normalization.
     
     Usage:
         index = UnifiedSemanticIndex()
-        index.load()  # Load all available indices
+        index.load()  # Loads all available indices
         
-        # Cross-modal search - returns best match from ANY modality
-        results = index.search("a dog running", modality="auto", k=5)
-        
-        # Encode message into mixed media sequence
-        sequence = index.encode_message("Secret meeting at dawn")
-        # sequence might be: [image, text, image, image, text]
+        results = index.search("a dog running on beach", k=5)
+        for item in results:
+            print(f"{item.modality}: {item.id} (score: {item.normalized_score:.3f})")
     """
     
     def __init__(
         self,
-        config: Optional[Any] = None,
-        normalize_scores: bool = True,
-        normalization_method: Literal["zscore", "minmax", "boost", "combined"] = "combined",
-        diversity_ratio: float = 0.0,
+        base_path: Path = None,
+        device: str = None,
+        enabled_modalities: list[Modality] = None
     ):
         """
-        Initialize the unified index.
+        Args:
+            base_path: Base path for data directory. Defaults to project data/indices/
+            device: Device for CLIP model ('cuda' or 'cpu'). Auto-detected if None.
+            enabled_modalities: List of modalities to load. Defaults to all available.
+        """
+        if base_path is None:
+            # Default: project_root/data/indices/
+            base_path = Path(__file__).parent.parent.parent.parent / "data" / "indices"
+        
+        self.base_path = Path(base_path)
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.enabled_modalities = enabled_modalities or ["image", "text", "audio"]
+        
+        # CLIP model (lazy loaded)
+        self._clip_model = None
+        self._clip_preprocess = None
+        
+        # FAISS indices and metadata (loaded on demand)
+        self.indices: dict[Modality, faiss.Index] = {}
+        self.metadata: dict[Modality, list[dict]] = {}
+        
+        # Score normalizer
+        self.normalizer = ScoreNormalizer()
+        
+        # Track loaded state
+        self._loaded = False
+    
+    @property
+    def clip_model(self):
+        """Lazy load CLIP model."""
+        if self._clip_model is None:
+            print(f"Loading CLIP model (ViT-B/32) on {self.device}...")
+            self._clip_model, self._clip_preprocess = clip.load("ViT-B/32", device=self.device)
+            self._clip_model.eval()
+        return self._clip_model
+    
+    def _get_index_paths(self, modality: Modality) -> tuple[Path, Path]:
+        """Get paths for index and metadata files."""
+        index_path = self.base_path / f"{modality}.index"
+        metadata_path = self.base_path / f"{modality}_metadata.json"
+        return index_path, metadata_path
+    
+    def load(self, modalities: list[Modality] = None) -> dict[str, bool]:
+        """
+        Load FAISS indices and metadata for specified modalities.
         
         Args:
-            config: Optional configuration object. If None, loads from default.
-            normalize_scores: Whether to normalize scores across modalities
-            normalization_method: Method for score normalization
-            diversity_ratio: Force minimum ratio of each modality (0.0-1.0)
-        """
-        if config is None:
-            from config.settings import config as default_config
-            config = default_config
-        
-        self.config = config
-        self._indices: Dict[str, ModalityIndex] = {}
-        self._clip_embedder: Optional[Any] = None  # Single CLIP embedder for all
-        
-        # Score normalization settings
-        self.normalize_scores = normalize_scores
-        self._normalizer = ScoreNormalizer(
-            method=normalization_method,
-            diversity_ratio=diversity_ratio,
-        ) if normalize_scores else None
-        
-        # Initialize index objects (not loaded yet)
-        self._init_indices()
-    
-    def _init_indices(self) -> None:
-        """Initialize ModalityIndex objects based on configuration."""
-        # Text index (uses CLIP text embeddings)
-        if self.config.get("corpus.text.enabled", True):
-            self._indices["text"] = ModalityIndex(
-                modality="text",
-                index_path=self.config.get_path("index.text.path"),
-                metadata_path=self.config.get_path("index.text.metadata_path")
-            )
-        
-        # Image index (uses CLIP image embeddings)
-        if self.config.get("corpus.image.enabled", True):
-            self._indices["image"] = ModalityIndex(
-                modality="image",
-                index_path=self.config.get_path("index.image.path"),
-                metadata_path=self.config.get_path("index.image.metadata_path")
-            )
-        
-        # Audio index (future - would need AudioCLIP or similar)
-        if self.config.get("corpus.audio.enabled", False):
-            self._indices["audio"] = ModalityIndex(
-                modality="audio",
-                index_path=self.config.get_path("index.audio.path"),
-                metadata_path=self.config.get_path("index.audio.metadata_path")
-            )
-    
-    def _get_clip_embedder(self) -> Any:
-        """
-        Get or create the CLIP embedder.
-        
-        We use a SINGLE CLIP model for all modalities to ensure
-        embeddings are in the same vector space.
-        
+            modalities: List of modalities to load. Uses enabled_modalities if None.
+            
         Returns:
-            ImageEmbedder (which is actually CLIP and can encode both text and images)
+            Dict mapping modality to success status
         """
-        if self._clip_embedder is None:
-            from src.corpus.embedders import ImageEmbedder
-            
-            device = self.config.get_device()
-            model_name = self.config.get("embeddings.image.model", "ViT-B/32")
-            
-            self._clip_embedder = ImageEmbedder(
-                model_name=model_name,
-                device=device
-            )
-            print(f"Initialized CLIP embedder: {model_name} on {device}")
+        modalities = modalities or self.enabled_modalities
+        status = {}
         
-        return self._clip_embedder
+        for modality in modalities:
+            index_path, metadata_path = self._get_index_paths(modality)
+            
+            try:
+                if not index_path.exists():
+                    print(f"  [{modality}] Index not found: {index_path}")
+                    status[modality] = False
+                    continue
+                
+                if not metadata_path.exists():
+                    print(f"  [{modality}] Metadata not found: {metadata_path}")
+                    status[modality] = False
+                    continue
+                
+                # Load FAISS index
+                self.indices[modality] = faiss.read_index(str(index_path))
+                
+                # Load metadata
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    self.metadata[modality] = json.load(f)
+                
+                n_items = self.indices[modality].ntotal
+                print(f"  [{modality}] Loaded {n_items} items")
+                status[modality] = True
+                
+            except Exception as e:
+                print(f"  [{modality}] Error loading: {e}")
+                status[modality] = False
+        
+        self._loaded = any(status.values())
+        return status
     
-    def load(self, modalities: Optional[List[str]] = None) -> None:
-        """
-        Load indices from disk.
-        
-        Args:
-            modalities: List of modalities to load. If None, loads all available.
-        """
-        if modalities is None:
-            modalities = list(self._indices.keys())
-        
-        loaded_count = 0
-        for mod in modalities:
-            if mod in self._indices:
-                idx = self._indices[mod]
-                if idx.exists():
-                    idx.load()
-                    loaded_count += 1
-                else:
-                    print(f"Warning: {mod} index not found at {idx.index_path}")
-        
-        if loaded_count == 0:
-            print("Warning: No indices loaded. Run 'python scripts/build_indices.py' first.")
+    def _encode_text(self, text: str) -> np.ndarray:
+        """Encode text query using CLIP."""
+        with torch.no_grad():
+            tokens = clip.tokenize([text], truncate=True).to(self.device)
+            embedding = self.clip_model.encode_text(tokens)
+            embedding = embedding / embedding.norm(dim=-1, keepdim=True)
+            return embedding.cpu().numpy().astype("float32")
     
     def search(
         self,
         query: str,
-        modality: Literal["text", "image", "audio", "auto"] = "auto",
         k: int = 5,
-        normalize: Optional[bool] = None,
-    ) -> List[SearchResult]:
+        modalities: list[Modality] = None,
+        min_score: float = 0.0
+    ) -> list[MediaItem]:
         """
-        Search for semantically similar content.
-        
-        IMPORTANT: When modality="auto", searches ALL modalities and returns
-        the best matches regardless of type. This enables mixed-modality encoding.
-        
-        Score normalization is applied by default when modality="auto" to ensure
-        fair comparison between text and image scores.
+        Search across all loaded modalities for semantically similar media.
         
         Args:
             query: Text query to search for
-            modality: Which index to search:
-                - "text": Search text index only
-                - "image": Search image index only  
-                - "audio": Search audio index only
-                - "auto": Search ALL indices, return best matches
-            k: Number of results to return
-            normalize: Override score normalization (None = use default)
+            k: Number of results to return (total, not per modality)
+            modalities: Modalities to search. Uses all loaded if None.
+            min_score: Minimum normalized score threshold
             
         Returns:
-            List of SearchResult objects, sorted by score (highest first)
+            List of MediaItem objects, sorted by normalized score (descending)
         """
-        # Get CLIP embedder and encode query text
-        embedder = self._get_clip_embedder()
-        query_emb = embedder.encode_text([query])  # Shape: (1, 512)
+        if not self._loaded:
+            raise RuntimeError("Index not loaded. Call load() first.")
         
-        # Determine if we should normalize
-        should_normalize = normalize if normalize is not None else self.normalize_scores
+        modalities = modalities or list(self.indices.keys())
         
-        if modality == "auto":
-            # Search ALL modalities
-            results_by_modality: Dict[str, List[SearchResult]] = {}
+        # Encode query once
+        query_embedding = self._encode_text(query)
+        
+        all_results = []
+        
+        for modality in modalities:
+            if modality not in self.indices:
+                continue
             
-            for mod_name, mod_idx in self._indices.items():
-                if mod_idx.index is not None:
-                    results = mod_idx.search(query_emb, k=k)
-                    results_by_modality[mod_name] = results
+            index = self.indices[modality]
+            meta_list = self.metadata[modality]
             
-            # Apply normalization if enabled
-            if should_normalize and self._normalizer:
-                return self._normalizer.normalize_cross_modal(results_by_modality, k)
-            else:
-                # No normalization - just merge and sort
-                all_results = []
-                for results in results_by_modality.values():
-                    all_results.extend(results)
-                all_results.sort(key=lambda x: x.score, reverse=True)
-                return all_results[:k]
-        else:
-            # Search single modality
-            if modality not in self._indices:
-                raise ValueError(f"Unknown modality: {modality}")
+            # Search this modality's index
+            # Request more results than k to allow for filtering
+            n_search = min(k * 2, index.ntotal)
+            scores, indices = index.search(query_embedding, n_search)
             
-            idx = self._indices[modality]
-            if idx.index is None:
-                raise RuntimeError(f"{modality} index not loaded. Call load() first.")
-            
-            return idx.search(query_emb, k=k)
-            
-            return idx.search(query_emb, k=k)
+            for score, idx in zip(scores[0], indices[0]):
+                if idx < 0 or idx >= len(meta_list):
+                    continue
+                
+                meta = meta_list[idx]
+                normalized = self.normalizer.normalize(score, modality)
+                
+                if normalized < min_score:
+                    continue
+                
+                # Determine content field
+                content = meta.get("content") or meta.get("text") or meta.get("path", "")
+                
+                item = MediaItem(
+                    id=meta.get("id", f"{modality}_{idx}"),
+                    modality=modality,
+                    content=content,
+                    score=float(score),
+                    normalized_score=normalized,
+                    metadata=meta
+                )
+                all_results.append(item)
+        
+        # Sort by normalized score and return top k
+        all_results.sort(key=lambda x: x.normalized_score, reverse=True)
+        return all_results[:k]
     
-    def search_all_modalities(
+    def search_modality(
         self,
         query: str,
-        k_per_modality: int = 3
-    ) -> Dict[str, List[SearchResult]]:
+        modality: Modality,
+        k: int = 5
+    ) -> list[MediaItem]:
         """
-        Search all modalities and return results grouped by modality.
-        
-        Useful for debugging and understanding what each index contains.
+        Search a single modality.
         
         Args:
             query: Text query
-            k_per_modality: Number of results per modality
+            modality: Specific modality to search
+            k: Number of results
             
         Returns:
-            Dict mapping modality name to list of results
+            List of MediaItem objects from that modality
         """
-        embedder = self._get_clip_embedder()
-        query_emb = embedder.encode_text([query])
-        
-        results = {}
-        for mod_name, mod_idx in self._indices.items():
-            if mod_idx.index is not None:
-                results[mod_name] = mod_idx.search(query_emb, k=k_per_modality)
-            else:
-                results[mod_name] = []
-        
-        return results
+        return self.search(query, k=k, modalities=[modality])
     
-    def encode_message(
-        self,
-        message: str,
-        modality: Literal["text", "image", "auto"] = "auto",
-        k_per_chunk: int = 1
-    ) -> List[SearchResult]:
+    def get_by_id(self, item_id: str) -> Optional[MediaItem]:
         """
-        Encode a message into a sequence of media references.
-        
-        This is the CORE DCASS encoding function.
-        
-        When modality="auto" (default):
-        - Each chunk searches ALL modalities
-        - Best match is selected regardless of type
-        - Result is a MIX of images and texts
-        
-        Example:
-            Input: "Secret meeting at dawn in the park"
-            Output: [
-                SearchResult(content="whisper.jpg", modality="image"),
-                SearchResult(content="The sun rises...", modality="text"),
-                SearchResult(content="park_bench.jpg", modality="image"),
-            ]
+        Retrieve a media item by its ID.
         
         Args:
-            message: The secret message to encode
-            modality: "auto" for mixed, or specific modality
-            k_per_chunk: Number of candidates per chunk (1 = deterministic)
+            item_id: The unique ID of the item
             
         Returns:
-            List of SearchResult objects representing the encoded sequence
+            MediaItem if found, None otherwise
         """
-        from src.engine.chunker import SemanticChunker
-        
-        # Chunk the message
-        chunker = SemanticChunker()
-        chunks = chunker.chunk(message)
-        
-        if not chunks:
-            chunks = [message.strip()]
-        
-        # Encode each chunk - using "auto" for mixed modality
-        encoded_sequence = []
-        for chunk in chunks:
-            results = self.search(chunk, modality=modality, k=k_per_chunk)
-            if results:
-                encoded_sequence.append(results[0])
-        
-        return encoded_sequence
+        for modality, meta_list in self.metadata.items():
+            for meta in meta_list:
+                if meta.get("id") == item_id:
+                    content = meta.get("content") or meta.get("text") or meta.get("path", "")
+                    return MediaItem(
+                        id=item_id,
+                        modality=modality,
+                        content=content,
+                        score=1.0,
+                        normalized_score=1.0,
+                        metadata=meta
+                    )
+        return None
     
-    def get_index(self, modality: str) -> ModalityIndex:
+    def status(self) -> dict:
         """
-        Get a specific modality index.
-        
-        Args:
-            modality: The modality type
-            
-        Returns:
-            ModalityIndex object
-        """
-        if modality not in self._indices:
-            raise ValueError(f"Unknown modality: {modality}")
-        return self._indices[modality]
-    
-    @property
-    def available_modalities(self) -> List[str]:
-        """Return list of configured modalities."""
-        return list(self._indices.keys())
-    
-    @property
-    def loaded_modalities(self) -> List[str]:
-        """Return list of modalities with loaded indices."""
-        return [m for m, idx in self._indices.items() if idx.index is not None]
-    
-    def status(self) -> Dict[str, Any]:
-        """
-        Get status of all indices.
+        Get status of loaded indices.
         
         Returns:
-            Dict with status information for each modality
+            Dict with status information
         """
-        status = {}
-        for mod, idx in self._indices.items():
-            status[mod] = {
-                "configured": True,
-                "exists_on_disk": idx.exists(),
-                "loaded": idx.index is not None,
-                "size": idx.size,
-                "index_path": str(idx.index_path),
-                "metadata_path": str(idx.metadata_path),
-            }
-        return status
+        return {
+            "loaded": self._loaded,
+            "device": self.device,
+            "modalities": {
+                modality: {
+                    "loaded": modality in self.indices,
+                    "count": self.indices[modality].ntotal if modality in self.indices else 0
+                }
+                for modality in self.enabled_modalities
+            },
+            "base_path": str(self.base_path)
+        }
     
     def __repr__(self) -> str:
-        loaded = self.loaded_modalities
-        return f"UnifiedSemanticIndex(loaded={loaded})"
+        loaded = list(self.indices.keys())
+        counts = [f"{m}:{self.indices[m].ntotal}" for m in loaded]
+        return f"UnifiedSemanticIndex(loaded=[{', '.join(counts)}])"
+
+
+# Convenience function for quick setup
+def create_index(base_path: Path = None, device: str = None) -> UnifiedSemanticIndex:
+    """
+    Create and load a UnifiedSemanticIndex.
+    
+    Args:
+        base_path: Optional custom path to indices
+        device: Optional device override
+        
+    Returns:
+        Loaded UnifiedSemanticIndex instance
+    """
+    index = UnifiedSemanticIndex(base_path=base_path, device=device)
+    print("Loading unified semantic index...")
+    index.load()
+    return index

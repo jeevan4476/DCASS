@@ -1,164 +1,153 @@
-# DCASS Architecture Diagram
+# DCASS System Architecture
 
-## System Architecture
+## High-Level Architecture (4 Layers)
 
 ```mermaid
 flowchart TB
-    subgraph Input["Input Layer"]
-        MSG[/"Secret Message"/]
-        MEDIA[/"Received Media Sequence"/]
+    subgraph CLI["CLI Layer"]
+        CLI_ENCODE["encode <message>"]
+        CLI_DECODE["decode <ids>"]
+        CLI_DIST["distribute <message>"]
+        CLI_DEMO["demo <message>"]
     end
 
-    subgraph Corpus["Corpus & Indexing Layer"]
-        subgraph Loaders["Data Loaders"]
-            FL[FlickrLoader]
-            WL[WikipediaLoader]
-            AL[AudioLoader<br/>NOT IMPLEMENTED]
-        end
+    subgraph ENGINE["Engine Layer"]
+        ENCODER["SemanticEncoder"]
+        DECODER["SemanticDecoder"]
+        CHUNKER["SemanticChunker"]
         
-        subgraph Embedders["Embedders"]
-            IE[ImageEmbedder<br/>CLIP ViT-B/32]
-            TE[TextEmbedder<br/>CLIP Text Encoder]
-            AE[AudioEmbedder<br/>NOT IMPLEMENTED]
-        end
-        
-        subgraph Index["FAISS Index"]
-            UI[UnifiedSemanticIndex]
-            MI_IMG[ModalityIndex<br/>image.index]
-            MI_TXT[ModalityIndex<br/>text.index]
-            MI_AUD[ModalityIndex<br/>audio.index<br/>NOT IMPLEMENTED]
-            SN[ScoreNormalizer]
-        end
-        
-        FL --> IE
-        WL --> TE
-        AL -.-> AE
-        IE --> MI_IMG
-        TE --> MI_TXT
-        AE -.-> MI_AUD
-        MI_IMG --> UI
-        MI_TXT --> UI
-        MI_AUD -.-> UI
-        UI --> SN
+        ENCODER --> CHUNKER
+        ENCODER --> |"search"| CORPUS
+        DECODER --> |"lookup"| CORPUS
     end
 
-    subgraph Engine["Encoding/Decoding Engine"]
-        subgraph Encoding["Encoding"]
-            SC[SemanticChunker]
-            SE[SemanticEncoder]
-            EC[EnhancedChunk]
+    subgraph CORPUS["Corpus Layer"]
+        UNIFIED["UnifiedSemanticIndex"]
+        NORMALIZER["ScoreNormalizer"]
+        
+        subgraph EMBEDDERS["Embedders"]
+            CLIP["CLIPEmbedder<br/>(image/text)"]
+            CLAP["AudioEmbedder<br/>(audio)"]
         end
         
-        subgraph Decoding["Decoding"]
-            SD[SemanticDecoder]
-            DM[DecodedMessage]
+        subgraph INDICES["FAISS Indices"]
+            IMG_IDX["image.index<br/>(512-dim)"]
+            TXT_IDX["text.index<br/>(512-dim)"]
+            AUD_IDX["audio.index<br/>(512-dim)"]
         end
         
-        MSG --> SC
-        SC --> EC
-        EC --> SE
-        SE --> |"search"| UI
-        UI --> |"SearchResult[]"| SE
-        SE --> EM[EncodedMessage]
-        
-        MEDIA --> SD
-        SD --> |"lookup"| UI
-        SD --> DM
-    end
-
-    subgraph Stealth["Stealth & Distribution Layer"]
-        subgraph StealthAI["AI Stealth (NOT IMPLEMENTED)"]
-            GAN[GANScheduler<br/>Behavioral Mimicry]
-            RL[RLPolicyAgent<br/>Adaptive Decisions]
+        subgraph METADATA["Metadata"]
+            IMG_META["image_metadata.json"]
+            TXT_META["text_metadata.json"]
+            AUD_META["audio_metadata.json"]
         end
         
-        subgraph Distribution["Distribution"]
-            SCHED[Scheduler]
-            DISP[Dispatcher]
-            
-            subgraph Channels["Channels"]
-                CC[ConsoleChannel]
-                LFC[LocalFolderChannel]
-                EC2[EmailChannel<br/>NOT IMPLEMENTED]
-                SC2[SocialChannel<br/>NOT IMPLEMENTED]
-            end
+        UNIFIED --> NORMALIZER
+        UNIFIED --> CLIP
+        UNIFIED --> CLAP
+        UNIFIED --> INDICES
+        UNIFIED --> METADATA
+    end
+
+    subgraph DISTRIBUTION["Distribution Layer"]
+        DISPATCHER["Dispatcher"]
+        SCHEDULER["Scheduler"]
+        NOISE["NoiseController"]
+        
+        subgraph CHANNELS["Channels"]
+            CONSOLE["ConsoleChannel"]
+            FOLDER["LocalFolderChannel"]
+            FUTURE["Future: Social, Email..."]
         end
         
-        EM --> GAN
-        GAN -.-> |"schedule"| SCHED
-        EM --> SCHED
-        RL -.-> |"policy"| DISP
-        SCHED --> DISP
-        DISP --> CC
-        DISP --> LFC
-        DISP -.-> EC2
-        DISP -.-> SC2
+        NOISE --> SCHEDULER
+        SCHEDULER --> DISPATCHER
+        DISPATCHER --> CHANNELS
     end
 
-    subgraph Analysis["Analysis Layer (NOT IMPLEMENTED)"]
-        METRICS[StealthMetrics]
-        BENCH[Benchmarks]
-        ADV[AdversarialTesting]
-    end
-
-    subgraph Output["Output Layer"]
-        OUT_SEQ[/"Media Sequence<br/>[img, txt, img, ...]"/]
-        OUT_MSG[/"Reconstructed Message"/]
-    end
-
-    CC --> OUT_SEQ
-    LFC --> OUT_SEQ
-    DM --> OUT_MSG
-
-    %% Styling
-    classDef implemented fill:#90EE90,stroke:#228B22,color:#000
-    classDef notImplemented fill:#FFB6C1,stroke:#DC143C,color:#000
-    classDef partial fill:#FFE4B5,stroke:#FF8C00,color:#000
+    CLI_ENCODE --> ENCODER
+    CLI_DECODE --> DECODER
+    CLI_DEMO --> ENCODER
+    CLI_DEMO --> DECODER
+    CLI_DIST --> ENCODER
+    CLI_DIST --> DISTRIBUTION
     
-    class FL,WL,IE,TE,UI,MI_IMG,MI_TXT,SN,SC,SE,EC,SD,DM,SCHED,DISP,CC,LFC implemented
-    class AL,AE,MI_AUD,GAN,RL,EC2,SC2,METRICS,BENCH,ADV notImplemented
+    ENCODER --> |"MediaSequence"| DISTRIBUTION
 ```
 
-## Layer Descriptions
+## Data Flow Overview
 
-### 1. Corpus & Indexing Layer
-- **Loaders**: Load raw data from datasets (Flickr8k images, Wikipedia text)
-- **Embedders**: Generate CLIP embeddings (512-dim vectors)
-- **Index**: FAISS-based similarity search with score normalization
+```mermaid
+flowchart LR
+    subgraph INPUT
+        MSG["Secret Message"]
+    end
+    
+    subgraph ENCODE
+        CHUNK["Chunk Message"]
+        SEARCH["Search Corpus"]
+        SELECT["Select Media"]
+    end
+    
+    subgraph TRANSMIT
+        NOISE["Add Noise"]
+        SCHEDULE["Schedule"]
+        DISPATCH["Dispatch"]
+    end
+    
+    subgraph OUTPUT
+        CHAN["Channels"]
+    end
+    
+    subgraph RECEIVE
+        IDS["Media IDs"]
+    end
+    
+    subgraph DECODE
+        LOOKUP["Lookup IDs"]
+        VERIFY["Verify"]
+        EXTRACT["Extract Content"]
+    end
+    
+    subgraph RESULT
+        MEANING["Reconstructed<br/>Meaning"]
+    end
+    
+    MSG --> CHUNK --> SEARCH --> SELECT
+    SELECT --> |"Media IDs"| NOISE --> SCHEDULE --> DISPATCH --> CHAN
+    CHAN -.-> |"observed"| IDS
+    IDS --> LOOKUP --> VERIFY --> EXTRACT --> MEANING
+```
 
-### 2. Encoding/Decoding Engine
-- **SemanticChunker**: Splits messages into semantic chunks with synonym expansion
-- **SemanticEncoder**: Maps chunks to media using FAISS search
-- **SemanticDecoder**: Reverses the process to reconstruct messages
+## Component Details
 
-### 3. Stealth & Distribution Layer
-- **GANScheduler** (NOT IMPLEMENTED): Generate human-like transmission schedules
-- **RLPolicyAgent** (NOT IMPLEMENTED): Adaptive decision-making based on threat level
-- **Dispatcher**: Routes media to channels using configurable policies
-- **Channels**: Output destinations (console, local folder, etc.)
+### 1. CLI Layer
+- **Purpose**: User interface for all DCASS operations
+- **Commands**: encode, decode, demo, distribute
+- **Implementation**: `src/cli/main.py`
 
-### 4. Analysis Layer (NOT IMPLEMENTED)
-- **StealthMetrics**: Measure detectability of encoded sequences
-- **Benchmarks**: Accuracy, latency, capacity measurements
-- **AdversarialTesting**: Test against detection algorithms
+### 2. Engine Layer
+- **Purpose**: Core encoding/decoding logic
+- **Components**:
+  - `SemanticEncoder`: Message → Media sequence
+  - `SemanticDecoder`: Media IDs → Reconstructed meaning
+  - `SemanticChunker`: Message → Semantic chunks
+- **Implementation**: `src/engine/`
 
-## Implementation Status
+### 3. Corpus Layer
+- **Purpose**: Multi-modal semantic search
+- **Components**:
+  - `UnifiedSemanticIndex`: Unified search across modalities
+  - `ScoreNormalizer`: Cross-modal score normalization
+  - `CLIPEmbedder`: Image/text embeddings (512-dim)
+  - `AudioEmbedder`: Audio embeddings via CLAP (512-dim)
+- **Implementation**: `src/corpus/`
 
-| Component | Status |
-|-----------|--------|
-| FlickrLoader | Implemented |
-| WikipediaLoader | Implemented |
-| AudioLoader | Not Implemented |
-| ImageEmbedder (CLIP) | Implemented |
-| TextEmbedder (CLIP) | Implemented |
-| AudioEmbedder | Not Implemented |
-| UnifiedSemanticIndex | Implemented |
-| ScoreNormalizer | Implemented |
-| SemanticChunker | Implemented |
-| SemanticEncoder | Implemented |
-| SemanticDecoder | Implemented |
-| Scheduler | Implemented (basic) |
-| Dispatcher | Implemented |
-| GANScheduler | Not Implemented |
-| RLPolicyAgent | Not Implemented |
-| Analysis Layer | Not Implemented |
+### 4. Distribution Layer
+- **Purpose**: Human-like content distribution
+- **Components**:
+  - `NoiseController`: Adds jitter, skips, gaps
+  - `Scheduler`: Timed dispatch
+  - `Dispatcher`: Channel selection (round-robin, etc.)
+  - Channels: Console, LocalFolder, (future: Social, Email)
+- **Implementation**: `src/distribution/`
