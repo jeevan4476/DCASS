@@ -20,14 +20,10 @@ Rules:
 """
 
 import sys
-import json
 
-# -------- New Engine (Phase 3) --------
+# -------- Engine (Phase 3) --------
 from src.engine.encoder import SemanticEncoder
 from src.engine.decoder import SemanticDecoder
-
-# -------- Legacy Encoder (backward compatibility) --------
-from src.embeddings.step8_sentence_to_images import sentence_to_image_sequence
 
 # -------- Distribution Layer --------
 from src.distribution.channel_registry import get_available_channels
@@ -66,13 +62,12 @@ def _get_decoder() -> SemanticDecoder:
 # CLI COMMANDS
 # =========================================================
 
-def run_encode(message: str, use_new_encoder: bool = True):
+def run_encode(message: str):
     """
     Encode a message into a media sequence.
     
     Args:
         message: Secret message to encode
-        use_new_encoder: Use new SemanticEncoder (True) or legacy (False)
     """
     print("\n" + "=" * 60)
     print("DCASS ENCODER")
@@ -80,47 +75,25 @@ def run_encode(message: str, use_new_encoder: bool = True):
     print(f"Message: \"{message}\"")
     print("-" * 60)
     
-    if use_new_encoder:
-        try:
-            encoder = _get_encoder()
-            result = encoder.encode(message)
-            
-            print(f"\nChunks ({len(result.chunks)}):")
-            for chunk in result.chunks:
-                print(f"  - \"{chunk.original}\"")
-            
-            print(f"\nEncoded Media Sequence:")
-            for i, enc in enumerate(result.encoded, 1):
-                print(f"  {i}. [{enc.media.modality}] {enc.media.id}")
-                print(f"      Score: {enc.media.normalized_score:.3f}")
-                content_preview = enc.media.content[:50] + "..." if len(enc.media.content) > 50 else enc.media.content
-                print(f"      Content: \"{content_preview}\"")
-            
-            print(f"\nModality breakdown: {result.modality_breakdown}")
-            print(f"\nMedia IDs for transmission:")
-            print(f"  {result.media_ids}")
-            
-            return result.media_ids
-            
-        except Exception as e:
-            print(f"\nNew encoder failed: {e}")
-            print("Falling back to legacy encoder...")
-            use_new_encoder = False
+    encoder = _get_encoder()
+    result = encoder.encode(message)
     
-    if not use_new_encoder:
-        # Legacy encoder
-        print("\n[Using Legacy Encoder]")
-        image_sequence = sentence_to_image_sequence(message)
-        
-        if not image_sequence:
-            print("No images produced.")
-            return []
-        
-        print(f"\nEncoded image sequence ({len(image_sequence)} images):")
-        for idx, img in enumerate(image_sequence, 1):
-            print(f"  {idx}. {img}")
-        
-        return image_sequence
+    print(f"\nChunks ({len(result.chunks)}):")
+    for chunk in result.chunks:
+        print(f"  - \"{chunk.original}\"")
+    
+    print(f"\nEncoded Media Sequence:")
+    for i, enc in enumerate(result.encoded, 1):
+        print(f"  {i}. [{enc.media.modality}] {enc.media.id}")
+        print(f"      Score: {enc.media.normalized_score:.3f}")
+        content_preview = enc.media.content[:50] + "..." if len(enc.media.content) > 50 else enc.media.content
+        print(f"      Content: \"{content_preview}\"")
+    
+    print(f"\nModality breakdown: {result.modality_breakdown}")
+    print(f"\nMedia IDs for transmission:")
+    print(f"  {result.media_ids}")
+    
+    return result.media_ids
 
 
 def run_decode(media_ids: list[str]):
@@ -187,7 +160,7 @@ def run_demo(message: str):
     decode_result = decoder.decode(transmitted_ids)
     
     print(f"  Verified: {decode_result.verification_rate * 100:.1f}%")
-    print(f"  Contents: {decode_result.semantic_content}")
+    print(f"  Contents: {decode_result.contents}")
     
     # Compare
     print("\n[STEP 4: VERIFICATION]")
@@ -225,31 +198,34 @@ def run_distribute(message: str, profile_name: str):
         print(f"Available profiles: {list(ACTIVITY_PROFILES.keys())}")
         return
     
-    # Encode using legacy encoder (more stable for distribution)
+    # Encode using new engine
     print("\n[ENCODING]")
-    image_sequence = sentence_to_image_sequence(message, verbose=False)
+    encoder = _get_encoder()
+    encode_result = encoder.encode(message)
     
-    if not image_sequence:
-        print("No images produced. Exiting.")
+    media_ids = encode_result.media_ids
+    
+    if not media_ids:
+        print("No media produced. Exiting.")
         return
     
-    print(f"  Produced {len(image_sequence)} image(s)")
-    for i, img_id in enumerate(image_sequence, 1):
-        print(f"    {i}. {img_id}")
+    print(f"  Produced {len(media_ids)} media item(s)")
+    for i, media_id in enumerate(media_ids, 1):
+        print(f"    {i}. {media_id}")
     
     # Apply noise
     print("\n[APPLYING NOISE]")
     noise = NoiseController(seed=42, **profile)
-    images, delays = noise.apply(
-        image_sequence,
-        base_delays=[3] * len(image_sequence)
+    items, delays = noise.apply(
+        media_ids,
+        base_delays=[3] * len(media_ids)
     )
     
-    if not images:
-        print("All images skipped by noise model.")
+    if not items:
+        print("All items skipped by noise model.")
         return
     
-    print(f"  After noise: {len(images)} images")
+    print(f"  After noise: {len(items)} items")
     print(f"  Delays: {delays}")
     
     # Setup dispatcher
@@ -265,7 +241,7 @@ def run_distribute(message: str, profile_name: str):
     )
     
     print("Executing scheduled distribution...")
-    scheduler.run(images)
+    scheduler.run(items)
     
     print("\n" + "=" * 60)
     print("DISTRIBUTION COMPLETE")
