@@ -54,12 +54,13 @@ class ScoreNormalizer:
     a comparable 0-1 range.
     """
     
-    # Default calibration values based on empirical observations
+    # Default calibration values based on empirical measurement (20 queries x 5 results)
     # Format: {modality: (mean, std)}
+    # Updated: 2026-02-17 based on test_encoding.py calibration measurement
     DEFAULT_CALIBRATION = {
-        "image": (0.28, 0.06),   # CLIP text-to-image typical range
-        "text": (0.65, 0.15),    # CLIP text-to-text typical range  
-        "audio": (0.25, 0.08),   # CLAP text-to-audio typical range
+        "image": (0.271, 0.028),  # CLIP text-to-image measured range
+        "text": (0.885, 0.053),   # CLIP text-to-text measured range  
+        "audio": (0.100, 0.021),  # CLAP text-to-audio measured range
     }
     
     def __init__(self, calibration: dict[str, tuple[float, float]] = None):

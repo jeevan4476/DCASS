@@ -62,21 +62,27 @@ def _get_decoder() -> SemanticDecoder:
 # CLI COMMANDS
 # =========================================================
 
-def run_encode(message: str):
+# Valid diversity modes
+DIVERSITY_MODES = ["best", "round_robin", "balanced"]
+
+
+def run_encode(message: str, diversity_mode: str = "best"):
     """
     Encode a message into a media sequence.
     
     Args:
         message: Secret message to encode
+        diversity_mode: How to select modalities (best, round_robin, balanced)
     """
     print("\n" + "=" * 60)
     print("DCASS ENCODER")
     print("=" * 60)
     print(f"Message: \"{message}\"")
+    print(f"Diversity mode: {diversity_mode}")
     print("-" * 60)
     
     encoder = _get_encoder()
-    result = encoder.encode(message)
+    result = encoder.encode(message, diversity_mode=diversity_mode)
     
     print(f"\nChunks ({len(result.chunks)}):")
     for chunk in result.chunks:
@@ -126,23 +132,25 @@ def run_decode(media_ids: list[str]):
     return result
 
 
-def run_demo(message: str):
+def run_demo(message: str, diversity_mode: str = "best"):
     """
     Full encode -> decode demo with verification.
     
     Args:
         message: Message to encode and decode
+        diversity_mode: How to select modalities (best, round_robin, balanced)
     """
     print("\n" + "=" * 60)
     print("DCASS FULL DEMO: ENCODE -> DECODE")
     print("=" * 60)
     print(f"Original Message: \"{message}\"")
+    print(f"Diversity mode: {diversity_mode}")
     print("=" * 60)
     
     # Encode
     print("\n[STEP 1: ENCODING]")
     encoder = _get_encoder()
-    encode_result = encoder.encode(message)
+    encode_result = encoder.encode(message, diversity_mode=diversity_mode)
     
     print(f"  Chunks: {[c.original for c in encode_result.chunks]}")
     print(f"  Media IDs: {encode_result.media_ids}")
@@ -261,10 +269,15 @@ Usage:
   python -m src.cli.main <command> [args]
 
 Commands:
-  encode <message>                 Encode message into media sequence
+  encode <message> [mode]          Encode message into media sequence
   decode <id1,id2,...>             Decode media IDs to semantic meaning
-  demo <message>                   Full encode -> decode demonstration
+  demo <message> [mode]            Full encode -> decode demonstration
   distribute <message> [profile]   Encode and distribute with timing
+
+Diversity Modes (for encode/demo):
+  best        - Select highest-scoring item regardless of modality (default)
+  round_robin - Cycle through image -> text -> audio for each chunk
+  balanced    - Balance output across all modalities
 
 Profiles (for distribute):
   casual    - Relaxed posting pattern
@@ -274,9 +287,9 @@ Profiles (for distribute):
   debug     - No delays (testing)
 
 Examples:
-  python -m src.cli.main encode "Meet me at the cafe at noon"
-  python -m src.cli.main decode "flickr8k_00123,flickr8k_00456"
-  python -m src.cli.main demo "The secret meeting is tomorrow"
+  python -m src.cli.main encode "Meet me at the cafe" round_robin
+  python -m src.cli.main demo "The secret meeting is tomorrow" balanced
+  python -m src.cli.main decode "flickr8k_00123,wiki_00456,audio_000123"
   python -m src.cli.main distribute "Hello world" casual
 """)
 
@@ -292,10 +305,16 @@ def main():
     if command == "encode":
         if len(sys.argv) < 3:
             print("Error: encode requires a message")
-            print("Usage: python -m src.cli.main encode <message>")
+            print("Usage: python -m src.cli.main encode <message> [mode]")
             return
         message = sys.argv[2]
-        run_encode(message)
+        # Parse optional diversity mode
+        diversity_mode = sys.argv[3] if len(sys.argv) > 3 else "best"
+        if diversity_mode not in DIVERSITY_MODES:
+            print(f"Invalid diversity mode: {diversity_mode}")
+            print(f"Valid modes: {DIVERSITY_MODES}")
+            return
+        run_encode(message, diversity_mode)
     
     elif command == "decode":
         if len(sys.argv) < 3:
@@ -310,10 +329,16 @@ def main():
     elif command == "demo":
         if len(sys.argv) < 3:
             print("Error: demo requires a message")
-            print("Usage: python -m src.cli.main demo <message>")
+            print("Usage: python -m src.cli.main demo <message> [mode]")
             return
         message = sys.argv[2]
-        run_demo(message)
+        # Parse optional diversity mode
+        diversity_mode = sys.argv[3] if len(sys.argv) > 3 else "best"
+        if diversity_mode not in DIVERSITY_MODES:
+            print(f"Invalid diversity mode: {diversity_mode}")
+            print(f"Valid modes: {DIVERSITY_MODES}")
+            return
+        run_demo(message, diversity_mode)
     
     elif command == "distribute":
         if len(sys.argv) < 3:
