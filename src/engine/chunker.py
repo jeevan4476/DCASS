@@ -110,7 +110,7 @@ class SemanticChunker:
         "blue": ["azure", "navy"],
         "green": ["emerald", "verdant"],
         
-        # Abstract concepts (new)
+        # Abstract concepts 
         "meeting": ["gathering", "conference", "assembly"],
         "secret": ["hidden", "confidential", "private"],
         "important": ["significant", "crucial", "vital"],
@@ -140,21 +140,21 @@ class SemanticChunker:
         r"|\s+for\s+the\s+"  # "for the" often separates concepts
         r"|\s+in\s+the\s+"   # "in the"
         r"|\s+of\s+the\s+"   # "of the"
-        r"|\s+at\s+the\s+"   # "at the" (new)
-        r"|\s+to\s+the\s+"   # "to the" (new)
-        r"|\s+on\s+the\s+"   # "on the" (new)
-        r"|\s+with\s+the\s+" # "with the" (new)
-        r"|\s+with\s+a\s+"   # "with a" (new)
-        r"|\s+from\s+the\s+" # "from the" (new)
+        r"|\s+at\s+the\s+"   # "at the" 
+        r"|\s+to\s+the\s+"   # "to the" 
+        r"|\s+on\s+the\s+"   # "on the" 
+        r"|\s+with\s+the\s+" # "with the" 
+        r"|\s+with\s+a\s+"   # "with a" 
+        r"|\s+from\s+the\s+" # "from the" 
         r"|\s+about\s+"      # about
         r"|\s+around\s+"     # around
-        r"|\s+over\s+the\s+" # "over the" (new)
-        r"|\s+under\s+the\s+"# "under the" (new)
-        r"|\s+into\s+the\s+" # "into the" (new)
-        r"|\s+through\s+"    # through (new)
-        r"|\s+during\s+"     # during (new)
-        r"|\s+after\s+"      # after (new)
-        r"|\s+before\s+"     # before (new)
+        r"|\s+over\s+the\s+" # "over the" 
+        r"|\s+under\s+the\s+"# "under the" 
+        r"|\s+into\s+the\s+" # "into the" 
+        r"|\s+through\s+"    # through 
+        r"|\s+during\s+"     # during 
+        r"|\s+after\s+"      # after 
+        r"|\s+before\s+"     # before 
     )
     
     def __init__(
