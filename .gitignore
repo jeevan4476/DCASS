@@ -18,6 +18,7 @@ data/raw/
 data/indices/
 data/cache/
 data/processed/
+data/audio
 
 # Model files (download or train locally)
 models/

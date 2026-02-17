@@ -111,8 +111,7 @@ def main():
     dataset = load_dataset(
         DATASET_NAME,
         split="train",
-        cache_dir=str(CACHE_DIR),
-        trust_remote_code=True
+        cache_dir=str(CACHE_DIR)
     )
     
     # Decode audio
@@ -134,12 +133,21 @@ def main():
     # Check embedding dimension
     print("Checking CLAP embedding dimension...")
     with torch.no_grad():
-        test_input = processor(
-            audios=[np.zeros(SAMPLE_RATE, dtype=np.float32)],  # 1 second silence
+        # Use feature_extractor for audio input (ClapProcessor delegates to it)
+        test_audio = np.zeros(SAMPLE_RATE, dtype=np.float32)  # 1 second silence
+        test_input = processor.feature_extractor(
+            raw_speech=[test_audio],
             sampling_rate=SAMPLE_RATE,
-            return_tensors="pt"
-        ).to(device)
+            return_tensors="pt",
+            padding=True
+        )
+        test_input = {k: v.to(device) for k, v in test_input.items()}
         test_emb = model.get_audio_features(**test_input)
+        # Handle both tensor and BaseModelOutputWithPooling returns
+        if hasattr(test_emb, 'pooler_output'):
+            test_emb = test_emb.pooler_output
+        elif hasattr(test_emb, 'embeds'):
+            test_emb = test_emb.embeds
         embed_dim = test_emb.shape[1]
     print(f"Embedding dimension: {embed_dim}")
     
@@ -169,7 +177,14 @@ def main():
                     audio_arrays.append(audio_array)
                     
                     # Get text/transcript if available
-                    text = example.get("text", "") or example.get("transcript", "") or example.get("sentence", "")
+                    # The libretta dataset uses 'transcription' and 'transcription_normalised'
+                    text = (
+                        example.get("transcription_normalised", "") or 
+                        example.get("transcription", "") or 
+                        example.get("text", "") or 
+                        example.get("transcript", "") or 
+                        example.get("sentence", "")
+                    )
                     
                     batch_metadata.append({
                         "id": f"audio_{i + j:06d}",
@@ -186,16 +201,22 @@ def main():
             if not audio_arrays:
                 continue
             
-            # Encode batch
-            inputs = processor(
-                audios=audio_arrays,
+            # Encode batch using feature_extractor
+            inputs = processor.feature_extractor(
+                raw_speech=audio_arrays,
                 sampling_rate=SAMPLE_RATE,
                 return_tensors="pt",
                 padding=True
-            ).to(device)
+            )
+            inputs = {k: v.to(device) for k, v in inputs.items()}
             
             with torch.no_grad():
                 batch_embeddings = model.get_audio_features(**inputs)
+                # Handle both tensor and BaseModelOutputWithPooling returns
+                if hasattr(batch_embeddings, 'pooler_output'):
+                    batch_embeddings = batch_embeddings.pooler_output
+                elif hasattr(batch_embeddings, 'embeds'):
+                    batch_embeddings = batch_embeddings.embeds
                 batch_embeddings = batch_embeddings / batch_embeddings.norm(dim=-1, keepdim=True)
             
             embeddings.append(batch_embeddings.cpu().numpy())

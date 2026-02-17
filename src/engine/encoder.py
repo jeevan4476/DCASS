@@ -136,7 +136,7 @@ class SemanticEncoder:
         """
         self._index = index
         self._chunker = chunker or SemanticChunker(expand_synonyms=expand_synonyms)
-        self.default_modalities = default_modalities or ["image", "text"]
+        self.default_modalities = default_modalities or ["image", "text", "audio"]
         self._base_path = base_path
         self._device = device
         self._loaded = False
@@ -148,7 +148,7 @@ class SemanticEncoder:
             self._index = UnifiedSemanticIndex(
                 base_path=self._base_path,
                 device=self._device,
-                enabled_modalities=self.default_modalities + ["audio"]
+                enabled_modalities=self.default_modalities
             )
         return self._index
     
@@ -340,7 +340,7 @@ def encode_message(
         EncodingResult
     """
     encoder = SemanticEncoder(
-        default_modalities=modalities or ["image", "text"],
+        default_modalities=modalities or ["image", "text", "audio"],
         base_path=base_path
     )
     encoder.load()
