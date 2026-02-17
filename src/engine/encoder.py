@@ -21,6 +21,9 @@ from typing import Optional, Literal
 from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem, Modality
 from src.engine.chunker import SemanticChunker, SemanticChunk
 
+# Diversity mode type
+DiversityMode = Literal["best", "round_robin", "balanced"]
+
 
 @dataclass
 class EncodedChunk:
@@ -183,7 +186,8 @@ class SemanticEncoder:
         k_per_chunk: int = 1,
         keep_alternatives: int = 3,
         min_score: float = 0.0,
-        avoid_duplicates: bool = True
+        avoid_duplicates: bool = True,
+        diversity_mode: DiversityMode = "best"
     ) -> EncodingResult:
         """
         Encode a message into a media sequence.
@@ -195,6 +199,10 @@ class SemanticEncoder:
             keep_alternatives: How many alternatives to store
             min_score: Minimum normalized score threshold
             avoid_duplicates: If True, each chunk gets a unique media item
+            diversity_mode: How to select modalities for each chunk:
+                - "best": Select the highest-scoring item regardless of modality (default)
+                - "round_robin": Cycle through modalities (image -> text -> audio -> ...)
+                - "balanced": Prefer underrepresented modalities to balance output
             
         Returns:
             EncodingResult with encoded chunks and media sequence
@@ -213,15 +221,30 @@ class SemanticEncoder:
         # Step 2: Encode each chunk
         encoded_chunks = []
         used_ids: set[str] = set()  # Track used media IDs to avoid duplicates
+        modality_counts: dict[str, int] = {m: 0 for m in modalities}  # For balanced mode
         
-        for chunk in chunks:
+        for chunk_idx, chunk in enumerate(chunks):
+            # Determine which modality to search based on diversity mode
+            if diversity_mode == "round_robin":
+                # Cycle through modalities
+                target_modality = modalities[chunk_idx % len(modalities)]
+                search_modalities = [target_modality]
+            elif diversity_mode == "balanced":
+                # Prefer underrepresented modalities
+                # Sort modalities by count (ascending) and use the least common
+                sorted_modalities = sorted(modalities, key=lambda m: modality_counts.get(m, 0))
+                search_modalities = sorted_modalities  # Search all but prefer least common
+            else:
+                # "best" mode - search all modalities
+                search_modalities = modalities
+            
             # Search for matching media (request more to account for filtering)
             search_k = (k_per_chunk + keep_alternatives) * 3 if avoid_duplicates else k_per_chunk + keep_alternatives
             
             results = self.index.search(
                 query=chunk.text,
                 k=search_k,
-                modalities=modalities,
+                modalities=search_modalities,
                 min_score=min_score
             )
             
@@ -230,7 +253,16 @@ class SemanticEncoder:
                 results = self.index.search(
                     query=chunk.original,
                     k=search_k,
-                    modalities=modalities
+                    modalities=search_modalities
+                )
+            
+            # For round_robin: if no results in target modality, fall back to all modalities
+            if not results and diversity_mode == "round_robin":
+                results = self.index.search(
+                    query=chunk.text,
+                    k=search_k,
+                    modalities=modalities,
+                    min_score=min_score
                 )
             
             if not results:
@@ -242,6 +274,14 @@ class SemanticEncoder:
             
             if not results:
                 raise RuntimeError(f"No unique media found for chunk: '{chunk.original}' (all candidates already used)")
+            
+            # For balanced mode: re-sort results to prefer underrepresented modalities
+            if diversity_mode == "balanced":
+                # Sort by: (modality_count, -normalized_score) to prefer rare modalities with good scores
+                results = sorted(
+                    results,
+                    key=lambda r: (modality_counts.get(r.modality, 0), -r.normalized_score)
+                )
             
             # Select best match(es)
             selected = results[:k_per_chunk]
@@ -255,6 +295,8 @@ class SemanticEncoder:
                 ))
                 # Mark this ID as used
                 used_ids.add(media.id)
+                # Update modality count for balanced mode
+                modality_counts[media.modality] = modality_counts.get(media.modality, 0) + 1
         
         return EncodingResult(
             original_message=message,
@@ -305,6 +347,18 @@ class SemanticEncoder:
             List of text IDs
         """
         return self.encode_to_ids(message, modalities=["text"])
+    
+    def encode_audio_only(self, message: str) -> list[str]:
+        """
+        Encode using only audio.
+        
+        Args:
+            message: Secret message
+            
+        Returns:
+            List of audio IDs
+        """
+        return self.encode_to_ids(message, modalities=["audio"])
     
     def status(self) -> dict:
         """Get encoder status."""

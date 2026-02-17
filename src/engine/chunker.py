@@ -110,7 +110,7 @@ class SemanticChunker:
         "blue": ["azure", "navy"],
         "green": ["emerald", "verdant"],
         
-        # Abstract concepts (new)
+        # Abstract concepts 
         "meeting": ["gathering", "conference", "assembly"],
         "secret": ["hidden", "confidential", "private"],
         "important": ["significant", "crucial", "vital"],
@@ -129,20 +129,32 @@ class SemanticChunker:
         r"|\s+but\s+"        # but
         r"|\s+then\s+"       # then
         r"|\s+while\s+"      # while
-        r"|\s+or\s+"         # or (new)
-        r"|\s+that\s+"       # that (new)
-        r"|\s+which\s+"      # which (new)
-        r"|\s+where\s+"      # where (new)
-        r"|\s+when\s+"       # when (new)
+        r"|\s+or\s+"         # or
+        r"|\s+that\s+"       # that
+        r"|\s+which\s+"      # which
+        r"|\s+where\s+"      # where
+        r"|\s+when\s+"       # when
         r"|;\s*"             # semicolon
         r"|(?<!\w)'(?!\w)"   # single quote (not in contractions)
-        r'|"\s*'             # double quote (new)
-        r"|\s+for\s+the\s+"  # "for the" often separates concepts (new)
-        r"|\s+in\s+the\s+"   # "in the" (new)
-        r"|\s+of\s+the\s+"   # "of the" (new)
-        r"|\s+about\s+"      # about (new)
-        r"|\s+around\s+"     # around (new)
-        r"|\s+revolving\s+"  # revolving (new)
+        r'|"\s*'             # double quote
+        r"|\s+for\s+the\s+"  # "for the" often separates concepts
+        r"|\s+in\s+the\s+"   # "in the"
+        r"|\s+of\s+the\s+"   # "of the"
+        r"|\s+at\s+the\s+"   # "at the" 
+        r"|\s+to\s+the\s+"   # "to the" 
+        r"|\s+on\s+the\s+"   # "on the" 
+        r"|\s+with\s+the\s+" # "with the" 
+        r"|\s+with\s+a\s+"   # "with a" 
+        r"|\s+from\s+the\s+" # "from the" 
+        r"|\s+about\s+"      # about
+        r"|\s+around\s+"     # around
+        r"|\s+over\s+the\s+" # "over the" 
+        r"|\s+under\s+the\s+"# "under the" 
+        r"|\s+into\s+the\s+" # "into the" 
+        r"|\s+through\s+"    # through 
+        r"|\s+during\s+"     # during 
+        r"|\s+after\s+"      # after 
+        r"|\s+before\s+"     # before 
     )
     
     def __init__(
