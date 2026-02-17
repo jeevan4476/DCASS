@@ -13,6 +13,7 @@ Commands:
   search      Search the corpus for a query
   verify      Verify media IDs exist in corpus
   distribute  Encode and distribute with timing profiles
+  benchmark   Run semantic recovery benchmark
 """
 
 from __future__ import annotations
@@ -34,6 +35,9 @@ from src.distribution.dispatcher import Dispatcher
 from src.distribution.scheduler import Scheduler
 from src.distribution.noise import NoiseController
 from src.distribution.profiles import ACTIVITY_PROFILES
+
+# -------- Analysis --------
+# Imported lazily to avoid loading heavy dependencies on startup
 
 
 # =========================================================
@@ -510,6 +514,61 @@ def cmd_verify(args):
         return 1
 
 
+def cmd_benchmark(args):
+    """Run semantic recovery benchmark."""
+    from src.analysis.benchmarks import SemanticBenchmark
+    from src.analysis.benchmarks.report import generate_markdown_report
+    
+    print_header("DCASS SEMANTIC RECOVERY BENCHMARK")
+    
+    # Parse modes
+    if args.modes == "all":
+        modes = ["best", "round_robin", "balanced"]
+    else:
+        modes = [m.strip() for m in args.modes.split(",")]
+    
+    print_kv("Modes", ", ".join(modes))
+    print_kv("Quick mode", str(args.quick))
+    
+    # Initialize benchmark
+    benchmark = SemanticBenchmark()
+    
+    # Run benchmark
+    print_section("RUNNING BENCHMARK")
+    
+    if args.quick:
+        # Quick mode: 3 samples per category
+        results = benchmark.run(
+            modes=modes,  # type: ignore
+            max_samples_per_category=3,
+            verbose=not args.quiet
+        )
+    else:
+        results = benchmark.run(
+            modes=modes,  # type: ignore
+            verbose=not args.quiet
+        )
+    
+    # Print report
+    if not args.quiet:
+        benchmark.print_report(results)
+    
+    # Save results
+    output_path = Path(args.output) if args.output else None
+    saved_path = benchmark.save_results(results, output_path)  # type: ignore
+    print_success(f"Results saved to: {saved_path}")
+    
+    # Save markdown if requested
+    if args.markdown:
+        md_content = generate_markdown_report(results)
+        md_path = saved_path.with_suffix(".md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(md_content)
+        print_success(f"Markdown report saved to: {md_path}")
+    
+    return 0
+
+
 def cmd_distribute(args):
     """Encode and distribute with timing profiles."""
     print_header("DCASS DISTRIBUTION")
@@ -696,6 +755,36 @@ Examples:
         help="Activity profile (default: casual)"
     )
     
+    # Benchmark command
+    benchmark_parser = subparsers.add_parser(
+        "benchmark",
+        help="Run semantic recovery benchmark"
+    )
+    benchmark_parser.add_argument(
+        "--modes", "-m",
+        default="all",
+        help="Diversity modes to test: 'all' or comma-separated (default: all)"
+    )
+    benchmark_parser.add_argument(
+        "--quick", "-q",
+        action="store_true",
+        help="Quick benchmark with fewer samples (3 per category)"
+    )
+    benchmark_parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Minimal output during benchmark"
+    )
+    benchmark_parser.add_argument(
+        "--output", "-o",
+        help="Output path for results JSON"
+    )
+    benchmark_parser.add_argument(
+        "--markdown", "--md",
+        action="store_true",
+        help="Also save markdown report"
+    )
+    
     return parser
 
 
@@ -721,6 +810,7 @@ def main():
         "search": cmd_search,
         "verify": cmd_verify,
         "distribute": cmd_distribute,
+        "benchmark": cmd_benchmark,
     }
     
     handler = commands.get(args.command)

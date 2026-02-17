@@ -1,3 +1,17 @@
-"""DCASS Analysis Package - Benchmarks and Adversarial Testing."""
+"""
+DCASS Analysis Package.
 
-__all__ = []
+Provides tools for benchmarking and evaluating the DCASS steganography system.
+"""
+
+from src.analysis.benchmarks import (
+    SemanticBenchmark,
+    run_benchmark,
+    BenchmarkResults,
+)
+
+__all__ = [
+    "SemanticBenchmark",
+    "run_benchmark",
+    "BenchmarkResults",
+]
