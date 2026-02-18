@@ -25,3 +25,27 @@ class BaseChannel(ABC):
             "image_id": image_id,
             "timestamp": datetime.utcnow().isoformat()
         }
+
+    def _base_log_with_timestamp(
+        self,
+        image_id: str,
+        timestamp: str | None,
+        metadata: dict | None = None,
+    ) -> dict:
+        if timestamp is None:
+            log = self._base_log(image_id)
+        else:
+            log = {
+                "channel": self.name,
+                "image_id": image_id,
+                "timestamp": timestamp,
+            }
+
+        if metadata:
+            for k, v in metadata.items():
+                if k == "timestamp":
+                    continue
+                if k not in log:
+                    log[k] = v
+
+        return log
