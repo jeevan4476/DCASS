@@ -1,0 +1,296 @@
+#!/usr/bin/env python3
+# scripts/run_receiver.py
+"""
+Bob (Receiver) Daemon for DCASS Dockerized Simulation.
+
+Monitors a shared directory for incoming media files, reassembles sequences,
+and decodes the secret message using the SemanticDecoder.
+"""
+
+import argparse
+import asyncio
+import json
+import time
+from pathlib import Path
+from typing import List, Dict, Optional
+from dataclasses import dataclass, field
+from datetime import datetime
+import sys
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.engine.decoder import SemanticDecoder
+from src.corpus.index.unified_index import UnifiedSemanticIndex
+
+
+@dataclass
+class ReceivedPacket:
+    """Represents a received media packet."""
+    media_id: str
+    channel_id: int
+    sequence_number: int
+    timestamp: float
+    file_path: Path
+
+    def __lt__(self, other: 'ReceivedPacket') -> bool:
+        """Sort by sequence number."""
+        return self.sequence_number < other.sequence_number
+
+
+@dataclass
+class ReassemblyBuffer:
+    """
+    Buffer for collecting and reassembling out-of-order packets.
+
+    Since the RL agent might send packets out of order to maximize stealth,
+    we need to collect them, wait for a silence threshold, then reassemble.
+    """
+    packets: List[ReceivedPacket] = field(default_factory=list)
+    last_packet_time: float = field(default_factory=time.time)
+    silence_threshold: float = 10.0  # Seconds of silence before reassembly
+
+    def add_packet(self, packet: ReceivedPacket):
+        """Add a packet to the buffer."""
+        self.packets.append(packet)
+        self.last_packet_time = time.time()
+
+    def is_complete(self) -> bool:
+        """Check if we should reassemble (silence threshold reached)."""
+        if not self.packets:
+            return False
+
+        time_since_last = time.time() - self.last_packet_time
+        return time_since_last >= self.silence_threshold
+
+    def reassemble(self) -> List[str]:
+        """
+        Reassemble packets into ordered media ID sequence.
+
+        Sorts by sequence_number (from metadata) or timestamp if no sequence number.
+        """
+        if not self.packets:
+            return []
+
+        # Sort packets
+        sorted_packets = sorted(self.packets)
+
+        # Extract media IDs in order
+        media_ids = [p.media_id for p in sorted_packets]
+
+        # Clear buffer
+        self.packets.clear()
+
+        return media_ids
+
+    def __len__(self) -> int:
+        return len(self.packets)
+
+
+class ReceiverDaemon:
+    """
+    Asynchronous receiver daemon for DCASS.
+
+    Watches a shared directory for incoming media files, buffers them,
+    reassembles sequences, and decodes messages.
+    """
+
+    def __init__(
+        self,
+        watch_directory: Path,
+        silence_threshold: float = 10.0,
+        poll_interval: float = 1.0,
+        decoder: Optional[SemanticDecoder] = None
+    ):
+        """
+        Initialize receiver daemon.
+
+        Args:
+            watch_directory: Directory to monitor for incoming files
+            silence_threshold: Seconds of silence before reassembly
+            poll_interval: Seconds between directory polls
+            decoder: Pre-initialized SemanticDecoder (created if None)
+        """
+        self.watch_directory = Path(watch_directory)
+        self.watch_directory.mkdir(parents=True, exist_ok=True)
+
+        self.poll_interval = poll_interval
+        self.buffer = ReassemblyBuffer(silence_threshold=silence_threshold)
+
+        # Decoder
+        self._decoder = decoder
+        self._decoder_loaded = False
+
+        # Tracking
+        self.processed_files: set[str] = set()
+        self.decoded_messages: List[str] = []
+
+        print(f"[Receiver] Initialized")
+        print(f"  Watch directory: {self.watch_directory}")
+        print(f"  Silence threshold: {silence_threshold}s")
+
+    @property
+    def decoder(self) -> SemanticDecoder:
+        """Get decoder (lazy initialization)."""
+        if self._decoder is None:
+            print("[Receiver] Loading SemanticDecoder...")
+            self._decoder = SemanticDecoder()
+            # Note: In production, load the actual indices
+            # For simulation, we might skip loading or use mock indices
+            # self._decoder.load()
+            self._decoder_loaded = True
+        return self._decoder
+
+    def parse_packet_metadata(self, file_path: Path) -> Optional[ReceivedPacket]:
+        """
+        Parse metadata from a received file.
+
+        Expected filename format: {media_id}_{channel}_{sequence}.json
+
+        Args:
+            file_path: Path to received file
+
+        Returns:
+            ReceivedPacket or None if parsing fails
+        """
+        try:
+            # Read metadata file
+            with open(file_path, 'r') as f:
+                metadata = json.load(f)
+
+            packet = ReceivedPacket(
+                media_id=metadata.get("media_id", "unknown"),
+                channel_id=metadata.get("channel_id", 0),
+                sequence_number=metadata.get("sequence_number", 0),
+                timestamp=metadata.get("timestamp", time.time()),
+                file_path=file_path
+            )
+
+            return packet
+
+        except Exception as e:
+            print(f"[Receiver] Error parsing {file_path}: {e}")
+            return None
+
+    async def watch_directory(self):
+        """
+        Asynchronously watch directory for new files.
+
+        Monitors for .json files (packet metadata), parses them,
+        and adds to reassembly buffer.
+        """
+        print(f"[Receiver] Watching {self.watch_directory}...")
+
+        while True:
+            # Scan for new files
+            for file_path in self.watch_directory.glob("*.json"):
+                # Skip if already processed
+                if file_path.name in self.processed_files:
+                    continue
+
+                # Parse packet
+                packet = self.parse_packet_metadata(file_path)
+                if packet is not None:
+                    print(
+                        f"[Receiver] Received packet: {packet.media_id} "
+                        f"(seq={packet.sequence_number}, channel={packet.channel_id})"
+                    )
+                    self.buffer.add_packet(packet)
+
+                # Mark as processed
+                self.processed_files.add(file_path.name)
+
+            # Check if buffer is ready for reassembly
+            if self.buffer.is_complete():
+                await self.reassemble_and_decode()
+
+            # Sleep before next poll
+            await asyncio.sleep(self.poll_interval)
+
+    async def reassemble_and_decode(self):
+        """Reassemble buffered packets and decode message."""
+        print(f"[Receiver] Silence threshold reached. Reassembling {len(self.buffer)} packets...")
+
+        # Reassemble media ID sequence
+        media_ids = self.buffer.reassemble()
+
+        if not media_ids:
+            print("[Receiver] No packets to reassemble")
+            return
+
+        print(f"[Receiver] Reassembled sequence: {media_ids}")
+
+        # Decode message (if decoder is available)
+        try:
+            # Note: In simulation mode without actual indices,
+            # we would just log the sequence
+            print(f"[Receiver] Media sequence: {media_ids}")
+
+            # Uncomment when indices are available:
+            # decoded_message = self.decoder.decode(media_ids)
+            # print(f"[Receiver] Decoded message: {decoded_message}")
+            # self.decoded_messages.append(decoded_message)
+
+        except Exception as e:
+            print(f"[Receiver] Decoding error: {e}")
+
+        print("-" * 60)
+
+    async def run(self):
+        """Run the receiver daemon."""
+        print("[Receiver] Starting daemon...")
+        try:
+            await self.watch_directory()
+        except KeyboardInterrupt:
+            print("\n[Receiver] Shutting down...")
+        except Exception as e:
+            print(f"[Receiver] Fatal error: {e}")
+            raise
+
+    def run_sync(self):
+        """Run the daemon synchronously (for compatibility)."""
+        asyncio.run(self.run())
+
+
+def main():
+    """Main entry point for receiver daemon."""
+    parser = argparse.ArgumentParser(
+        description="DCASS Receiver Daemon (Bob)"
+    )
+    parser.add_argument(
+        "--watch",
+        type=str,
+        default="/app/shared_channel",
+        help="Directory to watch for incoming packets"
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="Silence threshold (seconds) before reassembly"
+    )
+    parser.add_argument(
+        "--poll-interval",
+        type=float,
+        default=1.0,
+        help="Seconds between directory polls"
+    )
+
+    args = parser.parse_args()
+
+    # Create receiver
+    receiver = ReceiverDaemon(
+        watch_directory=Path(args.watch),
+        silence_threshold=args.timeout,
+        poll_interval=args.poll_interval
+    )
+
+    # Run daemon
+    print("=" * 60)
+    print("DCASS Receiver Daemon (Bob)")
+    print("=" * 60)
+    receiver.run_sync()
+
+
+if __name__ == "__main__":
+    main()

@@ -73,3 +73,25 @@ phase3_out/
 *.key
 credentials.json
 secrets.yaml
+.env.local
+.env.*.local
+api_keys.json
+config.local.yaml
+
+# Claude Code private files (DO NOT COMMIT TO PUBLIC REPO)
+.claude/
+Claude.md
+CLAUDE.md
+
+# Docker simulation artifacts
+shared_channel/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# Private notes and drafts
+NOTES.md
+TODO_PRIVATE.md
+drafts/
+personal/

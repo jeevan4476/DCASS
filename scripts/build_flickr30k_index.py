@@ -171,7 +171,7 @@ def build_flickr30k_index(
     output_dir: Path,
     batch_size: int = 32,
     max_images: Optional[int] = None,
-    use_gpu: bool = False,
+    use_gpu: bool = True,
     merge_existing: bool = True
 ) -> bool:
     """
