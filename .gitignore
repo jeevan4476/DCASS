@@ -1,25 +1,75 @@
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+.Python
+*.so
+
+# Virtual environments
 .env
 .venv/
 venv/
+ENV/
+env/
 
-data/
+# Data directories (large files, download locally)
+data/raw/
+data/indices/
+data/cache/
+data/processed/
+data/audio
 
+# Model files (download or train locally)
 models/
+*.pt
+*.pth
+*.onnx
+*.bin
 
+# Jupyter notebooks checkpoints
 .ipynb_checkpoints/
+*.ipynb_checkpoints
 
+# OS files
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
+*~
 
+# Logs
 *.log
+logs/
 
+# Build artifacts
 build/
 dist/
 *.egg-info/
+*.egg
 
+# IDE settings
 .vscode/
 .idea/
+*.sublime-project
+*.sublime-workspace
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.pytype/
+
+# Phase 3 output (temporary)
+phase3_out/
+
+# Secrets (never commit!)
+*.pem
+*.key
+credentials.json
+secrets.yaml
