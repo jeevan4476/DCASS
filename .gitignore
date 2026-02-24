@@ -19,7 +19,7 @@ data/indices/
 data/cache/
 data/processed/
 data/audio
-data/benchmarks
+data/benchmarks/
 
 # Model files (download or train locally)
 models/
