@@ -1,325 +1,281 @@
+# src/engine/decoder.py
 """
-Semantic Decoder
+SemanticDecoder - Core decoding engine for DCASS.
 
-Decodes messages from sequences of media references.
+Decodes media sequences back into semantic meaning by:
+1. Looking up each media item in the corpus
+2. Extracting semantic content (caption/text)
+3. Verifying items exist in the corpus (tamper detection)
+4. Reconstructing the original semantic meaning
 
-In DCASS steganography:
-- The sender (Alice) encodes a message into a sequence of media
-- The receiver (Bob) receives the media sequence
-- Bob uses this decoder to recover the original meaning
-
-The decoder works by:
-1. Taking the sequence of media IDs/paths
-2. Looking up each media's semantic embedding
-3. Finding the closest semantic match for each chunk
-4. Reconstructing the message from the matched meanings
-
-NOTE: Full message recovery requires a shared codebook or semantic mapping.
-This implementation provides the infrastructure for the decoding process.
+Architecture:
+    Media Sequence -> Lookup Each ID -> Extract Content -> Verify -> Semantic Meaning
 """
 
-from dataclasses import dataclass
-from typing import List, Optional, Dict, Any, Union
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from pathlib import Path
-import json
+from typing import Optional, Literal
 
-from src.corpus.index.unified_index import UnifiedSemanticIndex, SearchResult
+from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem, Modality
 
 
 @dataclass
-class DecodedMessage:
-    """
-    Represents a decoded message from a media sequence.
-    
-    Attributes:
-        media_sequence: The input media IDs/paths
-        semantic_chunks: The semantic meaning of each media item
-        reconstructed_text: Attempted text reconstruction (if possible)
-        confidence_scores: Confidence score for each decoded chunk
-        metadata: Additional decoding metadata
-    """
-    media_sequence: List[str]
-    semantic_chunks: List[str]
-    reconstructed_text: str
-    confidence_scores: List[float]
-    metadata: Dict[str, Any]
-    
-    @property
-    def avg_confidence(self) -> float:
-        """Average confidence score across all chunks."""
-        if not self.confidence_scores:
-            return 0.0
-        return sum(self.confidence_scores) / len(self.confidence_scores)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        return {
-            "media_sequence": self.media_sequence,
-            "semantic_chunks": self.semantic_chunks,
-            "reconstructed_text": self.reconstructed_text,
-            "confidence_scores": self.confidence_scores,
-            "metadata": self.metadata
-        }
-    
-    def to_json(self, indent: int = 2) -> str:
-        """Convert to JSON string."""
-        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
+class DecodedItem:
+    """Represents a decoded media item."""
+    media_id: str
+    modality: Modality
+    content: str  # The semantic content (text/caption)
+    verified: bool  # Whether item was found in corpus
+    metadata: dict = field(default_factory=dict)
     
     def __repr__(self) -> str:
-        return f"DecodedMessage(chunks={len(self.semantic_chunks)}, confidence={self.avg_confidence:.2f})"
+        status = "VERIFIED" if self.verified else "UNVERIFIED"
+        return f"DecodedItem({self.modality}:{self.media_id}, {status})"
+
+
+@dataclass
+class DecodingResult:
+    """Complete result of decoding a media sequence."""
+    media_ids: list[str]
+    decoded: list[DecodedItem]
+    
+    @property
+    def contents(self) -> list[str]:
+        """Get the semantic content from each decoded item."""
+        return [d.content for d in self.decoded if d.content]
+    
+    @property
+    def reconstructed_meaning(self) -> str:
+        """Reconstruct the semantic meaning from all items."""
+        return " | ".join(self.contents)
+    
+    @property
+    def verification_rate(self) -> float:
+        """Percentage of items that were verified in corpus."""
+        if not self.decoded:
+            return 0.0
+        verified = sum(1 for d in self.decoded if d.verified)
+        return verified / len(self.decoded)
+    
+    @property
+    def all_verified(self) -> bool:
+        """Check if all items were verified."""
+        return all(d.verified for d in self.decoded)
+    
+    def summary(self) -> str:
+        """Human-readable summary of decoding."""
+        lines = [
+            f"Media IDs: {self.media_ids}",
+            f"Decoded items: {len(self.decoded)}",
+            f"Verification rate: {self.verification_rate:.1%}",
+            "",
+            "Decoded content:",
+        ]
+        for i, item in enumerate(self.decoded, 1):
+            status = "✓" if item.verified else "✗"
+            lines.append(f"  {i}. [{status}] {item.modality}:{item.media_id}")
+            lines.append(f"      \"{item.content[:60]}...\"" if len(item.content) > 60 else f"      \"{item.content}\"")
+        
+        lines.append("")
+        lines.append(f"Reconstructed: \"{self.reconstructed_meaning}\"")
+        return "\n".join(lines)
+    
+    def __repr__(self) -> str:
+        return f"DecodingResult(items={len(self.decoded)}, verified={self.verification_rate:.0%})"
 
 
 class SemanticDecoder:
     """
-    Decodes messages from sequences of media references.
+    Core semantic decoder for DCASS steganography.
     
-    The decoder reverses the encoding process by looking up
-    the semantic meaning of each media item in the sequence.
+    Transforms sequences of media IDs back into semantic meaning
+    by looking up items in the unified corpus index.
+    
+    Key Features:
+    - Multi-modal decoding (images, text, audio)
+    - Corpus verification (tamper detection)
+    - Semantic content extraction
     
     Usage:
-        >>> decoder = SemanticDecoder()
-        >>> decoded = decoder.decode(["img_001.jpg", "img_042.jpg", "img_103.jpg"])
-        >>> print(decoded.reconstructed_text)
-        "sunrise park meeting"
+        # Initialize with index
+        decoder = SemanticDecoder()
+        decoder.load()  # Loads indices
+        
+        # Decode a media sequence
+        result = decoder.decode(["flickr8k_00123", "wiki_00456"])
+        
+        # Get reconstructed meaning
+        print(result.reconstructed_meaning)
+        
+        # Check verification
+        if result.all_verified:
+            print("All items verified in corpus")
     
     Attributes:
-        index: The UnifiedSemanticIndex for lookups
-        default_modality: Default modality for decoding
+        index: UnifiedSemanticIndex for corpus lookup
     """
     
     def __init__(
         self,
-        index: Optional[UnifiedSemanticIndex] = None,
-        default_modality: str = "image"
+        index: UnifiedSemanticIndex = None,
+        base_path: Path = None,
+        device: str = None
     ):
         """
         Initialize the decoder.
         
         Args:
-            index: UnifiedSemanticIndex instance. If None, creates new one.
-            default_modality: Default modality for decoding
+            index: Pre-configured UnifiedSemanticIndex (created if None)
+            base_path: Base path for indices (passed to index if created)
+            device: Device for models (passed to index if created)
         """
-        self.index = index or UnifiedSemanticIndex()
-        self.default_modality = default_modality
+        self._index = index
+        self._base_path = base_path
+        self._device = device
         self._loaded = False
-        self._metadata_lookup: Dict[str, Dict[str, Any]] = {}
     
-    def load(self, modalities: Optional[List[str]] = None) -> None:
+    @property
+    def index(self) -> UnifiedSemanticIndex:
+        """Get the unified index (creates if needed)."""
+        if self._index is None:
+            self._index = UnifiedSemanticIndex(
+                base_path=self._base_path,
+                device=self._device
+            )
+        return self._index
+    
+    def load(self, modalities: list[Modality] = None) -> dict[str, bool]:
         """
-        Load indices and build metadata lookup.
+        Load the underlying indices.
         
         Args:
-            modalities: List of modalities to load. If None, loads all.
-        """
-        self.index.load(modalities)
-        self._loaded = True
-        
-        # Build reverse lookup from metadata
-        self._build_metadata_lookup()
-    
-    def _build_metadata_lookup(self) -> None:
-        """Build lookup table from media ID to metadata."""
-        self._metadata_lookup.clear()
-        
-        for modality in self.index.loaded_modalities:
-            idx = self.index.get_index(modality)
-            for meta in idx.metadata:
-                media_id = meta.get("id", "")
-                if media_id:
-                    self._metadata_lookup[media_id] = {
-                        **meta,
-                        "_modality": modality
-                    }
-    
-    def decode(
-        self,
-        media_sequence: List[str],
-        modality: Optional[str] = None
-    ) -> DecodedMessage:
-        """
-        Decode a sequence of media references into semantic meaning.
-        
-        Args:
-            media_sequence: List of media IDs or file paths
-            modality: Which modality the media belongs to
+            modalities: Specific modalities to load
             
         Returns:
-            DecodedMessage containing the decoded information
+            Dict mapping modality to load success status
+        """
+        print("Loading semantic decoder...")
+        status = self.index.load(modalities)
+        self._loaded = any(status.values())
+        return status
+    
+    def is_loaded(self) -> bool:
+        """Check if decoder is ready for use."""
+        return self._loaded
+    
+    def decode(self, media_ids: list[str]) -> DecodingResult:
+        """
+        Decode a sequence of media IDs into semantic meaning.
+        
+        Args:
+            media_ids: List of media IDs to decode
             
-        Raises:
-            RuntimeError: If index not loaded
+        Returns:
+            DecodingResult with decoded items and reconstructed meaning
         """
         if not self._loaded:
-            raise RuntimeError("Index not loaded. Call load() first.")
+            raise RuntimeError("Decoder not loaded. Call load() first.")
         
-        modality = modality or self.default_modality
+        decoded_items = []
         
-        semantic_chunks: List[str] = []
-        confidence_scores: List[float] = []
+        for media_id in media_ids:
+            # Look up item in corpus
+            item = self.index.get_by_id(media_id)
+            
+            if item:
+                # Item found - extract content
+                content = item.content
+                if item.modality == "text":
+                    # For text, content is the text itself
+                    content = item.metadata.get("text", item.content)
+                elif item.modality == "image":
+                    # For images, use caption if available
+                    content = item.metadata.get("caption", item.metadata.get("text", item.content))
+                elif item.modality == "audio":
+                    # For audio, use transcript/text if available
+                    content = item.metadata.get("text", item.metadata.get("transcript", item.content))
+                
+                decoded_items.append(DecodedItem(
+                    media_id=media_id,
+                    modality=item.modality,
+                    content=content,
+                    verified=True,
+                    metadata=item.metadata
+                ))
+            else:
+                # Item not found - unverified
+                decoded_items.append(DecodedItem(
+                    media_id=media_id,
+                    modality="text",  # Default
+                    content=f"[UNVERIFIED: {media_id}]",
+                    verified=False,
+                    metadata={}
+                ))
         
-        for media_ref in media_sequence:
-            # Try to find this media in our index
-            chunk, confidence = self._decode_single(media_ref, modality)
-            semantic_chunks.append(chunk)
-            confidence_scores.append(confidence)
-        
-        # Reconstruct text by joining semantic chunks
-        reconstructed_text = " ".join(semantic_chunks)
-        
-        metadata = {
-            "modality": modality,
-            "num_items": len(media_sequence),
-            "avg_confidence": sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
-        }
-        
-        return DecodedMessage(
-            media_sequence=media_sequence,
-            semantic_chunks=semantic_chunks,
-            reconstructed_text=reconstructed_text,
-            confidence_scores=confidence_scores,
-            metadata=metadata
+        return DecodingResult(
+            media_ids=media_ids,
+            decoded=decoded_items
         )
     
-    def _decode_single(
-        self,
-        media_ref: str,
-        modality: str
-    ) -> tuple:
+    def decode_to_text(self, media_ids: list[str]) -> str:
         """
-        Decode a single media reference.
+        Decode media IDs and return just the reconstructed text.
+        
+        Convenience method for simple decoding.
         
         Args:
-            media_ref: Media ID or file path
-            modality: Which modality to use
+            media_ids: List of media IDs
             
         Returns:
-            Tuple of (semantic_chunk, confidence_score)
+            Reconstructed semantic meaning as string
         """
-        # First, try direct lookup by ID
-        if media_ref in self._metadata_lookup:
-            meta = self._metadata_lookup[media_ref]
-            
-            # The semantic content is in the metadata
-            # For images, this might be a caption or description
-            # For text, this is the text itself
-            content = meta.get("caption", meta.get("content", meta.get("text", "")))
-            
-            if content:
-                return (content, 1.0)
-        
-        # Try lookup by filename (strip path if present)
-        filename = Path(media_ref).name
-        for media_id, meta in self._metadata_lookup.items():
-            if Path(media_id).name == filename:
-                content = meta.get("caption", meta.get("content", meta.get("text", "")))
-                if content:
-                    return (content, 0.9)  # Slightly lower confidence for filename match
-        
-        # If we can't find it, return placeholder
-        return (f"[unknown:{media_ref}]", 0.0)
+        result = self.decode(media_ids)
+        return result.reconstructed_meaning
     
-    def decode_from_encoded(
-        self,
-        encoded_path: Union[str, Path]
-    ) -> DecodedMessage:
+    def verify_sequence(self, media_ids: list[str]) -> tuple[bool, float]:
         """
-        Decode from an EncodedMessage JSON file.
-        
-        This is useful for verification - decoding what was encoded.
+        Verify that all media IDs exist in the corpus.
         
         Args:
-            encoded_path: Path to the encoded message JSON
+            media_ids: List of media IDs to verify
             
         Returns:
-            DecodedMessage
+            Tuple of (all_verified, verification_rate)
         """
-        from src.engine.encoder import EncodedMessage
-        
-        encoded = EncodedMessage.load(Path(encoded_path))
-        media_ids = encoded.media_ids
-        
-        return self.decode(media_ids, modality=encoded.modality_used)
+        result = self.decode(media_ids)
+        return result.all_verified, result.verification_rate
     
-    def verify_encoding(
-        self,
-        encoded_path: Union[str, Path]
-    ) -> Dict[str, Any]:
-        """
-        Verify an encoding by comparing decoded to original.
-        
-        Args:
-            encoded_path: Path to the encoded message JSON
-            
-        Returns:
-            Dictionary with verification results
-        """
-        from src.engine.encoder import EncodedMessage
-        
-        encoded = EncodedMessage.load(Path(encoded_path))
-        decoded = self.decode(encoded.media_ids, modality=encoded.modality_used)
-        
-        # Compare chunks
-        chunk_matches = []
-        for orig_chunk, decoded_chunk in zip(encoded.chunks, decoded.semantic_chunks):
-            # Simple similarity check (could be enhanced with embeddings)
-            match_score = self._simple_similarity(orig_chunk, decoded_chunk)
-            chunk_matches.append(match_score)
-        
+    def status(self) -> dict:
+        """Get decoder status."""
         return {
-            "original_message": encoded.original_message,
-            "reconstructed_text": decoded.reconstructed_text,
-            "num_chunks": len(encoded.chunks),
-            "chunk_match_scores": chunk_matches,
-            "avg_match_score": sum(chunk_matches) / len(chunk_matches) if chunk_matches else 0,
-            "avg_confidence": decoded.avg_confidence
+            "loaded": self._loaded,
+            "index": self.index.status() if self._loaded else "not loaded"
         }
     
-    def _simple_similarity(self, text1: str, text2: str) -> float:
-        """
-        Simple word overlap similarity.
-        
-        This is a basic metric - in production, use embedding similarity.
-        
-        Args:
-            text1: First text
-            text2: Second text
-            
-        Returns:
-            Similarity score (0.0 to 1.0)
-        """
-        words1 = set(text1.lower().split())
-        words2 = set(text2.lower().split())
-        
-        if not words1 or not words2:
-            return 0.0
-        
-        intersection = words1 & words2
-        union = words1 | words2
-        
-        return len(intersection) / len(union)
-    
     def __repr__(self) -> str:
-        loaded_str = "loaded" if self._loaded else "not loaded"
-        return f"SemanticDecoder(modality={self.default_modality}, {loaded_str})"
+        status = "loaded" if self._loaded else "not loaded"
+        return f"SemanticDecoder({status})"
 
 
 # Convenience function for quick decoding
-def decode_sequence(
-    media_sequence: List[str],
-    modality: str = "image"
-) -> DecodedMessage:
+def decode_media_sequence(
+    media_ids: list[str],
+    base_path: Path = None
+) -> DecodingResult:
     """
-    Convenience function to decode a media sequence.
+    Quick decode a media sequence.
     
-    Creates a decoder, loads the index, and decodes the sequence.
+    Creates decoder, loads indices, and decodes in one call.
     
     Args:
-        media_sequence: List of media IDs/paths
-        modality: Which modality to use
+        media_ids: Media IDs to decode
+        base_path: Custom index path
         
     Returns:
-        DecodedMessage object
+        DecodingResult
     """
-    decoder = SemanticDecoder(default_modality=modality)
-    decoder.load([modality])
-    return decoder.decode(media_sequence)
+    decoder = SemanticDecoder(base_path=base_path)
+    decoder.load()
+    return decoder.decode(media_ids)

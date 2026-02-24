@@ -1,213 +1,622 @@
 # src/cli/main.py
 """
-DCASS CLI — Unified Entry Point
+DCASS CLI - Dynamic Context-Aware Semantic Steganography
 
-CLI CONTRACT
-------------
+A modern, user-friendly CLI for encoding and decoding steganographic messages
+using semantic similarity matching across multiple modalities.
+
 Commands:
-  encode <message>           - Encode a message into mixed media sequence
-  encode-h <message>         - Hierarchical encoding with synonym expansion
-  decode <media_ids>         - Decode a media sequence  
-  distribute <message> [profile] - Encode and distribute with timing
-  status                     - Show index status
-
-KEY FEATURES:
-1. Mixed-Modality Encoding - searches ALL indices, returns MIX of images and texts
-2. Hierarchical Encoding - uses synonym expansion and concept decomposition
-3. Score Normalization - fair comparison across modalities
-
-Example:
-  Input: "Secret meeting at dawn in the park"
-  Output: [whisper.jpg, "The sun rises...", park_bench.jpg]
-         [image,       text,              image]
+  encode      Encode a message into media sequence
+  decode      Decode media IDs back to semantic meaning  
+  demo        Full encode -> decode demonstration
+  status      Show system status and index information
+  search      Search the corpus for a query
+  verify      Verify media IDs exist in corpus
+  distribute  Encode and distribute with timing profiles
+  benchmark   Run semantic recovery benchmark
 """
 
+from __future__ import annotations
+
 import sys
+import argparse
+import json
+from typing import Literal, cast
 from pathlib import Path
-from typing import Optional, Literal
 
-# Add project root to path for imports
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+# -------- Engine --------
+from src.engine.encoder import SemanticEncoder, DiversityMode
+from src.engine.decoder import SemanticDecoder
+from src.engine.chunker import SemanticChunker
 
-# Type alias
-Modality = Literal["text", "image", "audio", "auto"]
+# -------- Distribution Layer --------
+from src.distribution.channel_registry import get_available_channels
+from src.distribution.dispatcher import Dispatcher
+from src.distribution.scheduler import Scheduler
+from src.distribution.noise import NoiseController
+from src.distribution.profiles import ACTIVITY_PROFILES
+
+# -------- Analysis --------
+# Imported lazily to avoid loading heavy dependencies on startup
 
 
-def run_encode(message: str, modality: Modality = "auto", hierarchical: bool = False):
-    """
-    Encode a message using mixed-modality search.
+# =========================================================
+# ANSI Colors (for terminals that support it)
+# =========================================================
+
+class Colors:
+    """ANSI color codes for terminal output."""
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
     
-    By default (modality="auto"), searches ALL indices and returns
-    the best match regardless of type. This produces a mixed sequence.
+    # Standard colors
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
     
-    Args:
-        message: Message to encode
-        modality: Target modality
-        hierarchical: Use hierarchical encoding with synonyms
-    """
-    from src.engine.encoder import SemanticEncoder
+    # Bright colors
+    BRIGHT_RED = "\033[91m"
+    BRIGHT_GREEN = "\033[92m"
+    BRIGHT_YELLOW = "\033[93m"
+    BRIGHT_BLUE = "\033[94m"
+    BRIGHT_MAGENTA = "\033[95m"
+    BRIGHT_CYAN = "\033[96m"
     
-    mode_name = "Hierarchical" if hierarchical else "Mixed-Modality"
-    print(f"\n[DCASS] {mode_name} Semantic Encoding")
-    print("-" * 50)
-    print(f"Input: {message}")
-    print(f"Mode: {modality} {'(mixed image+text)' if modality == 'auto' else ''}")
-    if hierarchical:
-        print("Features: synonym expansion, concept decomposition")
+    @classmethod
+    def disable(cls):
+        """Disable all colors."""
+        for attr in dir(cls):
+            if attr.isupper() and not attr.startswith('_'):
+                setattr(cls, attr, "")
+
+
+# Check if colors should be disabled
+if not sys.stdout.isatty() or "--no-color" in sys.argv:
+    Colors.disable()
+
+
+def colored(text: str, color: str) -> str:
+    """Wrap text in color codes."""
+    return f"{color}{text}{Colors.RESET}"
+
+
+def bold(text: str) -> str:
+    """Make text bold."""
+    return f"{Colors.BOLD}{text}{Colors.RESET}"
+
+
+def dim(text: str) -> str:
+    """Make text dim."""
+    return f"{Colors.DIM}{text}{Colors.RESET}"
+
+
+# Modality colors
+MODALITY_COLORS = {
+    "image": Colors.BRIGHT_BLUE,
+    "text": Colors.BRIGHT_GREEN,
+    "audio": Colors.BRIGHT_MAGENTA,
+}
+
+
+def modality_badge(modality: str) -> str:
+    """Create a colored badge for modality."""
+    color = MODALITY_COLORS.get(modality, Colors.WHITE)
+    return f"{color}[{modality}]{Colors.RESET}"
+
+
+# =========================================================
+# SHARED STATE (lazy loaded)
+# =========================================================
+
+_encoder: SemanticEncoder | None = None
+_decoder: SemanticDecoder | None = None
+
+
+def _get_encoder(quiet: bool = False) -> SemanticEncoder:
+    """Get or create the shared encoder instance."""
+    global _encoder
+    if _encoder is None:
+        if not quiet:
+            print(dim("Loading encoder..."))
+        _encoder = SemanticEncoder(expand_synonyms=True)
+        _encoder.load()
+    return _encoder
+
+
+def _get_decoder(quiet: bool = False) -> SemanticDecoder:
+    """Get or create the shared decoder instance."""
+    global _decoder
+    if _decoder is None:
+        if not quiet:
+            print(dim("Loading decoder..."))
+        _decoder = SemanticDecoder()
+        _decoder.load()
+    return _decoder
+
+
+# =========================================================
+# OUTPUT HELPERS
+# =========================================================
+
+def print_header(title: str, char: str = "="):
+    """Print a styled header."""
+    width = 60
     print()
+    print(colored(char * width, Colors.CYAN))
+    print(colored(f" {title}", Colors.BOLD))
+    print(colored(char * width, Colors.CYAN))
+
+
+def print_section(title: str):
+    """Print a section header."""
+    print(f"\n{colored('[', Colors.DIM)}{colored(title, Colors.YELLOW)}{colored(']', Colors.DIM)}")
+
+
+def print_kv(key: str, value: str, indent: int = 2):
+    """Print a key-value pair."""
+    spaces = " " * indent
+    print(f"{spaces}{dim(key + ':')} {value}")
+
+
+def print_success(message: str):
+    """Print a success message."""
+    print(f"{colored('OK', Colors.GREEN)} {message}")
+
+
+def print_warning(message: str):
+    """Print a warning message."""
+    print(f"{colored('WARN', Colors.YELLOW)} {message}")
+
+
+def print_error(message: str):
+    """Print an error message."""
+    print(f"{colored('ERR', Colors.RED)} {message}")
+
+
+# =========================================================
+# CLI COMMANDS
+# =========================================================
+
+def cmd_encode(args):
+    """Encode a message into a media sequence."""
+    print_header("DCASS ENCODER")
     
-    # Create encoder with specified modality
-    encoder = SemanticEncoder(default_modality=modality)
+    print_kv("Message", f'"{args.message}"')
+    print_kv("Mode", args.mode)
+    if args.modality != "all":
+        print_kv("Modality", args.modality)
     
-    try:
-        encoder.load()  # Load all available indices
-    except FileNotFoundError as e:
-        print(f"Error: Index not found. Run 'python scripts/build_indices.py' first.")
-        print(f"Details: {e}")
-        return None
+    encoder = _get_encoder()
     
-    # Encode message (hierarchical or basic)
-    if hierarchical:
-        encoded = encoder.encode_hierarchical(message)
+    # Determine modalities
+    if args.modality == "all":
+        modalities = ["image", "text", "audio"]
     else:
-        encoded = encoder.encode(message)
+        modalities = [args.modality]
     
-    # Display results
-    print("Encoded Sequence:")
-    print("-" * 50)
+    try:
+        result = encoder.encode(
+            args.message,
+            modalities=modalities,  # type: ignore
+            diversity_mode=cast(DiversityMode, args.mode)
+        )
+    except ValueError as e:
+        print_error(str(e))
+        return 1
+    except RuntimeError as e:
+        print_error(str(e))
+        return 1
     
-    for i, result in enumerate(encoded.sequence, 1):
-        modality_icon = "IMG" if result.modality == "image" else "TXT"
-        print(f"{i}. [{modality_icon}]")
+    # Show chunks
+    print_section(f"CHUNKS ({len(result.chunks)})")
+    for i, chunk in enumerate(result.chunks, 1):
+        quote = dim('"')
+        print(f"  {i}. {quote}{chunk.original}{quote}")
+    
+    # Show encoded media
+    print_section(f"ENCODED MEDIA ({len(result.encoded)})")
+    for i, enc in enumerate(result.encoded, 1):
+        badge = modality_badge(enc.media.modality)
+        score = f"{enc.media.normalized_score:.3f}"
+        score_color = Colors.GREEN if enc.media.normalized_score > 0.5 else Colors.YELLOW
         
-        # Show content (truncated for text)
-        content = result.content
-        if result.modality == "text" and len(content) > 60:
+        print(f"  {i}. {badge} {colored(enc.media.id, Colors.CYAN)}")
+        print(f"     Score: {colored(score, score_color)}")
+        
+        content = enc.media.content
+        if len(content) > 55:
+            content = content[:55] + "..."
+        print(f"     {dim(content)}")
+    
+    # Summary
+    print_section("SUMMARY")
+    breakdown = result.modality_breakdown
+    parts = [f"{k}: {v}" for k, v in breakdown.items()]
+    print_kv("Modalities", ", ".join(parts))
+    
+    # Output media IDs
+    print_section("OUTPUT")
+    ids_str = ",".join(result.media_ids)
+    print(f"  {ids_str}")
+    
+    # Copy-friendly format
+    if args.json:
+        print_section("JSON OUTPUT")
+        output = {
+            "message": args.message,
+            "media_ids": result.media_ids,
+            "modalities": breakdown,
+            "chunks": [c.original for c in result.chunks]
+        }
+        print(json.dumps(output, indent=2))
+    
+    return 0
+
+
+def cmd_decode(args):
+    """Decode media IDs back to semantic meaning."""
+    print_header("DCASS DECODER")
+    
+    # Parse media IDs
+    media_ids = [id.strip() for id in args.ids.split(",") if id.strip()]
+    
+    if not media_ids:
+        print_error("No valid media IDs provided")
+        return 1
+    
+    print_kv("Media IDs", str(len(media_ids)))
+    
+    decoder = _get_decoder()
+    result = decoder.decode(media_ids)
+    
+    # Show decoded items
+    print_section(f"DECODED ITEMS ({len(result.decoded)})")
+    for i, item in enumerate(result.decoded, 1):
+        badge = modality_badge(item.modality)
+        
+        if item.verified:
+            status = colored("OK", Colors.GREEN)
+        else:
+            status = colored("UNVERIFIED", Colors.RED)
+        
+        print(f"  {i}. {status} {badge} {colored(item.media_id, Colors.CYAN)}")
+        
+        content = item.content
+        if len(content) > 60:
             content = content[:60] + "..."
-        print(f"   Content: {content}")
-        print(f"   Score: {result.score:.4f}")
-        
-        if i <= len(encoded.chunks):
-            print(f"   Chunk: '{encoded.chunks[i-1]}'")
-        
-        # Show matched query if hierarchical
-        if hierarchical and "matched_query" in result.metadata:
-            matched = result.metadata["matched_query"]
-            if matched != encoded.chunks[i-1] if i <= len(encoded.chunks) else True:
-                print(f"   Matched via: '{matched}'")
-        print()
+        print(f"     {dim(content)}")
     
-    # Show statistics
-    stats = encoder.get_statistics(encoded)
-    print("Statistics:")
-    print(f"  Chunks: {stats['num_chunks']}")
-    print(f"  Media items: {stats['num_media']}")
-    print(f"  Avg similarity: {stats['avg_similarity']:.4f}")
-    print(f"  Mixed modality: {stats['is_mixed_modality']}")
-    print(f"  Distribution: {stats['modality_distribution']}")
+    # Verification summary
+    print_section("VERIFICATION")
+    rate = result.verification_rate
+    rate_str = f"{rate * 100:.1f}%"
+    rate_color = Colors.GREEN if rate == 1.0 else (Colors.YELLOW if rate > 0.5 else Colors.RED)
+    print_kv("Rate", colored(rate_str, rate_color))
     
-    if hierarchical and "variants_per_chunk" in encoded.metadata:
-        total_variants = sum(encoded.metadata["variants_per_chunk"])
-        print(f"  Query variants tried: {total_variants}")
-    print()
+    if result.all_verified:
+        print_success("All items verified in corpus")
+    else:
+        unverified = [d.media_id for d in result.decoded if not d.verified]
+        print_warning(f"Unverified IDs: {unverified}")
     
-    return encoded
+    # Reconstructed meaning
+    print_section("RECONSTRUCTED MEANING")
+    print(f"  {result.reconstructed_meaning}")
+    
+    if args.json:
+        print_section("JSON OUTPUT")
+        output = {
+            "media_ids": media_ids,
+            "verified": result.all_verified,
+            "verification_rate": rate,
+            "contents": result.contents,
+            "reconstructed": result.reconstructed_meaning
+        }
+        print(json.dumps(output, indent=2))
+    
+    return 0
 
 
-def run_decode(media_ids: list, modality: Modality = "auto"):
-    """
-    Decode a media sequence.
-    """
-    from src.engine.decoder import SemanticDecoder
+def cmd_demo(args):
+    """Full encode -> decode demonstration."""
+    print_header("DCASS DEMO: ENCODE -> DECODE")
     
-    print("\n[DCASS] Semantic Decoding")
-    print("-" * 40)
-    print(f"Input: {len(media_ids)} media items")
-    print()
+    print_kv("Message", f'"{args.message}"')
+    print_kv("Mode", args.mode)
     
-    # Create decoder and load index
-    decoder = SemanticDecoder(default_modality="image")  # Default for lookup
+    # Step 1: Encode
+    print_section("STEP 1: ENCODING")
+    encoder = _get_encoder()
     
     try:
-        decoder.load()  # Load all indices
-    except FileNotFoundError as e:
-        print(f"Error: Index not found.")
-        print(f"Details: {e}")
-        return None
+        encode_result = encoder.encode(
+            args.message,
+            diversity_mode=cast(DiversityMode, args.mode)
+        )
+    except (ValueError, RuntimeError) as e:
+        print_error(str(e))
+        return 1
     
-    # Decode
-    decoded = decoder.decode(media_ids)
+    print_kv("Chunks", str(len(encode_result.chunks)))
+    print_kv("Media items", str(len(encode_result.encoded)))
     
-    # Display results
-    print("Decoded Message:")
-    print("-" * 40)
-    print(decoded.reconstructed_text)
+    breakdown = encode_result.modality_breakdown
+    parts = [f"{k}={v}" for k, v in breakdown.items()]
+    print_kv("Modalities", " ".join(parts))
+    
+    for i, enc in enumerate(encode_result.encoded, 1):
+        badge = modality_badge(enc.media.modality)
+        print(f"    {i}. {badge} {enc.media.id}")
+    
+    # Step 2: Transmission simulation
+    print_section("STEP 2: TRANSMISSION")
+    transmitted_ids = encode_result.media_ids
+    print_kv("Transmitting", f"{len(transmitted_ids)} media item(s)")
+    print(f"    IDs: {dim(','.join(transmitted_ids))}")
+    
+    # Step 3: Decode
+    print_section("STEP 3: DECODING")
+    decoder = _get_decoder()
+    decode_result = decoder.decode(transmitted_ids)
+    
+    rate = decode_result.verification_rate
+    rate_str = f"{rate * 100:.1f}%"
+    rate_color = Colors.GREEN if rate == 1.0 else Colors.YELLOW
+    print_kv("Verified", colored(rate_str, rate_color))
+    
+    # Step 4: Compare
+    print_section("STEP 4: COMPARISON")
+    print_kv("Original", f'"{args.message}"')
+    print_kv("Decoded", f'"{decode_result.reconstructed_meaning}"')
+    
+    # Final status
     print()
-    print(f"Confidence: {decoded.avg_confidence:.2f}")
+    if decode_result.all_verified:
+        print_success("Demo complete - all items verified")
+    else:
+        print_warning("Demo complete - some items unverified")
     
-    return decoded
+    return 0
 
 
-def run_distribute(message: str, profile_name: str = "casual", modality: Modality = "auto"):
-    """
-    Full encoding + distribution pipeline.
-    Uses mixed-modality by default.
-    """
-    from src.engine.encoder import SemanticEncoder
-    from src.distribution.channel_registry import get_available_channels
-    from src.distribution.dispatcher import Dispatcher
-    from src.distribution.scheduler import Scheduler
-    from src.distribution.noise import NoiseController
-    from src.distribution.profiles import ACTIVITY_PROFILES
+def cmd_status(args):
+    """Show system status and index information."""
+    print_header("DCASS STATUS")
     
-    print("\n[DCASS] Distribution Pipeline (Mixed-Modality)")
-    print("-" * 50)
-    print(f"Message: {message}")
-    print(f"Profile: {profile_name}")
-    print(f"Mode: {modality}")
-    print()
+    # Check indices
+    print_section("INDICES")
     
-    # ---- Encode with mixed modality ----
-    print("[Encoding] Using mixed-modality search...")
-    encoder = SemanticEncoder(default_modality=modality)
+    indices_path = Path(__file__).parent.parent.parent / "data" / "indices"
     
-    try:
-        encoder.load()
-    except FileNotFoundError as e:
-        print(f"Error: Index not found. Run 'python scripts/build_indices.py' first.")
-        return
+    index_files = {
+        "image": ("image.index", "image_metadata.json"),
+        "text": ("text.index", "text_metadata.json"),
+        "audio": ("audio.index", "audio_metadata.json"),
+    }
     
-    encoded = encoder.encode(message)
+    total_items = 0
+    for modality, (index_file, meta_file) in index_files.items():
+        index_path = indices_path / index_file
+        meta_path = indices_path / meta_file
+        
+        if index_path.exists() and meta_path.exists():
+            try:
+                import faiss
+                idx = faiss.read_index(str(index_path))
+                count = idx.ntotal
+                total_items += count
+                status = colored("OK", Colors.GREEN)
+                info = f"{count:,} items"
+            except Exception as e:
+                status = colored("ERR", Colors.RED)
+                info = str(e)
+        else:
+            status = colored("MISSING", Colors.RED)
+            info = "Index not found"
+        
+        badge = modality_badge(modality)
+        print(f"  {badge} {status} - {info}")
     
-    if not encoded.sequence:
-        print("No media produced. Exiting.")
-        return
+    print_kv("Total items", f"{total_items:,}", indent=0)
     
-    print(f"Produced {len(encoded.sequence)} media item(s)")
-    print(f"Modality mix: {encoded.modality_distribution}")
+    # System info
+    print_section("SYSTEM")
     
-    # ---- Distribute ----
-    profile = ACTIVITY_PROFILES.get(profile_name)
-    if profile is None:
-        print(f"Unknown profile: {profile_name}")
-        print(f"Available: {list(ACTIVITY_PROFILES.keys())}")
-        return
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device_color = Colors.GREEN if device == "cuda" else Colors.YELLOW
+    print_kv("Device", colored(device, device_color))
+    print_kv("Indices path", str(indices_path))
     
-    noise = NoiseController(seed=42, **profile)
+    return 0
+
+
+def cmd_search(args):
+    """Search the corpus for a query."""
+    print_header("DCASS SEARCH")
     
-    # Get media paths
-    media_paths = encoded.media_paths
+    print_kv("Query", f'"{args.query}"')
+    print_kv("Results", str(args.k))
+    if args.modality != "all":
+        print_kv("Modality", args.modality)
     
-    media_items, delays = noise.apply(
-        media_paths,
-        base_delays=[3] * len(media_paths)
+    encoder = _get_encoder()
+    
+    # Determine modalities
+    if args.modality == "all":
+        modalities = ["image", "text", "audio"]
+    else:
+        modalities = [args.modality]
+    
+    results = encoder.index.search(
+        args.query,
+        k=args.k,
+        modalities=modalities  # type: ignore
     )
     
-    if not media_items:
-        print("All items skipped by noise model.")
-        return
+    print_section(f"RESULTS ({len(results)})")
     
+    for i, item in enumerate(results, 1):
+        badge = modality_badge(item.modality)
+        score = f"{item.normalized_score:.3f}"
+        score_color = Colors.GREEN if item.normalized_score > 0.5 else Colors.YELLOW
+        
+        print(f"  {i}. {badge} {colored(item.id, Colors.CYAN)} ({colored(score, score_color)})")
+        
+        content = item.content
+        if len(content) > 60:
+            content = content[:60] + "..."
+        print(f"     {dim(content)}")
+    
+    return 0
+
+
+def cmd_verify(args):
+    """Verify media IDs exist in corpus."""
+    print_header("DCASS VERIFY")
+    
+    # Parse media IDs
+    media_ids = [id.strip() for id in args.ids.split(",") if id.strip()]
+    
+    if not media_ids:
+        print_error("No valid media IDs provided")
+        return 1
+    
+    print_kv("IDs to verify", str(len(media_ids)))
+    
+    decoder = _get_decoder()
+    all_verified, rate = decoder.verify_sequence(media_ids)
+    
+    print_section("RESULTS")
+    
+    for media_id in media_ids:
+        item = decoder.index.get_by_id(media_id)
+        if item:
+            badge = modality_badge(item.modality)
+            print(f"  {colored('OK', Colors.GREEN)} {badge} {media_id}")
+        else:
+            print(f"  {colored('MISSING', Colors.RED)} {media_id}")
+    
+    print_section("SUMMARY")
+    rate_str = f"{rate * 100:.1f}%"
+    rate_color = Colors.GREEN if rate == 1.0 else Colors.RED
+    print_kv("Verification rate", colored(rate_str, rate_color))
+    
+    if all_verified:
+        print_success("All IDs verified")
+        return 0
+    else:
+        print_warning("Some IDs not found in corpus")
+        return 1
+
+
+def cmd_benchmark(args):
+    """Run semantic recovery benchmark."""
+    from src.analysis.benchmarks import SemanticBenchmark
+    from src.analysis.benchmarks.report import generate_markdown_report
+    
+    print_header("DCASS SEMANTIC RECOVERY BENCHMARK")
+    
+    # Parse modes
+    if args.modes == "all":
+        modes = ["best", "round_robin", "balanced"]
+    else:
+        modes = [m.strip() for m in args.modes.split(",")]
+    
+    print_kv("Modes", ", ".join(modes))
+    print_kv("Quick mode", str(args.quick))
+    
+    # Initialize benchmark
+    benchmark = SemanticBenchmark()
+    
+    # Run benchmark
+    print_section("RUNNING BENCHMARK")
+    
+    if args.quick:
+        # Quick mode: 3 samples per category
+        results = benchmark.run(
+            modes=modes,  # type: ignore
+            max_samples_per_category=3,
+            verbose=not args.quiet
+        )
+    else:
+        results = benchmark.run(
+            modes=modes,  # type: ignore
+            verbose=not args.quiet
+        )
+    
+    # Print report
+    if not args.quiet:
+        benchmark.print_report(results)
+    
+    # Save results
+    output_path = Path(args.output) if args.output else None
+    saved_path = benchmark.save_results(results, output_path)  # type: ignore
+    print_success(f"Results saved to: {saved_path}")
+    
+    # Save markdown if requested
+    if args.markdown:
+        md_content = generate_markdown_report(results)
+        md_path = saved_path.with_suffix(".md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(md_content)
+        print_success(f"Markdown report saved to: {md_path}")
+    
+    return 0
+
+
+def cmd_distribute(args):
+    """Encode and distribute with timing profiles."""
+    print_header("DCASS DISTRIBUTION")
+    
+    print_kv("Message", f'"{args.message}"')
+    print_kv("Profile", args.profile)
+    
+    # Get profile
+    profile = ACTIVITY_PROFILES.get(args.profile)
+    if profile is None:
+        print_error(f"Unknown profile: {args.profile}")
+        print(f"Available: {list(ACTIVITY_PROFILES.keys())}")
+        return 1
+    
+    # Encode
+    print_section("ENCODING")
+    encoder = _get_encoder()
+    
+    try:
+        encode_result = encoder.encode(args.message)
+    except (ValueError, RuntimeError) as e:
+        print_error(str(e))
+        return 1
+    
+    media_ids = encode_result.media_ids
+    print_kv("Media items", str(len(media_ids)))
+    
+    for i, media_id in enumerate(media_ids, 1):
+        print(f"    {i}. {media_id}")
+    
+    # Apply noise
+    print_section("APPLYING NOISE")
+    noise = NoiseController(seed=42, **profile)
+    items, delays = noise.apply(
+        media_ids,
+        base_delays=[3] * len(media_ids)
+    )
+    
+    if not items:
+        print_warning("All items skipped by noise model")
+        return 0
+    
+    print_kv("After noise", f"{len(items)} items")
+    print_kv("Delays", str(delays))
+    
+    # Distribution
+    print_section("DISTRIBUTION")
     dispatcher = Dispatcher(
         channels=get_available_channels(),
         policy="round_robin"
@@ -218,128 +627,209 @@ def run_distribute(message: str, profile_name: str = "casual", modality: Modalit
         delays=delays
     )
     
-    print("\n[Distribution] Executing scheduled distribution...")
-    scheduler.run(media_items)
+    print(dim("Executing scheduled distribution..."))
+    scheduler.run(items)
     
-    print("\n[DCASS] Distribution complete")
+    print_success("Distribution complete")
+    return 0
 
 
-def run_status():
-    """
-    Show status of indices.
-    """
-    from src.corpus.index.unified_index import UnifiedSemanticIndex
+# =========================================================
+# ARGUMENT PARSER
+# =========================================================
+
+def create_parser() -> argparse.ArgumentParser:
+    """Create the argument parser."""
+    parser = argparse.ArgumentParser(
+        prog="dcass",
+        description="Dynamic Context-Aware Semantic Steganography",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s encode "Meet me at the cafe" --mode round_robin
+  %(prog)s decode "flickr8k_00123,wiki_00456"
+  %(prog)s demo "The secret message" --mode balanced
+  %(prog)s search "dog running on beach" --k 10
+  %(prog)s status
+        """
+    )
     
-    print("\n[DCASS] Index Status")
-    print("-" * 40)
-    print("Note: All indices use CLIP embeddings for cross-modal search")
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable colored output"
+    )
     
-    index = UnifiedSemanticIndex()
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
     
-    # Try to load each modality
-    for modality in index.available_modalities:
-        idx = index.get_index(modality)
-        exists = idx.exists()
-        
-        print(f"\n{modality.upper()} Index:")
-        print(f"  Path: {idx.index_path}")
-        print(f"  Exists: {'Yes' if exists else 'No'}")
-        
-        if exists:
-            try:
-                idx.load()
-                print(f"  Items: {idx.size}")
-                print(f"  Embedding: CLIP 512-dim")
-            except Exception as e:
-                print(f"  Error loading: {e}")
+    # Encode command
+    encode_parser = subparsers.add_parser(
+        "encode",
+        help="Encode a message into media sequence"
+    )
+    encode_parser.add_argument("message", help="Message to encode")
+    encode_parser.add_argument(
+        "--mode", "-m",
+        choices=["best", "round_robin", "balanced"],
+        default="best",
+        help="Diversity mode for modality selection (default: best)"
+    )
+    encode_parser.add_argument(
+        "--modality",
+        choices=["all", "image", "text", "audio"],
+        default="all",
+        help="Restrict to specific modality (default: all)"
+    )
+    encode_parser.add_argument(
+        "--json", "-j",
+        action="store_true",
+        help="Output JSON format"
+    )
     
-    print()
+    # Decode command
+    decode_parser = subparsers.add_parser(
+        "decode",
+        help="Decode media IDs to semantic meaning"
+    )
+    decode_parser.add_argument("ids", help="Comma-separated media IDs")
+    decode_parser.add_argument(
+        "--json", "-j",
+        action="store_true",
+        help="Output JSON format"
+    )
+    
+    # Demo command
+    demo_parser = subparsers.add_parser(
+        "demo",
+        help="Full encode -> decode demonstration"
+    )
+    demo_parser.add_argument("message", help="Message to encode and decode")
+    demo_parser.add_argument(
+        "--mode", "-m",
+        choices=["best", "round_robin", "balanced"],
+        default="best",
+        help="Diversity mode (default: best)"
+    )
+    
+    # Status command
+    subparsers.add_parser(
+        "status",
+        help="Show system status and index information"
+    )
+    
+    # Search command
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Search the corpus for a query"
+    )
+    search_parser.add_argument("query", help="Search query")
+    search_parser.add_argument(
+        "--k", "-k",
+        type=int,
+        default=5,
+        help="Number of results (default: 5)"
+    )
+    search_parser.add_argument(
+        "--modality",
+        choices=["all", "image", "text", "audio"],
+        default="all",
+        help="Restrict to specific modality (default: all)"
+    )
+    
+    # Verify command
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Verify media IDs exist in corpus"
+    )
+    verify_parser.add_argument("ids", help="Comma-separated media IDs to verify")
+    
+    # Distribute command
+    distribute_parser = subparsers.add_parser(
+        "distribute",
+        help="Encode and distribute with timing profiles"
+    )
+    distribute_parser.add_argument("message", help="Message to distribute")
+    distribute_parser.add_argument(
+        "--profile", "-p",
+        choices=list(ACTIVITY_PROFILES.keys()),
+        default="casual",
+        help="Activity profile (default: casual)"
+    )
+    
+    # Benchmark command
+    benchmark_parser = subparsers.add_parser(
+        "benchmark",
+        help="Run semantic recovery benchmark"
+    )
+    benchmark_parser.add_argument(
+        "--modes", "-m",
+        default="all",
+        help="Diversity modes to test: 'all' or comma-separated (default: all)"
+    )
+    benchmark_parser.add_argument(
+        "--quick", "-q",
+        action="store_true",
+        help="Quick benchmark with fewer samples (3 per category)"
+    )
+    benchmark_parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Minimal output during benchmark"
+    )
+    benchmark_parser.add_argument(
+        "--output", "-o",
+        help="Output path for results JSON"
+    )
+    benchmark_parser.add_argument(
+        "--markdown", "--md",
+        action="store_true",
+        help="Also save markdown report"
+    )
+    
+    return parser
 
 
-def print_usage():
-    """Print usage information."""
-    print("\nDCASS - Dynamic Context-Aware Semantic Steganography")
-    print("=" * 55)
-    print("\nKEY FEATURES:")
-    print("  - Mixed-Modality: Messages encoded as MIX of images AND texts")
-    print("  - Hierarchical: Synonym expansion + concept decomposition")
-    print("  - Score Normalization: Fair cross-modal comparison")
-    print()
-    print("Usage:")
-    print("  python -m src.cli.main <command> [args]")
-    print("\nCommands:")
-    print("  encode <message>              Basic mixed-modality encoding")
-    print("  encode-h <message>            Hierarchical encoding (with synonyms)")
-    print("  decode <id1> <id2> ...        Decode media sequence")
-    print("  distribute <message> [profile] Encode and distribute with timing")
-    print("  status                        Show index status")
-    print("\nExamples:")
-    print('  python -m src.cli.main encode "Meet at dawn in the park"')
-    print('  # Output: [image, text, image] - mixed!')
-    print()
-    print('  python -m src.cli.main encode-h "Secret meeting about the financial transaction"')
-    print('  # Uses synonyms: "covert gathering", "money exchange", etc.')
-    print()
-    print("  python -m src.cli.main status")
-    print("\nSetup:")
-    print("  1. python scripts/download_flickr8k.py")
-    print("  2. python scripts/download_wikipedia.py  # Optional: +50K sentences")
-    print("  3. python scripts/build_indices.py --include-wikipedia")
-    print("  4. python -m src.cli.main encode 'your message'")
-    print()
-
+# =========================================================
+# MAIN ENTRY POINT
+# =========================================================
 
 def main():
     """Main CLI entry point."""
-    if len(sys.argv) < 2:
-        print_usage()
-        return
+    parser = create_parser()
+    args = parser.parse_args()
     
-    command = sys.argv[1].lower()
+    if args.command is None:
+        parser.print_help()
+        return 0
     
-    if command == "encode":
-        if len(sys.argv) < 3:
-            print("Error: Message required")
-            print("Usage: python -m src.cli.main encode <message>")
-            return
-        message = sys.argv[2]
-        run_encode(message, hierarchical=False)
+    # Dispatch to command handler
+    commands = {
+        "encode": cmd_encode,
+        "decode": cmd_decode,
+        "demo": cmd_demo,
+        "status": cmd_status,
+        "search": cmd_search,
+        "verify": cmd_verify,
+        "distribute": cmd_distribute,
+        "benchmark": cmd_benchmark,
+    }
     
-    elif command == "encode-h" or command == "encode-hierarchical":
-        if len(sys.argv) < 3:
-            print("Error: Message required")
-            print("Usage: python -m src.cli.main encode-h <message>")
-            return
-        message = sys.argv[2]
-        run_encode(message, hierarchical=True)
-    
-    elif command == "decode":
-        if len(sys.argv) < 3:
-            print("Error: Media IDs required")
-            print("Usage: python -m src.cli.main decode <id1> <id2> ...")
-            return
-        media_ids = sys.argv[2:]
-        run_decode(media_ids)
-    
-    elif command == "distribute":
-        if len(sys.argv) < 3:
-            print("Error: Message required")
-            print("Usage: python -m src.cli.main distribute <message> [profile]")
-            return
-        message = sys.argv[2]
-        profile = sys.argv[3] if len(sys.argv) > 3 else "casual"
-        run_distribute(message, profile)
-    
-    elif command == "status":
-        run_status()
-    
-    elif command in ["help", "-h", "--help"]:
-        print_usage()
-    
+    handler = commands.get(args.command)
+    if handler:
+        try:
+            return handler(args)
+        except KeyboardInterrupt:
+            print("\nInterrupted")
+            return 130
+        except Exception as e:
+            print_error(str(e))
+            if "--debug" in sys.argv:
+                raise
+            return 1
     else:
-        print(f"Unknown command: {command}")
-        print_usage()
+        parser.print_help()
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

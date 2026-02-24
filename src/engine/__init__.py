@@ -1,24 +1,35 @@
+# src/engine/__init__.py
 """
-DCASS Engine Package - Encoding and Decoding.
+DCASS Engine - Core encoding and decoding logic.
 
-This package contains the core encoding/decoding logic for DCASS.
+This module provides the main steganographic encoding and decoding
+capabilities for the DCASS system.
 
-Main components:
+Components:
 - SemanticEncoder: Encodes messages into media sequences
 - SemanticDecoder: Decodes media sequences back to semantic meaning
-- SemanticChunker: Splits messages into semantic chunks
+- SemanticChunker: Splits messages into semantic units
 """
 
-from src.engine.encoder import SemanticEncoder, EncodedMessage, encode_message
-from src.engine.decoder import SemanticDecoder, DecodedMessage, decode_sequence
-from src.engine.chunker import SemanticChunker
+from .encoder import SemanticEncoder, EncodingResult, EncodedChunk, encode_message
+from .decoder import SemanticDecoder, DecodingResult, DecodedItem, decode_media_sequence
+from .chunker import SemanticChunker, SemanticChunk, chunk_message
 
 __all__ = [
+    # Encoder
     "SemanticEncoder",
-    "EncodedMessage", 
+    "EncodingResult", 
+    "EncodedChunk",
     "encode_message",
+    
+    # Decoder
     "SemanticDecoder",
-    "DecodedMessage",
-    "decode_sequence",
+    "DecodingResult",
+    "DecodedItem",
+    "decode_media_sequence",
+    
+    # Chunker
     "SemanticChunker",
+    "SemanticChunk",
+    "chunk_message",
 ]

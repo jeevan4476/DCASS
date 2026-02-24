@@ -1,0 +1,87 @@
+# docker-compose.yml for DCASS Simulation Sandbox
+# Sets up Alice (Sender) and Bob (Receiver) connected via shared volume
+
+version: '3.8'
+
+services:
+  # Alice: The Sender
+  dcass-sender:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dcass-alice
+    hostname: alice
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DCASS_ROLE=sender
+      - DCASS_SHARED_DIR=/app/shared_channel
+      - CUDA_VISIBLE_DEVICES=""  # Force CPU mode
+    volumes:
+      - ./shared_channel:/app/shared_channel  # Shared wire simulation
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+      - ./logs/sender:/app/logs
+    networks:
+      - dcass-network
+    command: >
+      bash -c "
+        echo 'Alice (Sender) starting...' &&
+        python -u scripts/run_sender.py --mode rl --episodes 100
+      "
+    depends_on:
+      - dcass-receiver
+
+  # Bob: The Receiver
+  dcass-receiver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dcass-bob
+    hostname: bob
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DCASS_ROLE=receiver
+      - DCASS_SHARED_DIR=/app/shared_channel
+      - CUDA_VISIBLE_DEVICES=""  # Force CPU mode
+    volumes:
+      - ./shared_channel:/app/shared_channel  # Shared wire simulation
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+      - ./logs/receiver:/app/logs
+    networks:
+      - dcass-network
+    command: >
+      bash -c "
+        echo 'Bob (Receiver) starting...' &&
+        python -u scripts/run_receiver.py --watch /app/shared_channel --timeout 10
+      "
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/shared_channel') else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Optional: TensorBoard for monitoring training
+  tensorboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dcass-tensorboard
+    hostname: tensorboard
+    ports:
+      - "6006:6006"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - dcass-network
+    command: tensorboard --logdir /app/logs --host 0.0.0.0 --port 6006
+    profiles:
+      - monitoring  # Only start if explicitly requested
+
+networks:
+  dcass-network:
+    driver: bridge
+
+volumes:
+  shared_channel:
+    driver: local

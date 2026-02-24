@@ -1,422 +1,417 @@
+# src/engine/chunker.py
 """
-Enhanced Semantic Chunker for Steganography
+SemanticChunker - Intelligent message chunking for steganographic encoding.
 
-Splits text into meaningful semantic chunks with advanced features:
-1. Synonym expansion - Generate alternative phrasings for better matches
-2. Concept decomposition - Break abstract concepts into concrete ones
-3. Hierarchical chunking - Multiple granularity levels
+Breaks down messages into semantic units that can be individually encoded
+into media items, with optional synonym expansion for better corpus matches.
 
-These features improve semantic coverage and make steganographic
-encoding more robust across diverse message types.
+Architecture:
+    Input Message -> Sentence Split -> Phrase Split -> Expand synonyms -> Semantic Chunks
+
+Improvements (v2):
+- Sentence boundary detection
+- Maximum chunk length with smart splitting
+- Better delimiter patterns including quotes and clauses
+- Phrase extraction for complex sentences
 """
+
+from __future__ import annotations
 
 import re
-from typing import List, Optional, Dict, Tuple, Set
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
-class EnhancedChunk:
-    """
-    Represents a semantic chunk with expansions.
+class SemanticChunk:
+    """Represents a semantic unit extracted from a message."""
+    text: str           # The chunk text (possibly expanded with synonyms)
+    original: str       # Original text before expansion
+    index: int          # Position in the original message
     
-    Attributes:
-        original: The original chunk text
-        normalized: Normalized form
-        synonyms: Alternative phrasings
-        concrete_forms: Concrete decompositions of abstract concepts
-        sub_chunks: Finer-grained sub-chunks (hierarchical)
-    """
-    original: str
-    normalized: str
-    synonyms: List[str] = field(default_factory=list)
-    concrete_forms: List[str] = field(default_factory=list)
-    sub_chunks: List[str] = field(default_factory=list)
-    
-    def all_variants(self) -> List[str]:
-        """Get all variants of this chunk for matching."""
-        variants = [self.normalized]
-        variants.extend(self.synonyms)
-        variants.extend(self.concrete_forms)
-        return list(dict.fromkeys(variants))  # Remove duplicates, preserve order
+    def __repr__(self) -> str:
+        if self.text != self.original:
+            return f"Chunk({self.index}: '{self.original}' -> '{self.text}')"
+        return f"Chunk({self.index}: '{self.text}')"
 
 
 class SemanticChunker:
     """
-    Enhanced semantic chunker with synonym expansion and concept decomposition.
+    Intelligent chunker for semantic steganography.
     
-    Features:
-    1. Multiple chunking strategies (sentence, clause, phrase)
-    2. Synonym expansion using WordNet-like mappings
-    3. Abstract-to-concrete concept decomposition
-    4. Hierarchical sub-chunking
+    Splits messages into semantic units optimized for corpus matching:
+    1. First splits on sentence boundaries
+    2. Then splits on natural delimiters (commas, conjunctions, etc.)
+    3. Enforces maximum chunk length for long phrases
+    4. Optionally expands with synonyms for better matches
+    5. Cleans and normalizes each chunk
     
-    Example:
-        >>> chunker = SemanticChunker(strategy="clause", expand_synonyms=True)
-        >>> chunks = chunker.chunk("A secret meeting at the bank")
-        >>> # Returns chunks with synonyms like "covert gathering", "financial institution"
+    Usage:
+        chunker = SemanticChunker()
+        chunks = chunker.chunk("Meet me at the cafe, bring the documents")
+        # -> [Chunk("meet me at the cafe"), Chunk("bring the documents")]
+        
+        # With synonym expansion
+        chunker = SemanticChunker(expand_synonyms=True)
+        chunks = chunker.chunk("happy dog running")
+        # -> [Chunk("happy joyful dog running")]
+        
+        # Long complex sentences are split intelligently
+        chunker = SemanticChunker()
+        chunks = chunker.chunk("There have been several claims for the longest sentence in English")
+        # -> [Chunk("several claims"), Chunk("longest sentence in english")]
+    
+    Attributes:
+        expand_synonyms: Whether to add synonyms to chunks
+        min_chunk_length: Minimum characters for a valid chunk
+        max_chunk_length: Maximum characters before forcing a split
+        delimiters: Regex pattern for splitting
     """
     
-    # Clause delimiters
-    CLAUSE_DELIMITERS = r',|\band\b|\bor\b|\bbut\b|\bthen\b|\bwhile\b|\bwhen\b'
-    
-    # Synonym mappings for common steganography-related concepts
-    # These help map abstract/secret concepts to concrete visual ones
-    SYNONYM_MAP: Dict[str, List[str]] = {
-        # Meeting/gathering
-        "meeting": ["gathering", "people together", "group discussion", "assembly"],
-        "secret": ["hidden", "private", "quiet", "concealed"],
-        "covert": ["hidden", "undercover", "secret", "stealthy"],
-        "rendezvous": ["meeting point", "gathering place", "meetup"],
-        
-        # Communication
-        "message": ["letter", "note", "communication", "text"],
-        "information": ["data", "details", "facts", "content"],
-        "signal": ["sign", "gesture", "indication", "wave"],
-        "code": ["cipher", "symbol", "pattern", "secret writing"],
-        
-        # Locations
-        "location": ["place", "spot", "area", "site"],
-        "headquarters": ["main building", "office", "center"],
-        "safe house": ["hidden shelter", "secure building", "protected place"],
+    # Common synonyms for expansion (simple dictionary approach)
+    # In production, could use WordNet or word2vec
+    SYNONYM_MAP = {
+        # Emotions
+        "happy": ["joyful", "cheerful", "pleased"],
+        "sad": ["unhappy", "sorrowful", "melancholy"],
+        "angry": ["furious", "enraged", "irritated"],
+        "scared": ["frightened", "afraid", "terrified"],
         
         # Actions
-        "transfer": ["handover", "exchange", "delivery", "passing"],
-        "escape": ["flee", "run away", "departure", "exit"],
-        "surveillance": ["watching", "monitoring", "observation"],
-        "infiltrate": ["enter secretly", "sneak in", "penetrate"],
+        "run": ["running", "sprint", "dash", "jog"],
+        "walk": ["walking", "stroll", "wander"],
+        "eat": ["eating", "consume", "dine"],
+        "sleep": ["sleeping", "rest", "slumber"],
+        
+        # Objects
+        "car": ["vehicle", "automobile"],
+        "house": ["home", "building", "residence"],
+        "dog": ["canine", "puppy", "hound"],
+        "cat": ["feline", "kitten"],
+        
+        # Nature
+        "tree": ["trees", "forest", "woods"],
+        "water": ["ocean", "sea", "river", "lake"],
+        "mountain": ["mountains", "hill", "peak"],
+        "sky": ["clouds", "heaven", "atmosphere"],
         
         # Time
-        "dawn": ["sunrise", "early morning", "first light"],
-        "dusk": ["sunset", "evening", "twilight"],
-        "midnight": ["late night", "dark hours", "nighttime"],
+        "morning": ["dawn", "sunrise", "daybreak"],
+        "evening": ["dusk", "sunset", "twilight"],
+        "night": ["nighttime", "darkness", "midnight"],
         
-        # Abstract concepts that need visual grounding
-        "danger": ["warning sign", "risk", "threat", "hazard"],
-        "safety": ["protection", "security", "shelter"],
-        "success": ["victory", "achievement", "winning", "triumph"],
-        "failure": ["defeat", "loss", "problem"],
-        "money": ["cash", "currency", "coins", "bills", "payment"],
-        "weapon": ["gun", "knife", "tool", "equipment"],
+        # Weather
+        "rain": ["raining", "rainy", "storm"],
+        "sun": ["sunny", "sunshine", "sunlight"],
+        "snow": ["snowy", "winter", "frost"],
         
-        # Technical terms
-        "encryption": ["locked", "secured", "coded", "protected"],
-        "network": ["connections", "web", "grid", "system"],
-        "server": ["computer", "machine", "system"],
-        "database": ["storage", "records", "files"],
-        "algorithm": ["process", "method", "procedure"],
+        # Colors (common in image search)
+        "red": ["crimson", "scarlet"],
+        "blue": ["azure", "navy"],
+        "green": ["emerald", "verdant"],
         
-        # Military/Strategic
-        "strategy": ["plan", "approach", "tactic", "method"],
-        "operation": ["mission", "task", "action", "activity"],
-        "target": ["goal", "objective", "destination", "aim"],
-        "asset": ["resource", "valuable", "person", "item"],
-        "extraction": ["removal", "rescue", "retrieval", "pickup"],
+        # Abstract concepts 
+        "meeting": ["gathering", "conference", "assembly"],
+        "secret": ["hidden", "confidential", "private"],
+        "important": ["significant", "crucial", "vital"],
+        "message": ["communication", "information", "note"],
     }
     
-    # Abstract to concrete mappings
-    # Maps abstract concepts to more visually concrete descriptions
-    ABSTRACT_TO_CONCRETE: Dict[str, List[str]] = {
-        # Emotional/Abstract states
-        "happiness": ["smiling person", "celebration", "party", "laughing"],
-        "sadness": ["crying", "tears", "funeral", "rain"],
-        "anger": ["yelling", "fighting", "red face", "argument"],
-        "fear": ["hiding", "running away", "dark place", "scared face"],
-        "love": ["couple kissing", "heart", "wedding", "holding hands"],
-        "trust": ["handshake", "friends", "teamwork"],
-        
-        # Abstract actions
-        "communication": ["people talking", "phone call", "letter writing"],
-        "transportation": ["car driving", "train", "airplane", "walking"],
-        "transaction": ["money exchange", "handshake", "shopping"],
-        "education": ["classroom", "books", "teacher", "students"],
-        "healthcare": ["doctor", "hospital", "medicine", "nurse"],
-        
-        # Abstract nouns
-        "government": ["capitol building", "flag", "officials", "voting"],
-        "technology": ["computer", "smartphone", "robot", "electronics"],
-        "nature": ["trees", "mountains", "ocean", "animals"],
-        "urban": ["city skyline", "buildings", "streets", "traffic"],
-        "rural": ["farm", "countryside", "fields", "barn"],
-        
-        # Steganography-specific
-        "secret meeting": ["people whispering", "private room", "closed door"],
-        "hidden message": ["folded paper", "envelope", "coded text"],
-        "covert operation": ["night scene", "shadows", "dark clothing"],
-        "intelligence": ["documents", "files", "computer screen"],
-        "mission": ["person walking", "destination", "journey"],
-        
-        # Financial
-        "investment": ["money growing", "charts", "stocks"],
-        "payment": ["wallet", "cash register", "credit card"],
-        "debt": ["bills", "invoices", "worried person"],
-        
-        # Scientific
-        "research": ["laboratory", "scientist", "experiments"],
-        "discovery": ["light bulb", "eureka moment", "finding"],
-        "experiment": ["lab equipment", "test tubes", "scientist"],
-    }
+    # Sentence boundary pattern - splits on . ! ? followed by space
+    SENTENCE_PATTERN = r'(?<=[.!?])\s+'
+    
+    # Default delimiters for splitting phrases
+    # Includes: comma, semicolon, conjunctions, relative clauses, quotes
+    # Note: Quotes use lookbehind/lookahead to avoid splitting contractions
+    DEFAULT_DELIMITERS = (
+        r",\s*"              # comma
+        r"|\s+and\s+"        # and
+        r"|\s+but\s+"        # but
+        r"|\s+then\s+"       # then
+        r"|\s+while\s+"      # while
+        r"|\s+or\s+"         # or
+        r"|\s+that\s+"       # that
+        r"|\s+which\s+"      # which
+        r"|\s+where\s+"      # where
+        r"|\s+when\s+"       # when
+        r"|;\s*"             # semicolon
+        r"|(?<!\w)'(?!\w)"   # single quote (not in contractions)
+        r'|"\s*'             # double quote
+        r"|\s+for\s+the\s+"  # "for the" often separates concepts
+        r"|\s+in\s+the\s+"   # "in the"
+        r"|\s+of\s+the\s+"   # "of the"
+        r"|\s+at\s+the\s+"   # "at the" 
+        r"|\s+to\s+the\s+"   # "to the" 
+        r"|\s+on\s+the\s+"   # "on the" 
+        r"|\s+with\s+the\s+" # "with the" 
+        r"|\s+with\s+a\s+"   # "with a" 
+        r"|\s+from\s+the\s+" # "from the" 
+        r"|\s+about\s+"      # about
+        r"|\s+around\s+"     # around
+        r"|\s+over\s+the\s+" # "over the" 
+        r"|\s+under\s+the\s+"# "under the" 
+        r"|\s+into\s+the\s+" # "into the" 
+        r"|\s+through\s+"    # through 
+        r"|\s+during\s+"     # during 
+        r"|\s+after\s+"      # after 
+        r"|\s+before\s+"     # before 
+    )
     
     def __init__(
         self,
-        strategy: str = "clause",
+        expand_synonyms: bool = False,
         min_chunk_length: int = 3,
-        max_chunk_length: int = 100,
-        expand_synonyms: bool = True,
-        decompose_concepts: bool = True,
-        hierarchical: bool = False,
-        max_synonyms: int = 3,
-        max_concrete: int = 2,
+        max_chunk_length: int = 60,
+        delimiters: str = None,
+        custom_synonyms: dict[str, list[str]] = None,
+        split_sentences: bool = True
     ):
         """
-        Initialize the enhanced chunker.
+        Initialize the chunker.
         
         Args:
-            strategy: Chunking strategy ('sentence', 'clause', 'phrase')
-            min_chunk_length: Minimum chunk length in characters
-            max_chunk_length: Maximum chunk length in characters
-            expand_synonyms: Whether to generate synonym expansions
-            decompose_concepts: Whether to decompose abstract concepts
-            hierarchical: Whether to generate hierarchical sub-chunks
-            max_synonyms: Maximum synonym alternatives per chunk
-            max_concrete: Maximum concrete forms per abstract concept
+            expand_synonyms: Whether to expand chunks with synonyms
+            min_chunk_length: Minimum characters for valid chunk
+            max_chunk_length: Maximum characters before forcing split
+            delimiters: Custom regex pattern for splitting
+            custom_synonyms: Additional synonym mappings
+            split_sentences: Whether to split on sentence boundaries first
         """
-        self.strategy = strategy
+        self.expand_synonyms = expand_synonyms
         self.min_chunk_length = min_chunk_length
         self.max_chunk_length = max_chunk_length
-        self.expand_synonyms = expand_synonyms
-        self.decompose_concepts = decompose_concepts
-        self.hierarchical = hierarchical
-        self.max_synonyms = max_synonyms
-        self.max_concrete = max_concrete
+        self.delimiters = delimiters or self.DEFAULT_DELIMITERS
+        self.split_sentences = split_sentences
+        
+        # Merge custom synonyms with defaults
+        self.synonyms = self.SYNONYM_MAP.copy()
+        if custom_synonyms:
+            self.synonyms.update(custom_synonyms)
     
-    def chunk(self, text: str) -> List[str]:
-        """
-        Split text into semantic chunks (simple interface).
-        
-        For advanced features, use chunk_enhanced().
-        
-        Args:
-            text: Input text to chunk
-            
-        Returns:
-            List of text chunks
-        """
-        enhanced = self.chunk_enhanced(text)
-        return [c.normalized for c in enhanced]
-    
-    def chunk_enhanced(self, text: str) -> List[EnhancedChunk]:
-        """
-        Split text into enhanced semantic chunks with expansions.
-        
-        Args:
-            text: Input text to chunk
-            
-        Returns:
-            List of EnhancedChunk objects with synonyms and concrete forms
-        """
-        # Normalize text
-        normalized = self._normalize(text)
-        
-        # Apply chunking strategy
-        if self.strategy == "sentence":
-            raw_chunks = self._chunk_sentences(normalized)
-        elif self.strategy == "clause":
-            raw_chunks = self._chunk_clauses(normalized)
-        elif self.strategy == "phrase":
-            raw_chunks = self._chunk_phrases(normalized)
-        else:
-            raise ValueError(f"Unknown strategy: {self.strategy}")
-        
-        # Filter and clean chunks
-        raw_chunks = self._filter_chunks(raw_chunks)
-        
-        # Build enhanced chunks
-        enhanced_chunks = []
-        for chunk in raw_chunks:
-            enhanced = EnhancedChunk(
-                original=chunk,
-                normalized=chunk,
-            )
-            
-            # Add synonym expansions
-            if self.expand_synonyms:
-                enhanced.synonyms = self._expand_synonyms(chunk)
-            
-            # Add concrete decompositions
-            if self.decompose_concepts:
-                enhanced.concrete_forms = self._decompose_abstract(chunk)
-            
-            # Add hierarchical sub-chunks
-            if self.hierarchical:
-                enhanced.sub_chunks = self._create_sub_chunks(chunk)
-            
-            enhanced_chunks.append(enhanced)
-        
-        return enhanced_chunks
-    
-    def get_all_variants(self, text: str) -> List[List[str]]:
-        """
-        Get all query variants for each chunk.
-        
-        Useful for hierarchical encoding where we want to try
-        multiple queries per chunk.
-        
-        Args:
-            text: Input text
-            
-        Returns:
-            List of variant lists, one per chunk
-        """
-        enhanced = self.chunk_enhanced(text)
-        return [chunk.all_variants() for chunk in enhanced]
-    
-    def _normalize(self, text: str) -> str:
-        """Normalize text for chunking."""
+    def _clean_text(self, text: str) -> str:
+        """Clean and normalize text."""
+        # Lowercase
         text = text.lower()
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'["\'\(\)\[\]\{\}]', '', text)
-        return text.strip()
+        # Remove extra whitespace
+        text = " ".join(text.split())
+        # Remove leading/trailing punctuation (keep internal)
+        text = text.strip(".,!?;:'\"()-")
+        return text
     
-    def _chunk_sentences(self, text: str) -> List[str]:
-        """Split on sentence boundaries."""
-        sentences = re.split(r'[.!?]+', text)
+    def _expand_with_synonyms(self, text: str) -> str:
+        """
+        Expand text by appending synonyms of key words.
+        
+        This helps find better matches in the corpus by including
+        alternative phrasings.
+        """
+        words = text.split()
+        expansions = []
+        
+        for word in words:
+            clean_word = word.strip(".,!?;:'\"").lower()
+            if clean_word in self.synonyms:
+                # Add first synonym only (to avoid too long queries)
+                synonym = self.synonyms[clean_word][0]
+                if synonym not in text:
+                    expansions.append(synonym)
+        
+        if expansions:
+            return f"{text} {' '.join(expansions)}"
+        return text
+    
+    def _split_long_chunk(self, text: str) -> list[str]:
+        """
+        Split a chunk that exceeds max_chunk_length.
+        
+        Tries to split at word boundaries intelligently:
+        1. First try splitting at prepositions (in, on, at, for, of, etc.)
+        2. Then try splitting at articles (the, a, an)
+        3. Finally split at nearest word boundary to midpoint
+        """
+        if len(text) <= self.max_chunk_length:
+            return [text]
+        
+        results = []
+        remaining = text
+        
+        while len(remaining) > self.max_chunk_length:
+            # Find a good split point
+            split_point = self._find_split_point(remaining)
+            
+            if split_point <= 0:
+                # No good split found, force split at max_chunk_length
+                split_point = self.max_chunk_length
+                # Back up to last space
+                while split_point > 0 and remaining[split_point] != ' ':
+                    split_point -= 1
+                if split_point <= 0:
+                    split_point = self.max_chunk_length
+            
+            chunk = remaining[:split_point].strip()
+            if len(chunk) >= self.min_chunk_length:
+                results.append(chunk)
+            remaining = remaining[split_point:].strip()
+        
+        if len(remaining) >= self.min_chunk_length:
+            results.append(remaining)
+        
+        return results
+    
+    def _find_split_point(self, text: str) -> int:
+        """
+        Find a good point to split a long text.
+        
+        Looks for prepositions and articles as natural break points.
+        Returns position of the split word, or -1 if none found.
+        """
+        # Words that make good split points (split BEFORE these)
+        split_words = [
+            ' in ', ' on ', ' at ', ' for ', ' of ', ' to ', ' from ',
+            ' with ', ' about ', ' around ', ' through ', ' between ',
+            ' the ', ' a ', ' an ', ' this ', ' that ', ' these ', ' those ',
+        ]
+        
+        # Look for split points in the preferred range (40-80% of max length)
+        min_pos = int(self.max_chunk_length * 0.4)
+        max_pos = min(len(text), int(self.max_chunk_length * 0.9))
+        
+        best_pos = -1
+        
+        for word in split_words:
+            pos = text.find(word, min_pos, max_pos)
+            if pos > 0:
+                # Found a good split point
+                if best_pos < 0 or pos < best_pos:
+                    best_pos = pos
+        
+        return best_pos
+    
+    def _split_sentences(self, text: str) -> list[str]:
+        """Split text into sentences."""
+        sentences = re.split(self.SENTENCE_PATTERN, text)
         return [s.strip() for s in sentences if s.strip()]
     
-    def _chunk_clauses(self, text: str) -> List[str]:
-        """Split on clause boundaries."""
-        chunks = re.split(self.CLAUSE_DELIMITERS, text, flags=re.IGNORECASE)
-        return [c.strip() for c in chunks if c.strip()]
-    
-    def _chunk_phrases(self, text: str) -> List[str]:
-        """Split on phrase boundaries."""
-        delimiters = r',|\band\b|\bor\b|\bof\b|\bin\b|\bwith\b|\bto\b|\bfor\b'
-        chunks = re.split(delimiters, text, flags=re.IGNORECASE)
-        return [c.strip() for c in chunks if c.strip()]
-    
-    def _filter_chunks(self, chunks: List[str]) -> List[str]:
-        """Filter chunks based on length constraints."""
-        filtered = []
-        for chunk in chunks:
-            if len(chunk) < self.min_chunk_length:
+    def chunk(self, message: str) -> list[SemanticChunk]:
+        """
+        Split message into semantic chunks.
+        
+        Args:
+            message: Input message to chunk
+            
+        Returns:
+            List of SemanticChunk objects
+        """
+        all_parts = []
+        
+        # Step 1: Split into sentences first (if enabled)
+        if self.split_sentences:
+            sentences = self._split_sentences(message)
+        else:
+            sentences = [message]
+        
+        # Step 2: Split each sentence by delimiters
+        for sentence in sentences:
+            parts = re.split(self.delimiters, sentence, flags=re.IGNORECASE)
+            all_parts.extend(parts)
+        
+        # Step 3: Process each part
+        chunks = []
+        for part in all_parts:
+            # Clean the chunk
+            original = self._clean_text(part)
+            
+            # Skip if too short
+            if len(original) < self.min_chunk_length:
                 continue
-            if len(chunk) > self.max_chunk_length:
-                chunk = chunk[:self.max_chunk_length]
-            chunk = chunk.strip(' ,.-:;')
-            if chunk:
-                filtered.append(chunk)
-        return filtered
-    
-    def _expand_synonyms(self, chunk: str) -> List[str]:
-        """
-        Generate synonym expansions for a chunk.
-        
-        Looks for known words/phrases and generates alternatives.
-        """
-        synonyms = []
-        chunk_lower = chunk.lower()
-        
-        # Check for exact phrase matches first
-        for phrase, alternatives in self.SYNONYM_MAP.items():
-            if phrase in chunk_lower:
-                for alt in alternatives[:self.max_synonyms]:
-                    expanded = chunk_lower.replace(phrase, alt)
-                    if expanded != chunk_lower and expanded not in synonyms:
-                        synonyms.append(expanded)
-        
-        # Check for individual word matches
-        words = chunk_lower.split()
-        for i, word in enumerate(words):
-            if word in self.SYNONYM_MAP:
-                for alt in self.SYNONYM_MAP[word][:self.max_synonyms]:
-                    new_words = words.copy()
-                    new_words[i] = alt
-                    expanded = " ".join(new_words)
-                    if expanded not in synonyms:
-                        synonyms.append(expanded)
-        
-        return synonyms[:self.max_synonyms]
-    
-    def _decompose_abstract(self, chunk: str) -> List[str]:
-        """
-        Decompose abstract concepts into concrete visual forms.
-        
-        This helps match abstract messages to visual media.
-        """
-        concrete = []
-        chunk_lower = chunk.lower()
-        
-        # Check for abstract concepts
-        for abstract, concretes in self.ABSTRACT_TO_CONCRETE.items():
-            if abstract in chunk_lower:
-                for c in concretes[:self.max_concrete]:
-                    # Replace abstract with concrete
-                    decomposed = chunk_lower.replace(abstract, c)
-                    if decomposed != chunk_lower and decomposed not in concrete:
-                        concrete.append(decomposed)
+            
+            # Step 4: Split if too long
+            if len(original) > self.max_chunk_length:
+                sub_parts = self._split_long_chunk(original)
+            else:
+                sub_parts = [original]
+            
+            # Step 5: Create chunks with optional synonym expansion
+            for sub_part in sub_parts:
+                if len(sub_part) < self.min_chunk_length:
+                    continue
                 
-                # Also add the concrete form directly
-                for c in concretes[:self.max_concrete]:
-                    if c not in concrete:
-                        concrete.append(c)
+                if self.expand_synonyms:
+                    expanded = self._expand_with_synonyms(sub_part)
+                else:
+                    expanded = sub_part
+                
+                chunk = SemanticChunk(
+                    text=expanded,
+                    original=sub_part,
+                    index=len(chunks)
+                )
+                chunks.append(chunk)
         
-        return concrete[:self.max_concrete * 2]
+        # Fallback: If no chunks were created, treat entire message as one chunk
+        if not chunks and message.strip():
+            original = self._clean_text(message)
+            # Still try to split if too long
+            if len(original) > self.max_chunk_length:
+                sub_parts = self._split_long_chunk(original)
+            else:
+                sub_parts = [original]
+            
+            for sub_part in sub_parts:
+                if len(sub_part) >= self.min_chunk_length:
+                    if self.expand_synonyms:
+                        expanded = self._expand_with_synonyms(sub_part)
+                    else:
+                        expanded = sub_part
+                    chunks.append(SemanticChunk(
+                        text=expanded,
+                        original=sub_part,
+                        index=len(chunks)
+                    ))
+        
+        return chunks
     
-    def _create_sub_chunks(self, chunk: str) -> List[str]:
+    def chunk_simple(self, message: str) -> list[str]:
         """
-        Create hierarchical sub-chunks for finer-grained matching.
+        Simple chunking that returns just text strings.
+        
+        Args:
+            message: Input message
+            
+        Returns:
+            List of chunk text strings
         """
-        sub_chunks = []
-        words = chunk.split()
+        return [c.text for c in self.chunk(message)]
+    
+    def reconstruct(self, chunks: list[SemanticChunk]) -> str:
+        """
+        Reconstruct message from chunks (using original text).
         
-        # Create bigrams
-        if len(words) >= 2:
-            for i in range(len(words) - 1):
-                bigram = f"{words[i]} {words[i+1]}"
-                if len(bigram) >= self.min_chunk_length:
-                    sub_chunks.append(bigram)
-        
-        # Create trigrams
-        if len(words) >= 3:
-            for i in range(len(words) - 2):
-                trigram = f"{words[i]} {words[i+1]} {words[i+2]}"
-                if len(trigram) >= self.min_chunk_length:
-                    sub_chunks.append(trigram)
-        
-        return sub_chunks
+        Args:
+            chunks: List of chunks to combine
+            
+        Returns:
+            Reconstructed message
+        """
+        # Sort by index to ensure correct order
+        sorted_chunks = sorted(chunks, key=lambda c: c.index)
+        return ", ".join(c.original for c in sorted_chunks)
     
     def __repr__(self) -> str:
-        features = []
-        if self.expand_synonyms:
-            features.append("synonyms")
-        if self.decompose_concepts:
-            features.append("concepts")
-        if self.hierarchical:
-            features.append("hierarchical")
-        feature_str = "+".join(features) if features else "basic"
-        return f"SemanticChunker(strategy={self.strategy}, features={feature_str})"
+        return f"SemanticChunker(expand_synonyms={self.expand_synonyms}, max_len={self.max_chunk_length})"
 
 
 # Convenience function
-def chunk_message(
-    message: str,
-    strategy: str = "clause",
-    expand: bool = True,
-) -> List[EnhancedChunk]:
+def chunk_message(message: str, expand: bool = False) -> list[str]:
     """
-    Convenience function to chunk a message with enhancements.
+    Quick chunking of a message.
     
     Args:
-        message: The message to chunk
-        strategy: Chunking strategy
-        expand: Whether to expand synonyms and decompose concepts
+        message: Text to chunk
+        expand: Whether to expand with synonyms
         
     Returns:
-        List of EnhancedChunk objects
+        List of chunk strings
     """
-    chunker = SemanticChunker(
-        strategy=strategy,
-        expand_synonyms=expand,
-        decompose_concepts=expand,
-    )
-    return chunker.chunk_enhanced(message)
+    chunker = SemanticChunker(expand_synonyms=expand)
+    return chunker.chunk_simple(message)
