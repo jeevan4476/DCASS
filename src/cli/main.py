@@ -215,8 +215,9 @@ def cmd_encode(args):
     # Show chunks
     print_section(f"CHUNKS ({len(result.chunks)})")
     for i, chunk in enumerate(result.chunks, 1):
-        quote = dim('"')
-        print(f"  {i}. {quote}{chunk.original}{quote}")
+        quote = '"'
+        print(f"  {i}. {dim(quote)}{chunk.original}{dim(quote)}")
+
     
     # Show encoded media
     print_section(f"ENCODED MEDIA ({len(result.encoded)})")
@@ -254,7 +255,63 @@ def cmd_encode(args):
             "chunks": [c.original for c in result.chunks]
         }
         print(json.dumps(output, indent=2))
-    
+
+    # Optional: immediately distribute using timing profile
+    if getattr(args, "profile", None):
+        rc = _run_distribution_from_media_ids(
+            media_ids=result.media_ids,
+            profile_name=args.profile,
+            seed=getattr(args, "seed", 42),
+            policy=getattr(args, "policy", "round_robin"),
+            base_delay=getattr(args, "base_delay", 3),
+        )
+        if rc != 0:
+            return rc
+
+    return 0
+
+
+def _run_distribution_from_media_ids(
+    media_ids: list[str],
+    profile_name: str,
+    seed: int = 42,
+    policy: str = "round_robin",
+    base_delay: int = 3,
+) -> int:
+    """Distribute an already-encoded media-id sequence with noise + scheduling."""
+    print_section("DISTRIBUTION")
+
+    profile = ACTIVITY_PROFILES.get(profile_name)
+    if profile is None:
+        print_error(f"Unknown profile: {profile_name}")
+        print(f"Available: {list(ACTIVITY_PROFILES.keys())}")
+        return 1
+
+    # Apply noise
+    print(dim(f"Profile: {profile_name} | Seed: {seed} | Policy: {policy}"))
+    noise = NoiseController(seed=seed, **profile)
+    items, delays = noise.apply(media_ids, base_delays=[base_delay] * len(media_ids))
+
+    if not items:
+        print_warning("All items skipped by noise model")
+        return 0
+
+    print_kv("After noise", f"{len(items)} items")
+    print_kv("Delays", str(delays))
+
+    dispatcher = Dispatcher(
+        channels=get_available_channels(),
+        policy=policy,
+    )
+
+    scheduler = Scheduler(
+        dispatcher=dispatcher,
+        delays=delays,
+    )
+
+    print(dim("Executing scheduled distribution..."))
+    scheduler.run(items)
+    print_success("Distribution complete")
     return 0
 
 
@@ -576,13 +633,8 @@ def cmd_distribute(args):
     
     print_kv("Message", f'"{args.message}"')
     print_kv("Profile", args.profile)
-    
-    # Get profile
-    profile = ACTIVITY_PROFILES.get(args.profile)
-    if profile is None:
-        print_error(f"Unknown profile: {args.profile}")
-        print(f"Available: {list(ACTIVITY_PROFILES.keys())}")
-        return 1
+    print_kv("Policy", args.policy)
+    print_kv("Seed", str(args.seed))
     
     # Encode
     print_section("ENCODING")
@@ -600,38 +652,13 @@ def cmd_distribute(args):
     for i, media_id in enumerate(media_ids, 1):
         print(f"    {i}. {media_id}")
     
-    # Apply noise
-    print_section("APPLYING NOISE")
-    noise = NoiseController(seed=42, **profile)
-    items, delays = noise.apply(
-        media_ids,
-        base_delays=[3] * len(media_ids)
+    return _run_distribution_from_media_ids(
+        media_ids=media_ids,
+        profile_name=args.profile,
+        seed=args.seed,
+        policy=args.policy,
+        base_delay=args.base_delay,
     )
-    
-    if not items:
-        print_warning("All items skipped by noise model")
-        return 0
-    
-    print_kv("After noise", f"{len(items)} items")
-    print_kv("Delays", str(delays))
-    
-    # Distribution
-    print_section("DISTRIBUTION")
-    dispatcher = Dispatcher(
-        channels=get_available_channels(),
-        policy="round_robin"
-    )
-    
-    scheduler = Scheduler(
-        dispatcher=dispatcher,
-        delays=delays
-    )
-    
-    print(dim("Executing scheduled distribution..."))
-    scheduler.run(items)
-    
-    print_success("Distribution complete")
-    return 0
 
 
 # =========================================================
@@ -684,6 +711,32 @@ Examples:
         "--json", "-j",
         action="store_true",
         help="Output JSON format"
+    )
+
+    # Optional: one-shot encode + distribute
+    encode_parser.add_argument(
+        "--profile", "-p",
+        choices=list(ACTIVITY_PROFILES.keys()),
+        default=None,
+        help="If set, immediately distribute using this activity profile"
+    )
+    encode_parser.add_argument(
+        "--policy",
+        choices=["round_robin", "fixed", "alternating"],
+        default="round_robin",
+        help="Channel dispatch policy (default: round_robin)"
+    )
+    encode_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Noise model RNG seed (default: 42)"
+    )
+    encode_parser.add_argument(
+        "--base-delay",
+        type=int,
+        default=3,
+        help="Base delay (seconds) per item before noise (default: 3)"
     )
     
     # Decode command
@@ -754,6 +807,25 @@ Examples:
         choices=list(ACTIVITY_PROFILES.keys()),
         default="casual",
         help="Activity profile (default: casual)"
+    )
+
+    distribute_parser.add_argument(
+        "--policy",
+        choices=["round_robin", "fixed", "alternating"],
+        default="round_robin",
+        help="Channel dispatch policy (default: round_robin)"
+    )
+    distribute_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Noise model RNG seed (default: 42)"
+    )
+    distribute_parser.add_argument(
+        "--base-delay",
+        type=int,
+        default=3,
+        help="Base delay (seconds) per item before noise (default: 3)"
     )
     
     # Benchmark command

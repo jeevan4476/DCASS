@@ -40,7 +40,7 @@ import json
 import time
 import csv
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Union
 from collections import defaultdict
 
 # Add project root to path
@@ -74,11 +74,15 @@ def find_flickr30k_files(data_dir: Path) -> Tuple[Optional[Path], Optional[Path]
     ]
     
     # Possible caption file locations
+    # Note: some downloads place captions at data/raw/Captions.csv (one level up)
     caption_files = [
         data_dir / "results.csv",
         data_dir / "flickr30k_images" / "results.csv",
         data_dir / "flickr-image-dataset" / "results.csv",
         data_dir / "captions.csv",
+        data_dir / "Captions.csv",
+        data_dir.parent / "captions.csv",
+        data_dir.parent / "Captions.csv",
     ]
     
     found_images_dir = None
@@ -120,44 +124,87 @@ def load_flickr30k_captions(captions_file: Path) -> Dict[str, List[str]]:
     
     captions = defaultdict(list)
     
+    def _norm_filename(name: Optional[str]) -> str:
+        name = (name or "").strip()
+        if not name:
+            return ""
+        return name if name.lower().endswith(".jpg") else name + ".jpg"
+
+    def _parse_raw_list(raw_value: str) -> List[str]:
+        """Parse Flickr30K 'raw' field: stringified list of 5 captions."""
+        raw_value = (raw_value or "").strip()
+        if not raw_value:
+            return []
+        try:
+            import json as _json
+            parsed = _json.loads(raw_value)
+        except Exception:
+            try:
+                import ast
+                parsed = ast.literal_eval(raw_value)
+            except Exception:
+                return []
+        if isinstance(parsed, list):
+            out: List[str] = []
+            for item in parsed:
+                if item is None:
+                    continue
+                s = str(item).strip()
+                if s:
+                    out.append(s)
+            return out
+        return []
+
     try:
-        with open(captions_file, 'r', encoding='utf-8', errors='ignore') as f:
-            # Try to detect format
+        with open(captions_file, 'r', encoding='utf-8', errors='ignore', newline='') as f:
             first_line = f.readline().strip()
             f.seek(0)
-            
-            # Check if it has a header
-            if 'image' in first_line.lower() or 'comment' in first_line.lower():
-                # CSV with header
+
+            lower = first_line.lower()
+            is_pipe = first_line.count('|') >= 2
+            is_comma = (',' in first_line) and not is_pipe
+
+            if is_comma and ("filename" in lower or "raw" in lower):
+                # Kaggle-style Captions.csv with columns: raw,sentids,split,filename,img_id
+                reader = csv.DictReader(f)
+                for row in reader:
+                    image_name = _norm_filename(row.get("filename") or row.get("image") or row.get("image_name"))
+                    if not image_name:
+                        continue
+                    raw_list = _parse_raw_list(row.get("raw") or "")
+                    if raw_list:
+                        captions[image_name].extend(raw_list)
+                    else:
+                        caption = row.get("comment") or row.get("caption") or row.get("text")
+                        if caption:
+                            captions[image_name].append(str(caption).strip())
+            elif "image" in lower or "comment" in lower or "caption" in lower or "filename" in lower:
+                # Pipe-delimited CSV with a header row (common results.csv variants)
                 reader = csv.DictReader(f, delimiter='|')
                 for row in reader:
-                    # Handle different column names
-                    image_name = row.get('image_name') or row.get('image') or row.get('filename')
+                    image_name = _norm_filename(row.get('image_name') or row.get('image') or row.get('filename'))
                     caption = row.get('comment') or row.get('caption') or row.get('text')
                     if image_name and caption:
-                        # Normalize filename
-                        if not image_name.endswith('.jpg'):
-                            image_name = image_name + '.jpg'
-                        captions[image_name].append(caption.strip())
+                        captions[image_name].append(str(caption).strip())
             else:
-                # Simple pipe-delimited format without header
-                f.seek(0)
+                # Simple pipe-delimited format without header: image_name|comment_number|comment
                 for line in f:
                     parts = line.strip().split('|')
                     if len(parts) >= 3:
-                        image_name = parts[0]
-                        # parts[1] is comment number (0-4)
+                        image_name = _norm_filename(parts[0])
                         caption = parts[2] if len(parts) == 3 else '|'.join(parts[2:])
-                        if not image_name.endswith('.jpg'):
-                            image_name = image_name + '.jpg'
-                        captions[image_name].append(caption.strip())
-        
+                        if image_name and caption:
+                            captions[image_name].append(caption.strip())
+
         print(f"  Loaded captions for {len(captions)} images")
-        
-        # Show sample
-        sample_key = list(captions.keys())[0]
-        print(f"  Sample ({sample_key}): {captions[sample_key][0][:60]}...")
-        
+
+        if captions:
+            sample_key = next(iter(captions.keys()))
+            sample_caption = captions[sample_key][0] if captions[sample_key] else ""
+            print(f"  Sample ({sample_key}): {sample_caption[:60]}...")
+        else:
+            print("  Warning: No captions parsed. Check captions file format/encoding.")
+
     except Exception as e:
         print(f"  Error loading captions: {e}")
         return {}
@@ -237,7 +284,8 @@ def build_flickr30k_index(
     
     for i in range(0, len(image_files), batch_size):
         batch_files = image_files[i:i + batch_size]
-        batch_paths = [str(f) for f in batch_files]
+        # ImageEmbedder expects List[Union[str, Path]]
+        batch_paths: List[Union[str, Path]] = [Path(p) for p in batch_files]
         
         try:
             # Encode batch
