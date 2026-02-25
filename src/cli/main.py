@@ -217,6 +217,7 @@ def cmd_encode(args):
     for i, chunk in enumerate(result.chunks, 1):
         quote = '"'
         print(f"  {i}. {dim(quote)}{chunk.original}{dim(quote)}")
+
     
     # Show encoded media
     print_section(f"ENCODED MEDIA ({len(result.encoded)})")
