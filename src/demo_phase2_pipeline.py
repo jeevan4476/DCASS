@@ -16,7 +16,7 @@ TOP_K_CAPTION = 1
 # ==============================
 # PATHS
 # ==============================
-EMB_DIR = Path(r"C:\Users\kappa\OneDrive\capstone\dcass\data\embedding")
+EMB_DIR = Path(r"D:\DCASS\DCASS\location")
 FAISS_INDEX_PATH = EMB_DIR / "faiss_image.index"
 IMAGE_IDS_PATH = EMB_DIR / "image_ids.txt"
 CAPTION_MAP_PATH = EMB_DIR / "caption_map.csv"
