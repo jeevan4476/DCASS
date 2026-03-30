@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DCASS · Steganography Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;600;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:       #050810;
+    --surface:  #0b1120;
+    --border:   #1a2a45;
+    --accent:   #00e5ff;
+    --accent2:  #7c3aed;
+    --green:    #00ff9d;
+    --yellow:   #ffd54f;
+    --red:      #ff4081;
+    --text:     #c8d6ef;
+    --muted:    #4a5980;
+    --mono:     'Share Tech Mono', monospace;
+    --sans:     'Exo 2', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0,229,255,.015) 2px, rgba(0,229,255,.015) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 1.4rem 2rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    background: linear-gradient(90deg, rgba(0,229,255,.04), transparent);
+  }
+  .logo-badge {
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: 1.05rem;
+    letter-spacing: .12em;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: .25rem .7rem;
+    text-shadow: 0 0 12px var(--accent);
+    box-shadow: 0 0 10px rgba(0,229,255,.2) inset;
+  }
+  .header-title {
+    font-family: var(--sans);
+    font-weight: 300;
+    font-size: 1rem;
+    color: var(--muted);
+    letter-spacing: .05em;
+  }
+  .header-title span { color: var(--text); font-weight: 600; }
+  .header-right { margin-left: auto; font-size: .75rem; color: var(--muted); }
+  #live-clock { color: var(--accent); }
+
+  /* ── Layout ── */
+  .main { display: grid; grid-template-columns: 300px 1fr; gap: 0; min-height: calc(100vh - 62px); }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    background: var(--surface);
+  }
+  .sidebar-section h3 {
+    font-family: var(--sans);
+    font-size: .65rem;
+    font-weight: 600;
+    letter-spacing: .18em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: .75rem;
+    padding-bottom: .4rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .scenario-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: .8rem;
+    padding: .7rem 1rem;
+    cursor: pointer;
+    transition: all .2s;
+    margin-bottom: .4rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .scenario-btn::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    transform: scaleY(0);
+    transition: transform .2s;
+  }
+  .scenario-btn:hover, .scenario-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0,229,255,.04);
+    box-shadow: 0 0 12px rgba(0,229,255,.08);
+  }
+  .scenario-btn:hover::before, .scenario-btn.active::before { transform: scaleY(1); }
+  .scenario-btn .label { font-size: .7rem; color: var(--muted); display: block; margin-top: .15rem; }
+
+  .run-btn {
+    width: 100%;
+    padding: .85rem;
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: var(--sans);
+    font-size: .85rem;
+    font-weight: 600;
+    letter-spacing: .1em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all .25s;
+    box-shadow: 0 0 14px rgba(0,229,255,.08);
+  }
+  .run-btn:hover:not(:disabled) {
+    background: rgba(0,229,255,.1);
+    box-shadow: 0 0 24px rgba(0,229,255,.25);
+  }
+  .run-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* Stats */
+  .stat-row { display: flex; justify-content: space-between; align-items: center; padding: .4rem 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .stat-label { font-size: .72rem; color: var(--muted); }
+  .stat-value { font-size: .82rem; color: var(--accent); }
+  .stat-value.green { color: var(--green); }
+  .stat-value.yellow { color: var(--yellow); }
+
+  /* Channel legend */
+  .channel-pill {
+    display: inline-flex; align-items: center; gap: .4rem;
+    font-size: .72rem; padding: .2rem .6rem;
+    border: 1px solid var(--border);
+    margin: .2rem .15rem;
+  }
+  .ch-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .ch0 { background: var(--accent); }
+  .ch1 { background: var(--accent2); }
+  .ch2 { background: var(--green); }
+
+  /* ── Main panel ── */
+  .panel { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.2rem; }
+
+  .panel-card {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 1.1rem 1.3rem;
+  }
+  .panel-card h4 {
+    font-family: var(--sans);
+    font-size: .7rem;
+    font-weight: 600;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: .9rem;
+  }
+
+  /* ── Message strip ── */
+  .msg-strip {
+    font-size: .9rem;
+    color: var(--text);
+    letter-spacing: .03em;
+    line-height: 1.6;
+  }
+  .msg-strip em { color: var(--yellow); font-style: normal; }
+
+  /* ── Pipeline ── */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+    font-size: .75rem;
+  }
+  .pipe-stage {
+    padding: .3rem .75rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .pipe-stage.active { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 8px rgba(0,229,255,.2); }
+  .pipe-arrow { color: var(--muted); }
+
+  /* ── Transmission log ── */
+  #tx-log {
+    font-size: .78rem;
+    line-height: 2;
+    min-height: 120px;
+  }
+  .tx-line { display: flex; gap: 1rem; align-items: baseline; animation: fadeSlide .3s ease; }
+  @keyframes fadeSlide { from { opacity:0; transform: translateX(-8px); } to { opacity:1; transform: none; } }
+  .tx-time { color: var(--muted); min-width: 70px; }
+  .tx-tag  { padding: .05rem .4rem; font-size: .68rem; border: 1px solid; }
+  .tx-tag.wait    { border-color: var(--muted); color: var(--muted); }
+  .tx-tag.send    { border-color: var(--accent); color: var(--accent); }
+  .tx-tag.decoded { border-color: var(--green);  color: var(--green); }
+  .tx-tag.system  { border-color: var(--yellow); color: var(--yellow); }
+  .tx-content { flex: 1; color: var(--text); }
+
+  /* Channel color coding */
+  .ch-name-0 { color: var(--accent); }
+  .ch-name-1 { color: var(--accent2); }
+  .ch-name-2 { color: var(--green); }
+
+  /* ── GAN Timeline ── */
+  #gan-timeline { display: flex; flex-direction: column; gap: .5rem; min-height: 50px; }
+  .tl-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 90px 110px;
+    gap: .5rem;
+    align-items: center;
+    font-size: .75rem;
+    padding: .35rem .5rem;
+    border-left: 2px solid var(--border);
+    transition: border-color .3s;
+  }
+  .tl-row.active { border-color: var(--accent); background: rgba(0,229,255,.03); }
+  .tl-row.done   { border-color: var(--green); }
+  .tl-img { color: var(--yellow); }
+  .tl-bar-wrap { background: rgba(255,255,255,.04); height: 6px; border-radius: 2px; overflow: hidden; }
+  .tl-bar { height: 100%; background: var(--accent); width: 0%; transition: width 2s linear; }
+  .tl-delay { color: var(--muted); text-align: right; }
+  .tl-ch    { text-align: right; }
+
+  /* ── Confidence gauge ── */
+  .gauge-wrap { display: flex; align-items: center; gap: 1rem; }
+  .gauge-bar-bg { flex: 1; height: 8px; background: rgba(255,255,255,.06); border-radius: 2px; }
+  .gauge-bar { height: 100%; border-radius: 2px; transition: width .6s ease; background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+  .gauge-label { font-size: .82rem; color: var(--accent); min-width: 50px; text-align: right; }
+
+  /* ── Decoded output ── */
+  #decoded-panel { display: none; }
+  #decoded-panel.visible { display: block; animation: fadeSlide .5s ease; }
+  .decoded-msg {
+    font-family: var(--sans);
+    font-size: 1.05rem;
+    font-weight: 300;
+    color: var(--green);
+    letter-spacing: .04em;
+    padding: .8rem 1rem;
+    border: 1px solid var(--green);
+    box-shadow: 0 0 20px rgba(0,255,157,.08);
+    line-height: 1.7;
+  }
+  .decoded-captions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .7rem; }
+  .caption-chip {
+    font-size: .72rem;
+    padding: .2rem .6rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .caption-chip::before { content: '↳ '; color: var(--green); }
+
+  /* ── Status badge ── */
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    margin-right: .4rem;
+    vertical-align: middle;
+  }
+  .status-dot.running { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); animation: pulse 1s infinite; }
+  .status-dot.done    { background: var(--green);  box-shadow: 0 0 6px var(--green); }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+
+  #status-text { font-size: .78rem; vertical-align: middle; }
+
+  .empty-state { color: var(--muted); font-size: .78rem; padding: .5rem 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-badge">DCASS</div>
+  <div class="header-title">
+    <span>Deep Covert Adaptive Steganography System</span> · GAN Demo
+  </div>
+  <div class="header-right">
+    <span id="live-clock">--:--:--</span> &nbsp;|&nbsp; NODE-01
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+
+    <div class="sidebar-section">
+      <h3>Scenarios</h3>
+      {% for s in scenarios %}
+      <button class="scenario-btn {% if loop.first %}active{% endif %}"
+              data-id="{{ s.id }}"
+              onclick="selectScenario('{{ s.id }}', this)">
+        <strong>{{ s.label }}</strong>
+        <span class="label">{{ s.message[:42] }}…</span>
+      </button>
+      {% endfor %}
+    </div>
+
+    <div class="sidebar-section">
+      <h3>GAN Stats</h3>
+      <div class="stat-row"><span class="stat-label">Architecture</span><span class="stat-value">GRU + Attention</span></div>
+      <div class="stat-row"><span class="stat-label">Latent dim</span><span class="stat-value">128</span></div>
+      <div class="stat-row"><span class="stat-label">Hidden dim</span><span class="stat-value">256</span></div>
+      <div class="stat-row"><span class="stat-label">Channels</span><span class="stat-value">3</span></div>
+      <div class="stat-row"><span class="stat-label">Confidence</span><span class="stat-value green" id="sb-confidence">—</span></div>
+      <div class="stat-row"><span class="stat-label">Total delay</span><span class="stat-value yellow" id="sb-delay">—</span></div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Channels</h3>
+      <div>
+        <span class="channel-pill"><span class="ch-dot ch0"></span>SocialApp-Alpha</span>
+        <span class="channel-pill"><span class="ch-dot ch1"></span>SocialApp-Beta</span>
+        <span class="channel-pill"><span class="ch-dot ch2"></span>SocialApp-Gamma</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section" style="margin-top:auto">
+      <button class="run-btn" id="run-btn" onclick="startDemo()">▶ Run Transmission</button>
+    </div>
+
+  </aside>
+
+  <!-- ── Main Panel ── -->
+  <div class="panel">
+
+    <!-- Message -->
+    <div class="panel-card">
+      <h4>Covert Message</h4>
+      <div class="msg-strip" id="msg-display">
+        <em>Select a scenario to begin.</em>
+      </div>
+    </div>
+
+    <!-- Pipeline stages -->
+    <div class="panel-card">
+      <h4>Pipeline</h4>
+      <div class="pipeline">
+        <div class="pipe-stage" id="stage-chunk">① Semantic Chunking</div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-stage" id="stage-encode">② CLIP Encode → Images</div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-stage" id="stage-gan">③ GAN Schedule</div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-stage" id="stage-tx">④ Steganographic TX</div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-stage" id="stage-decode">⑤ Decode</div>
+      </div>
+    </div>
+
+    <!-- GAN timeline -->
+    <div class="panel-card">
+      <h4>GAN-Generated Transmission Schedule</h4>
+      <div style="display:grid;grid-template-columns:120px 1fr 90px 110px;gap:.5rem;font-size:.68rem;color:var(--muted);padding:0 .5rem .4rem;">
+        <span>CHUNK</span><span>DELAY BAR</span><span style="text-align:right">DELAY (s)</span><span style="text-align:right">CHANNEL</span>
+      </div>
+      <div id="gan-timeline"><p class="empty-state">Run a scenario to see the schedule.</p></div>
+    </div>
+
+    <!-- Confidence -->
+    <div class="panel-card">
+      <h4>Generator Confidence (Human-likeness)</h4>
+      <div class="gauge-wrap">
+        <div class="gauge-bar-bg"><div class="gauge-bar" id="gauge-bar" style="width:0%"></div></div>
+        <div class="gauge-label" id="gauge-val">—</div>
+      </div>
+    </div>
+
+    <!-- Transmission log -->
+    <div class="panel-card">
+      <h4>
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Idle</span>
+      </h4>
+      <div id="tx-log"><p class="empty-state">Awaiting transmission…</p></div>
+    </div>
+
+    <!-- Decoded output -->
+    <div class="panel-card" id="decoded-panel">
+      <h4>Reconstructed Message (Receiver)</h4>
+      <div class="decoded-msg" id="decoded-msg"></div>
+      <div class="decoded-captions" id="decoded-caps"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let currentScenario = '{{ scenarios[0].id }}';
+let isRunning = false;
+let evtSource = null;
+
+// Clock
+function updateClock() {
+  document.getElementById('live-clock').textContent = new Date().toLocaleTimeString('en-GB');
+}
+setInterval(updateClock, 1000); updateClock();
+
+function selectScenario(id, btn) {
+  if (isRunning) return;
+  currentScenario = id;
+  document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  fetch('/api/scenarios')
+    .then(r => r.json())
+    .then(data => {
+      const s = data.find(x => x.id === id);
+      if (s) {
+        document.getElementById('msg-display').innerHTML =
+          `<em>"${s.message}"</em>`;
+      }
+    });
+
+  resetUI();
+}
+
+function resetUI() {
+  ['stage-chunk','stage-encode','stage-gan','stage-tx','stage-decode'].forEach(id => {
+    document.getElementById(id).classList.remove('active');
+  });
+  document.getElementById('tx-log').innerHTML = '<p class="empty-state">Awaiting transmission…</p>';
+  document.getElementById('gan-timeline').innerHTML = '<p class="empty-state">Run a scenario to see the schedule.</p>';
+  document.getElementById('gauge-bar').style.width = '0%';
+  document.getElementById('gauge-val').textContent = '—';
+  document.getElementById('sb-confidence').textContent = '—';
+  document.getElementById('sb-delay').textContent = '—';
+  document.getElementById('decoded-panel').classList.remove('visible');
+  setStatus('idle', 'Idle');
+}
+
+function setStatus(state, text) {
+  const dot = document.getElementById('status-dot');
+  dot.className = 'status-dot' + (state === 'running' ? ' running' : state === 'done' ? ' done' : '');
+  document.getElementById('status-text').textContent = text;
+}
+
+function addLog(tag, tagClass, content) {
+  const log = document.getElementById('tx-log');
+  if (log.querySelector('.empty-state')) log.innerHTML = '';
+  const ts = new Date().toLocaleTimeString('en-GB');
+  log.innerHTML += `
+    <div class="tx-line">
+      <span class="tx-time">${ts}</span>
+      <span class="tx-tag ${tagClass}">${tag}</span>
+      <span class="tx-content">${content}</span>
+    </div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function activateStage(id) {
+  document.getElementById(id).classList.add('active');
+}
+
+function startDemo() {
+  if (isRunning) return;
+  isRunning = true;
+  document.getElementById('run-btn').disabled = true;
+  resetUI();
+  setStatus('running', 'Initialising…');
+
+  // Phase: chunking & encode (instant visual)
+  activateStage('stage-chunk');
+  addLog('SYS', 'system', 'Semantic chunking complete.');
+  setTimeout(() => { activateStage('stage-encode'); addLog('SYS', 'system', 'CLIP embeddings computed → image IDs mapped.'); }, 400);
+  setTimeout(() => { activateStage('stage-gan');    addLog('SYS', 'system', 'Requesting GAN schedule…'); }, 800);
+
+  // Open SSE stream
+  evtSource = new EventSource(`/api/stream/${currentScenario}`);
+  let stepRows = {};
+
+  evtSource.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+
+    if (msg.phase === 'schedule') {
+      const conf = msg.confidence;
+      document.getElementById('gauge-bar').style.width  = (conf * 100) + '%';
+      document.getElementById('gauge-val').textContent  = conf.toFixed(4);
+      document.getElementById('sb-confidence').textContent = conf.toFixed(4);
+      addLog('GAN', 'system', `Schedule generated · confidence=${conf.toFixed(4)} · hour=${msg.hour.toFixed(1)}h`);
+      activateStage('stage-tx');
+      setStatus('running', 'Transmitting…');
+    }
+
+    else if (msg.phase === 'waiting') {
+      const row = document.getElementById(`tl-${msg.step}`);
+      if (row) {
+        row.classList.add('active');
+        row.querySelector('.tl-bar').style.width = '100%';
+      }
+      addLog('WAIT', 'wait', `Step ${msg.step} · delaying ${msg.delay.toFixed(3)}s (human-like jitter)`);
+    }
+
+    else if (msg.phase === 'transmit') {
+      const row = document.getElementById(`tl-${msg.step}`);
+      if (row) row.classList.replace('active', 'done');
+      const chClass = `ch-name-${msg.channel_id}`;
+      addLog('SEND', 'send',
+        `[Step ${msg.step}/${msg.total}] <span class="${chClass}">${msg.channel}</span> ← ${msg.image_id} &nbsp;|&nbsp; "${msg.chunk}"`);
+    }
+
+    else if (msg.phase === 'decoded') {
+      activateStage('stage-decode');
+      setStatus('done', 'Transmission complete');
+      addLog('RECV', 'decoded', 'Receiver decoded image sequence → captions.');
+      document.getElementById('decoded-msg').textContent = msg.reconstructed;
+      const caps = document.getElementById('decoded-caps');
+      caps.innerHTML = msg.captions.map(c => `<span class="caption-chip">${c}</span>`).join('');
+      document.getElementById('decoded-panel').classList.add('visible');
+    }
+
+    else if (msg.phase === 'done') {
+      evtSource.close();
+      isRunning = false;
+      document.getElementById('run-btn').disabled = false;
+    }
+  };
+
+  evtSource.onerror = () => {
+    evtSource.close();
+    isRunning = false;
+    document.getElementById('run-btn').disabled = false;
+    setStatus('idle', 'Error — check server');
+  };
+
+  // Pre-fetch schedule to build timeline rows
+  fetch(`/api/run/${currentScenario}`)
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('sb-delay').textContent = data.total_delay.toFixed(2) + 's';
+      const tl = document.getElementById('gan-timeline');
+      tl.innerHTML = '';
+      data.steps.forEach(s => {
+        const chClass = `ch-name-${s.channel_id}`;
+        const maxDelay = 15;
+        const pct = Math.min((s.delay_s / maxDelay) * 100, 100);
+        tl.innerHTML += `
+          <div class="tl-row" id="tl-${s.step}">
+            <div class="tl-img">${s.image_id}</div>
+            <div class="tl-bar-wrap"><div class="tl-bar" style="transition: width ${s.delay_s}s linear;"></div></div>
+            <div class="tl-delay">${s.delay_s.toFixed(3)}s</div>
+            <div class="tl-ch ${chClass}">${s.channel}</div>
+          </div>`;
+      });
+    });
+}
+
+// Init: show first scenario message
+fetch('/api/scenarios')
+  .then(r => r.json())
+  .then(data => {
+    if (data.length) {
+      document.getElementById('msg-display').innerHTML = `<em>"${data[0].message}"</em>`;
+    }
+  });
+</script>
+</body>
+</html>
