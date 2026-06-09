@@ -17,12 +17,44 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Literal
+import re
 
 from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem, Modality
 from src.engine.chunker import SemanticChunker, SemanticChunk
 
 # Diversity mode type
 DiversityMode = Literal["best", "round_robin", "balanced"]
+
+STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "before", "but", "by", "for",
+    "from", "if", "in", "inside", "into", "is", "it", "let", "me", "near",
+    "of", "on", "or", "outside", "the", "their", "them", "then", "there",
+    "they", "to", "up", "us", "we", "when", "with", "you", "your",
+}
+
+
+def _keywords(text: str) -> list[str]:
+    return [token for token in re.findall(r"[a-zA-Z']+", text.lower()) if token not in STOPWORDS]
+
+
+def _candidate_text_score(chunk_text: str, media: MediaItem) -> float:
+    """
+    Add a lightweight lexical bias toward candidates whose decoded text
+    preserves chunk keywords rather than only being embedding-near.
+    """
+    chunk_keywords = _keywords(chunk_text)
+    if not chunk_keywords:
+        return media.normalized_score
+
+    content = (media.content or "").lower()
+    overlap = sum(1 for token in chunk_keywords if token in content)
+    overlap_ratio = overlap / len(chunk_keywords)
+
+    exact_phrase_bonus = 0.08 if chunk_text.lower() in content else 0.0
+    modality_bonus = 0.04 if media.modality == "text" else 0.0
+    semantic_bonus = overlap_ratio * 0.35
+
+    return media.normalized_score + semantic_bonus + exact_phrase_bonus + modality_bonus
 
 
 @dataclass
@@ -281,6 +313,13 @@ class SemanticEncoder:
                 results = sorted(
                     results,
                     key=lambda r: (modality_counts.get(r.modality, 0), -r.normalized_score)
+                )
+            else:
+                # Prefer candidates whose decoded text preserves chunk keywords.
+                results = sorted(
+                    results,
+                    key=lambda r: _candidate_text_score(chunk.original, r),
+                    reverse=True,
                 )
             
             # Select best match(es)

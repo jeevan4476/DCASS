@@ -18,7 +18,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Literal
 
-from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem, Modality
+from src.corpus.index.unified_index import (
+    UnifiedSemanticIndex,
+    MediaItem,
+    Modality,
+    extract_semantic_content,
+)
 
 
 @dataclass
@@ -186,16 +191,7 @@ class SemanticDecoder:
             
             if item:
                 # Item found - extract content
-                content = item.content
-                if item.modality == "text":
-                    # For text, content is the text itself
-                    content = item.metadata.get("text", item.content)
-                elif item.modality == "image":
-                    # For images, use caption if available
-                    content = item.metadata.get("caption", item.metadata.get("text", item.content))
-                elif item.modality == "audio":
-                    # For audio, use transcript/text if available
-                    content = item.metadata.get("text", item.metadata.get("transcript", item.content))
+                content = extract_semantic_content(item.metadata, item.modality)
                 
                 decoded_items.append(DecodedItem(
                     media_id=media_id,

@@ -13,7 +13,11 @@ venv/
 ENV/
 env/
 
-# Data directories (large files, download locally)
+# Storage directory - runtime data (keep structure, ignore contents)
+storage/*
+!storage/.gitkeep
+
+# Legacy data directories (if any remain)
 data/raw/
 data/indices/
 data/cache/
@@ -21,8 +25,7 @@ data/processed/
 data/audio
 data/benchmarks/
 
-# Model files (download or train locally)
-models/
+# Model files (now in storage/, download or train locally)
 *.pt
 *.pth
 *.onnx
@@ -38,10 +41,10 @@ Thumbs.db
 *.swp
 *.swo
 *~
+nul  # Windows-specific: accidental redirection file
 
-# Logs
+# Logs (now in storage/logs/)
 *.log
-logs/
 
 # Build artifacts
 build/
@@ -66,7 +69,8 @@ htmlcov/
 .mypy_cache/
 .pytype/
 
-# Phase 3 output (temporary)
+# Phase 3 output (moved to storage/outputs/)
+# (keeping for backward compatibility if old files exist)
 phase3_out/
 
 # Secrets (never commit!)
@@ -84,15 +88,54 @@ config.local.yaml
 Claude.md
 CLAUDE.md
 
-# Docker simulation artifacts
+# Docker simulation artifacts (now in storage/)
+# (keeping for backward compatibility)
 shared_channel/
 checkpoints/
-*.pt
-*.pth
-*.ckpt
+
+# Docker build cache and artifacts
+.docker/
+docker-compose.override.yml
+*.tar
+*.tar.gz
+
+# Training artifacts (now in storage/data/behavioral/)
+# (keeping for backward compatibility)
+data/behavioral/
+tensorboard_logs/
+runs/
+
+# Audio files (large)
+*.wav
+*.mp3
+*.flac
+*.ogg
+
+# HuggingFace cache
+.cache/
+huggingface/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
 
 # Private notes and drafts
 NOTES.md
 TODO_PRIVATE.md
 drafts/
 personal/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.lnk
+
+# Editor directories
+.idea/
+.vscode/
+*.sublime-*
+*.code-workspace

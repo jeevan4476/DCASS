@@ -24,6 +24,81 @@ import clip
 Modality = Literal["image", "text", "audio"]
 
 
+def resolve_indices_base_path(base_path: Path | None = None) -> Path:
+    """
+    Resolve the indices directory.
+
+    Prefers an explicit path when provided. Otherwise, tries the current
+    `storage/data/indices` location first, then falls back to the older
+    `storage/indices` layout when that is what exists locally.
+    """
+    if base_path is not None:
+        return Path(base_path)
+
+    project_root = Path(__file__).parent.parent.parent.parent
+    candidates = [
+        project_root / "storage" / "data" / "indices",
+        project_root / "storage" / "indices",
+    ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return candidates[0]
+
+
+def _is_path_like(value: str) -> bool:
+    value = value.strip().lower()
+    return (
+        "/" in value
+        or "\\" in value
+        or value.endswith((".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".mp3", ".wav", ".flac"))
+    )
+
+
+def extract_semantic_content(meta: dict, modality: Modality) -> str:
+    """
+    Extract the most meaningful human-readable content for a media item.
+
+    This prefers captions/transcripts/text over filesystem paths so decoded
+    output and encoder reranking operate on semantic text instead of raw paths.
+    """
+    if modality == "image":
+        captions = meta.get("captions")
+        if isinstance(captions, list):
+            for caption in captions:
+                if isinstance(caption, str) and caption.strip():
+                    return caption.strip()
+
+        for key in ["caption", "text", "content"]:
+            value = meta.get(key)
+            if isinstance(value, str) and value.strip() and not _is_path_like(value):
+                return value.strip()
+
+        path = meta.get("path", "")
+        return path.strip() if isinstance(path, str) else ""
+
+    if modality == "audio":
+        for key in ["text", "transcript", "content"]:
+            value = meta.get(key)
+            if isinstance(value, str) and value.strip() and not _is_path_like(value):
+                return value.strip()
+
+    if modality == "text":
+        for key in ["text", "content"]:
+            value = meta.get(key)
+            if isinstance(value, str) and value.strip() and not _is_path_like(value):
+                return value.strip()
+
+    for key in ["content", "text", "path"]:
+        value = meta.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return ""
+
+
 @dataclass
 class MediaItem:
     """Represents a media item from the corpus."""
@@ -142,11 +217,7 @@ class UnifiedSemanticIndex:
             device: Device for CLIP model ('cuda' or 'cpu'). Auto-detected if None.
             enabled_modalities: List of modalities to load. Defaults to all available.
         """
-        if base_path is None:
-            # Default: project_root/data/indices/
-            base_path = Path(__file__).parent.parent.parent.parent / "data" / "indices"
-        
-        self.base_path = Path(base_path)
+        self.base_path = resolve_indices_base_path(base_path)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.enabled_modalities = enabled_modalities or ["image", "text", "audio"]
         
@@ -283,9 +354,8 @@ class UnifiedSemanticIndex:
                 if normalized < min_score:
                     continue
                 
-                # Determine content field
-                content = meta.get("content") or meta.get("text") or meta.get("path", "")
-                
+                content = extract_semantic_content(meta, modality)
+
                 item = MediaItem(
                     id=meta.get("id", f"{modality}_{idx}"),
                     modality=modality,
@@ -332,7 +402,7 @@ class UnifiedSemanticIndex:
         for modality, meta_list in self.metadata.items():
             for meta in meta_list:
                 if meta.get("id") == item_id:
-                    content = meta.get("content") or meta.get("text") or meta.get("path", "")
+                    content = extract_semantic_content(meta, modality)
                     return MediaItem(
                         id=item_id,
                         modality=modality,

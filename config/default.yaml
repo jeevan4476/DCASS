@@ -15,12 +15,12 @@ project:
 # Paths Configuration
 # =============================================================================
 paths:
-  data_dir: "data"
-  raw_data: "data/raw"
-  indices_dir: "data/indices"
-  cache_dir: "data/cache"
-  models_dir: "models"
-  logs_dir: "logs"
+  data_dir: "storage/data"
+  raw_data: "storage/data/raw"
+  indices_dir: "storage/data/indices"
+  cache_dir: "storage/data/cache"
+  models_dir: "storage/models"
+  logs_dir: "storage/logs"
 
 # =============================================================================
 # Corpus Configuration
@@ -29,7 +29,7 @@ corpus:
   # Text Corpus (Wikipedia, books, etc.)
   text:
     enabled: true
-    source_dir: "data/raw/wikipedia"
+    source_dir: "storage/data/raw/wikipedia"
     extensions: [".txt", ".md"]
     min_chunk_length: 50
     max_chunk_length: 512
@@ -37,15 +37,15 @@ corpus:
   # Image Corpus (Flickr8k)
   image:
     enabled: true
-    source_dir: "data/raw/flickr8k"
-    captions_file: "data/raw/flickr8k/captions.txt"
-    images_dir: "data/raw/flickr8k/Images"
+    source_dir: "storage/data/raw/flickr8k"
+    captions_file: "storage/data/raw/flickr8k/captions.txt"
+    images_dir: "storage/data/raw/flickr8k/images"
     supported_formats: [".jpg", ".jpeg", ".png", ".webp"]
     
   # Audio Corpus (future)
   audio:
     enabled: false
-    source_dir: "data/raw/audio"
+    source_dir: "storage/data/raw/audio"
     supported_formats: [".wav", ".mp3", ".flac"]
     sample_rate: 16000
     max_duration: 30  # seconds
@@ -86,18 +86,18 @@ index:
   
   # Text index paths
   text:
-    path: "data/indices/text.index"
-    metadata_path: "data/indices/text_metadata.json"
+    path: "storage/data/indices/text.index"
+    metadata_path: "storage/data/indices/text_metadata.json"
     
   # Image index paths
   image:
-    path: "data/indices/image.index"
-    metadata_path: "data/indices/image_metadata.json"
+    path: "storage/data/indices/image.index"
+    metadata_path: "storage/data/indices/image_metadata.json"
     
   # Audio index paths
   audio:
-    path: "data/indices/audio.index"
-    metadata_path: "data/indices/audio_metadata.json"
+    path: "storage/data/indices/audio.index"
+    metadata_path: "storage/data/indices/audio_metadata.json"
 
 # =============================================================================
 # Model Configuration (Device, etc.)
@@ -234,7 +234,7 @@ analysis:
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
   format: "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
-  file: "logs/dcass.log"
+  file: "storage/logs/dcass.log"
   console: true
   
   # Loguru-specific settings

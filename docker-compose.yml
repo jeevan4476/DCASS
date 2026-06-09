@@ -1,87 +1,333 @@
 # docker-compose.yml for DCASS Simulation Sandbox
-# Sets up Alice (Sender) and Bob (Receiver) connected via shared volume
+# Optimized for minimal resource usage and faster startup
+#
+# Quick start:
+#   docker compose up                                    # sender + receiver (production)
+#   docker compose up --build                            # rebuild and start
+#   docker compose --profile web up                      # web UI (frontend + backend API)
+#   docker compose --profile training run dcass-gen-traffic   # generate data
+#   docker compose --profile training run dcass-train-gan     # train GAN
+#   docker compose --profile training run dcass-train-rl      # train RL
+#   docker compose --profile monitoring up tensorboard        # TensorBoard
+#   docker compose down -v                               # cleanup volumes
 
-version: '3.8'
+# ============================================================================
+# Shared configuration (reusable YAML anchors)
+# ============================================================================
+x-common-env: &common-env
+  PYTHONUNBUFFERED: "1"
+  CUDA_VISIBLE_DEVICES: ""
+  # Memory optimization
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  PYTORCH_CUDA_ALLOC_CONF: "garbage_collection_threshold:0.6"
 
+x-common-volumes: &common-volumes
+  - ./storage/shared_channel:/app/shared_channel:rw
+  - ./storage/data:/app/data:ro
+  - ./storage/models:/app/models:rw
+
+x-resource-limits: &resource-limits
+  deploy:
+    resources:
+      limits:
+        memory: 2G
+        cpus: '2.0'
+      reservations:
+        memory: 512M
+        cpus: '0.5'
+
+# ============================================================================
+# Services
+# ============================================================================
 services:
+  # ─────────────────────────────────────────────────────────────────────────
   # Alice: The Sender
+  # Review demo uses the static NoiseController (no model checkpoints
+  # required). Override with `DCASS_MODE=gan|rl|auto` once checkpoints are
+  # trained (see docker-compose profile `training`).
+  # ─────────────────────────────────────────────────────────────────────────
   dcass-sender:
     build:
       context: .
       dockerfile: Dockerfile
+      target: production
+      # Build cache optimization
+      cache_from:
+        - dcass:latest
+    image: dcass:sender
     container_name: dcass-alice
     hostname: alice
     environment:
-      - PYTHONUNBUFFERED=1
-      - DCASS_ROLE=sender
-      - DCASS_SHARED_DIR=/app/shared_channel
-      - CUDA_VISIBLE_DEVICES=""  # Force CPU mode
+      <<: *common-env
+      DCASS_ROLE: sender
+      DCASS_SHARED_DIR: /app/shared_channel
+      DCASS_MODE: ${DCASS_MODE:-static}
+      DCASS_PROFILE: ${DCASS_PROFILE:-casual}
+      DCASS_SEQ_LENGTH: ${DCASS_SEQ_LENGTH:-20}
+      DCASS_BASE_DELAY: ${DCASS_BASE_DELAY:-3.0}
+      DCASS_MESSAGE: ${DCASS_MESSAGE:-Meet at the cafe at noon}
     volumes:
-      - ./shared_channel:/app/shared_channel  # Shared wire simulation
-      - ./data:/app/data
-      - ./checkpoints:/app/checkpoints
-      - ./logs/sender:/app/logs
+      - ./storage/shared_channel:/app/shared_channel:rw
+      - ./storage/data:/app/storage/data:ro
+      - ./storage/models:/app/storage/models:ro
+      - ./storage/logs/sender:/app/logs:rw
     networks:
       - dcass-network
+    <<: *resource-limits
     command: >
-      bash -c "
-        echo 'Alice (Sender) starting...' &&
-        python -u scripts/run_sender.py --mode rl --episodes 100
-      "
+      python -u scripts/runtime/run_sender.py
+        --mode ${DCASS_MODE:-static}
+        --profile ${DCASS_PROFILE:-casual}
+        --sequence-length ${DCASS_SEQ_LENGTH:-20}
+        --base-delay ${DCASS_BASE_DELAY:-3.0}
+        --message "${DCASS_MESSAGE:-Meet at the cafe at noon}"
+        --shared-dir /app/shared_channel
     depends_on:
-      - dcass-receiver
+      dcass-receiver:
+        condition: service_healthy
+    restart: "no"
 
+  # ─────────────────────────────────────────────────────────────────────────
   # Bob: The Receiver
+  # Watches shared_channel/ for incoming JSON packet metadata
+  # ─────────────────────────────────────────────────────────────────────────
   dcass-receiver:
     build:
       context: .
       dockerfile: Dockerfile
+      target: production
+      cache_from:
+        - dcass:latest
+    image: dcass:receiver
     container_name: dcass-bob
     hostname: bob
     environment:
-      - PYTHONUNBUFFERED=1
-      - DCASS_ROLE=receiver
-      - DCASS_SHARED_DIR=/app/shared_channel
-      - CUDA_VISIBLE_DEVICES=""  # Force CPU mode
+      <<: *common-env
+      DCASS_ROLE: receiver
+      DCASS_SHARED_DIR: /app/shared_channel
     volumes:
-      - ./shared_channel:/app/shared_channel  # Shared wire simulation
-      - ./data:/app/data
-      - ./checkpoints:/app/checkpoints
-      - ./logs/receiver:/app/logs
+      - ./storage/shared_channel:/app/shared_channel:rw
+      - ./storage/data:/app/storage/data:ro
+      - ./storage/logs/receiver:/app/logs:rw
     networks:
       - dcass-network
+    <<: *resource-limits
     command: >
-      bash -c "
-        echo 'Bob (Receiver) starting...' &&
-        python -u scripts/run_receiver.py --watch /app/shared_channel --timeout 10
-      "
+      python -u scripts/runtime/run_receiver.py
+        --watch /app/shared_channel
+        --timeout ${RECEIVER_TIMEOUT:-10}
+        --exit-after-decode
     healthcheck:
       test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/shared_channel') else 1)"]
-      interval: 10s
-      timeout: 5s
+      interval: 5s
+      timeout: 3s
       retries: 3
+      start_period: 3s
+    restart: "no"
 
-  # Optional: TensorBoard for monitoring training
-  tensorboard:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Training Services (profile: training)
+  # Run with: docker compose --profile training run <service>
+  # ─────────────────────────────────────────────────────────────────────────
+
+  # Step 0: Generate synthetic human traffic data
+  dcass-gen-traffic:
     build:
       context: .
       dockerfile: Dockerfile
+      target: production
+    image: dcass:training
+    container_name: dcass-gen-traffic
+    environment:
+      <<: *common-env
+    volumes:
+      - ./storage/data:/app/data:rw
+    command: >
+      python -u scripts/training/generate_traffic_data.py
+        --num-sessions ${TRAFFIC_SESSIONS:-2000}
+        --num-channels ${NUM_CHANNELS:-3}
+        --output /app/data/behavioral/human_traffic.json
+    profiles:
+      - training
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  # Step 1: Train the GAN stealth scheduler
+  dcass-train-gan:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: dcass:training
+    container_name: dcass-train-gan
+    environment:
+      <<: *common-env
+    volumes:
+      - ./storage/data:/app/data:ro
+      - ./storage/models:/app/models:rw
+      - ./storage/logs/train-gan:/app/logs:rw
+    command: >
+      python -u scripts/training/train_gan.py
+        --data /app/data/behavioral/human_traffic.json
+        --epochs ${GAN_EPOCHS:-50}
+        --batch-size ${GAN_BATCH_SIZE:-32}
+        --checkpoint-dir /app/models/gan
+        --device cpu
+    profiles:
+      - training
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+
+  # Step 2: Train the RL stealth policy agent
+  dcass-train-rl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: dcass:training
+    container_name: dcass-train-rl
+    environment:
+      <<: *common-env
+    volumes:
+      - ./storage/data:/app/data:ro
+      - ./storage/models:/app/models:rw
+      - ./storage/logs/train-rl:/app/logs:rw
+    command: >
+      python -u scripts/training/train_rl.py
+        --episodes ${RL_EPISODES:-1000}
+        --num-channels ${NUM_CHANNELS:-3}
+        --checkpoint-dir /app/models/rl
+        --warden-checkpoint /app/models/gan/final.pt
+        --device cpu
+    profiles:
+      - training
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Monitoring (profile: monitoring)
+  # ─────────────────────────────────────────────────────────────────────────
+  tensorboard:
+    image: tensorflow/tensorflow:latest
     container_name: dcass-tensorboard
     hostname: tensorboard
     ports:
-      - "6006:6006"
+      - "${TENSORBOARD_PORT:-6006}:6006"
     volumes:
-      - ./logs:/app/logs
+      - ./storage/logs:/logs:ro
     networks:
       - dcass-network
-    command: tensorboard --logdir /app/logs --host 0.0.0.0 --port 6006
+    command: tensorboard --logdir /logs --host 0.0.0.0 --port 6006 --bind_all
     profiles:
-      - monitoring  # Only start if explicitly requested
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    restart: unless-stopped
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # Web Services (profile: web)
+  # Run with: docker compose --profile web up
+  # ─────────────────────────────────────────────────────────────────────────
+  
+  # Backend API Server
+  dcass-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: dcass:api
+    container_name: dcass-api
+    hostname: api
+    environment:
+      <<: *common-env
+      DCASS_ROLE: api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./storage/shared_channel:/app/storage/shared_channel:rw
+      - ./storage/data:/app/storage/data:ro
+      - ./storage/models:/app/storage/models:ro
+    networks:
+      - dcass-network
+    command: >
+      python -m uvicorn src.api.server:app 
+        --host 0.0.0.0 
+        --port 8000
+    profiles:
+      - web
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+    restart: unless-stopped
+
+  # Frontend (Next.js)
+  dcass-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: dcass:frontend
+    container_name: dcass-frontend
+    hostname: frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://dcass-api:8000
+    networks:
+      - dcass-network
+    depends_on:
+      dcass-api:
+        condition: service_healthy
+    profiles:
+      - web
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+    restart: unless-stopped
+
+# ============================================================================
+# Networks
+# ============================================================================
 networks:
   dcass-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
+# ============================================================================
+# Volumes (named volumes for persistence)
+# ============================================================================
 volumes:
   shared_channel:
+    driver: local
+  models:
+    driver: local
+  logs:
     driver: local

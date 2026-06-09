@@ -1,2 +1,0 @@
-IMAGE_ID=image_00421
-source=demo

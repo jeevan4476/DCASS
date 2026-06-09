@@ -1,0 +1,125 @@
+# ============================================================================
+# .dockerignore - Exclude files from Docker build context
+# Reduces build time and image size significantly
+# ============================================================================
+
+# Data directories - mounted at runtime via volumes
+data/
+models/
+checkpoints/
+shared_channel/
+phase3_out/
+audio/
+logs/
+
+# Python artifacts
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+*.so
+
+# Virtual environments
+.env
+.venv/
+venv/
+ENV/
+env/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.sublime-*
+*.code-workspace
+.project
+.pydevproject
+.settings/
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Documentation (not needed in runtime image)
+docs/
+document/
+*.md
+!README.md
+
+# Frontend (separate container if needed)
+frontend/
+node_modules/
+
+# Development files
+*.log
+*.tmp
+*.temp
+*.bak
+*~
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Secrets (should never be in image!)
+*.pem
+*.key
+credentials.json
+secrets.yaml
+api_keys.json
+.env.local
+.env.*.local
+config.local.yaml
+
+# Docker files (avoid recursion)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Claude/AI files
+.claude/
+Claude.md
+CLAUDE.md
+
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# Weekly plans and personal notes
+weekly_plans/
+NOTES.md
+TODO_PRIVATE.md
+drafts/
+personal/
+
+# Large binary files
+*.pt
+*.pth
+*.onnx
+*.bin
+*.h5
+*.tar
+*.tar.gz
+*.zip
+
+# Benchmark and test data
+data/benchmarks/
+data/raw/
+data/indices/
+data/cache/

@@ -12,6 +12,12 @@ This directory contains Mermaid diagrams documenting the DCASS system architectu
 | [sequence_decode.md](sequence_decode.md) | Decoding flow sequence |
 | [sequence_distribute.md](sequence_distribute.md) | Distribution pipeline flow |
 | [er_diagram.md](er_diagram.md) | Data entity relationships |
+| [state_diagram.md](state_diagram.md) | System lifecycle and mode transitions |
+| [swimlane_diagram.md](swimlane_diagram.md) | Cross-role process swimlane flow |
+| [ui_diagrams.md](ui_diagrams.md) | User interface interaction diagram |
+| [report_layouts.md](report_layouts.md) | Report section layout diagram |
+| [external_interfaces.md](external_interfaces.md) | External systems and interface map |
+| [packaging_deployment.md](packaging_deployment.md) | Docker packaging and deployment view |
 
 ## How to View
 

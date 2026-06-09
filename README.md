@@ -99,25 +99,73 @@ DCASS is organized into **four logical layers**:
 
 ---
 
+## 📖 Documentation
+
+All documentation lives in the [`docs/`](./docs/) folder:
+
+### User Guides
+| Guide | Description |
+|---|---|
+| [Getting Started](./docs/guides/GETTING_STARTED.md) | Install, configure, and run for the first time |
+| [Quick Start](./docs/guides/QUICK_START.md) | Fast track to running DCASS |
+| [Script Execution Guide](./docs/guides/SCRIPT_EXECUTION_GUIDE.md) | Complete Docker & local execution reference |
+| [Scripts Reference](./docs/guides/SCRIPTS.md) | How to run every script with examples |
+| [Docker Setup](./docs/guides/DOCKER_SETUP.md) | Full Docker reference |
+
+### Project Documentation
+| Document | Description |
+|---|---|
+| [Complete Implementation Guide](./docs/guides/COMPLETE_IMPLEMENTATION_GUIDE.md) | Full feature documentation |
+| [Implementation Summary](./docs/project/IMPLEMENTATION_SUMMARY.md) | GAN + RL technical details |
+| [Project Status](./docs/project/PROJECT_COMPLETION_STATUS.md) | Current completion status |
+| [Team Handoff Guide](./docs/guides/TEAM_HANDOFF_GUIDE.md) | Comprehensive handoff document |
+| [Full Handout](./docs/project/DCASS_Implementation_Handout.md) | Complete module walkthrough |
+
+### Migration & Refactoring
+| Document | Description |
+|---|---|
+| [Refactoring Guide](./docs/guides/REFACTORING_MIGRATION_GUIDE.md) | Directory structure changes & migration |
+
+---
+
 ## 📁 Project Structure
 
 ```text
 dcass/
-├── src/
-│   ├── corpus/          # Dataset loading, preprocessing, embeddings, FAISS
-│   ├── engine/          # Encoding / decoding logic
-│   ├── stealth/         # GAN scheduler and RL agent
-│   ├── distribution/   # Multi-channel dispatcher
-│   ├── analysis/        # Benchmarks and adversarial testing
-│   └── cli/             # Command-line interface
+├── README.md                # This file
 │
-├── data/
-│   ├── raw/
-│   ├── processed/
-│   └── embeddings/
+├── docs/                    # All documentation
+│   ├── guides/              # User-facing guides
+│   ├── project/             # Project documentation
+│   ├── diagrams/            # Architecture diagrams
+│   └── research/            # Research artifacts
 │
-├── models/              # Trained GAN and RL models
-├── tests/               # Unit, integration, adversarial tests
-├── notebooks/           # Research experiments
-├── docs/                # Architecture & research paper
-└── scripts/             # Utility scripts
+├── src/                     # Core system code
+│   ├── corpus/              # Dataset loading, preprocessing, embeddings, FAISS
+│   ├── engine/              # Encoding / decoding logic
+│   ├── stealth/             # GAN scheduler and RL agent
+│   ├── distribution/        # Multi-channel dispatcher
+│   ├── analysis/            # Benchmarks and adversarial testing
+│   ├── api/                 # FastAPI backend server
+│   └── cli/                 # Command-line interface
+│
+├── scripts/                 # Organized executable scripts
+│   ├── data/                # Data preparation & corpus building
+│   ├── audio/               # Audio-specific workflows
+│   ├── training/            # Model training (GAN & RL)
+│   ├── runtime/             # Core execution (sender/receiver/server)
+│   ├── demos/               # Demo scripts
+│   ├── testing/             # Testing & evaluation
+│   └── utils/               # Utility scripts
+│
+├── storage/                 # Runtime data (gitignored)
+│   ├── data/                # Downloaded datasets & indices
+│   ├── models/              # Trained GAN and RL checkpoints
+│   ├── logs/                # Application logs
+│   ├── checkpoints/         # Training checkpoints
+│   └── shared_channel/      # Alice-Bob communication
+│
+├── frontend/                # Next.js web interface
+├── tests/                   # Unit, integration, adversarial tests
+├── config/                  # Configuration files
+└── tools/                   # Legacy/one-off scripts
