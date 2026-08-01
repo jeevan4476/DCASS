@@ -24,6 +24,7 @@ from src.corpus.index.unified_index import (
     Modality,
     extract_semantic_content,
 )
+from src.engine.ecc import RSErrorCorrection
 
 
 @dataclass
@@ -45,6 +46,9 @@ class DecodingResult:
     """Complete result of decoding a media sequence."""
     media_ids: list[str]
     decoded: list[DecodedItem]
+    ecc_success: bool = True
+    ecc_errors_fixed: list[int] = field(default_factory=list)
+    ecc_payload: Optional[str] = None
     
     @property
     def contents(self) -> list[str]:
@@ -53,7 +57,9 @@ class DecodingResult:
     
     @property
     def reconstructed_meaning(self) -> str:
-        """Reconstruct the semantic meaning from all items."""
+        """Reconstruct the semantic meaning from all items (with RS-ECC recovery if active)."""
+        if self.ecc_payload is not None and self.ecc_payload.strip():
+            return self.ecc_payload
         return " | ".join(self.contents)
     
     @property
@@ -170,12 +176,21 @@ class SemanticDecoder:
         """Check if decoder is ready for use."""
         return self._loaded
     
-    def decode(self, media_ids: list[str]) -> DecodingResult:
+    def decode(
+        self,
+        media_ids: list[str],
+        use_ecc: bool = False,
+        ecc_parity_bytes: int = 8,
+        raw_codeword: Optional[bytes] = None
+    ) -> DecodingResult:
         """
         Decode a sequence of media IDs into semantic meaning.
         
         Args:
             media_ids: List of media IDs to decode
+            use_ecc: If True, decodes codeword using Reed-Solomon Error Correction
+            ecc_parity_bytes: Number of RS parity bytes (default 8)
+            raw_codeword: Codeword bytes to decode via Berlekamp-Massey
             
         Returns:
             DecodingResult with decoded items and reconstructed meaning
@@ -210,9 +225,20 @@ class SemanticDecoder:
                     metadata={}
                 ))
         
+        ecc_payload = None
+        ecc_success = True
+        ecc_errors_fixed = []
+
+        if use_ecc and raw_codeword:
+            rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
+            ecc_payload, ecc_success, ecc_errors_fixed = rs_ecc.decode(raw_codeword)
+        
         return DecodingResult(
             media_ids=media_ids,
-            decoded=decoded_items
+            decoded=decoded_items,
+            ecc_success=ecc_success,
+            ecc_errors_fixed=ecc_errors_fixed,
+            ecc_payload=ecc_payload
         )
     
     def decode_to_text(self, media_ids: list[str]) -> str:

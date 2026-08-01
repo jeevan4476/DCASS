@@ -21,6 +21,7 @@ import re
 
 from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem, Modality
 from src.engine.chunker import SemanticChunker, SemanticChunk
+from src.engine.ecc import RSErrorCorrection
 
 # Diversity mode type
 DiversityMode = Literal["best", "round_robin", "balanced"]
@@ -74,6 +75,8 @@ class EncodingResult:
     original_message: str
     chunks: list[SemanticChunk]
     encoded: list[EncodedChunk]
+    ecc_codeword: Optional[bytes] = None
+    ecc_parity_bytes: int = 0
     
     @property
     def media_sequence(self) -> list[MediaItem]:
@@ -219,7 +222,9 @@ class SemanticEncoder:
         keep_alternatives: int = 3,
         min_score: float = 0.0,
         avoid_duplicates: bool = True,
-        diversity_mode: DiversityMode = "best"
+        diversity_mode: DiversityMode = "best",
+        use_ecc: bool = False,
+        ecc_parity_bytes: int = 8
     ) -> EncodingResult:
         """
         Encode a message into a media sequence.
@@ -231,10 +236,9 @@ class SemanticEncoder:
             keep_alternatives: How many alternatives to store
             min_score: Minimum normalized score threshold
             avoid_duplicates: If True, each chunk gets a unique media item
-            diversity_mode: How to select modalities for each chunk:
-                - "best": Select the highest-scoring item regardless of modality (default)
-                - "round_robin": Cycle through modalities (image -> text -> audio -> ...)
-                - "balanced": Prefer underrepresented modalities to balance output
+            diversity_mode: How to select modalities for each chunk
+            use_ecc: If True, protects payload with Reed-Solomon Error Correction Code
+            ecc_parity_bytes: Number of RS parity bytes (default 8)
             
         Returns:
             EncodingResult with encoded chunks and media sequence
@@ -243,6 +247,11 @@ class SemanticEncoder:
             raise RuntimeError("Encoder not loaded. Call load() first.")
         
         modalities = modalities or self.default_modalities
+
+        ecc_codeword = None
+        if use_ecc:
+            rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
+            ecc_codeword = rs_ecc.encode(message)
         
         # Step 1: Chunk the message
         chunks = self.chunker.chunk(message)
@@ -340,7 +349,9 @@ class SemanticEncoder:
         return EncodingResult(
             original_message=message,
             chunks=chunks,
-            encoded=encoded_chunks
+            encoded=encoded_chunks,
+            ecc_codeword=ecc_codeword,
+            ecc_parity_bytes=ecc_parity_bytes if use_ecc else 0
         )
     
     def encode_to_ids(
