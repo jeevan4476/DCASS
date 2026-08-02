@@ -1,13 +1,5 @@
 # DCASS Research & Technical Progress Report: Multi-Modal Steganography & Vector Infrastructure Milestone
 
-**Document Metadata**
-- **Project**: Dynamic Context-Aware Semantic Steganography (DCASS)
-- **Repository URL**: `https://github.com/jeevan4476/dcass.git` (authenticated via `gh` CLI)
-- **Status**: Research Milestone Completed
-- **Target OS / Environment**: Linux, CUDA 12.1, PyTorch 2.5 (cu121), FAISS
-
----
-
 ## 1. Executive Summary & Capstone Goals
 
 ### 1.1 Executive Summary
@@ -137,9 +129,3 @@ sequenceDiagram
 ```
 
 ---
-
-## 5. Repository & Remote Status
-
-- **GitHub Remote**: `https://github.com/jeevan4476/dcass.git` (authenticated via `gh` CLI and SSH)
-- **Local Branch**: `main`
-- **Environment**: `.venv` with PyTorch 2.5 CUDA 12.1 + FAISS

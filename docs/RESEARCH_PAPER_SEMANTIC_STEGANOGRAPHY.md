@@ -1,12 +1,5 @@
 # Theoretical Foundations & Mathematical Mechanics of Dynamic Context-Aware Semantic Steganography (DCASS)
 
-**Paper / Technical Report Draft**  
-**Authors**: DCASS Research Team  
-**Date**: August 2026  
-**Target Venue**: IEEE Transactions on Information Forensics and Security / ACM IH&MMSec  
-
----
-
 ## Abstract
 Traditional steganographic techniques embed covert messages by modifying lower-order bits, frequency coefficients, or temporal samples of carrier media. However, physical signal perturbations leave distinct statistical signatures detectable by deep neural network steganalysts (e.g., SRNet). This paper presents **Dynamic Context-Aware Semantic Steganography (DCASS)**, a paradigm shift that eliminates physical media modifications entirely. DCASS encodes secret payloads into sequences of *naturally occurring, unmodified multi-modal media items* (images, text, audio) indexed in a unified 512-dimensional embedding hypersphere $\mathbb{S}^{511}$. To solve the inherent 15–25% quantization error plateau caused by continuous vector space drift, we integrate Reed-Solomon Error Correcting Codes over $GF(2^8)$. We prove that RS-ECC guarantees **0% Bit Error Rate (100.0% payload recovery)** while preserving a zero Kullback-Leibler divergence ($D_{KL} = 0.0$) against cover distributions. Furthermore, we derive the theoretical channel capacity of semantic codebook channels, demonstrating effective secret throughputs of up to 12.3 bits per carrier item under $N=153,281$ vector search spaces.
 
