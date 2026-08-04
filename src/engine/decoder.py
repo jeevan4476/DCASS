@@ -35,6 +35,7 @@ class DecodedItem:
     content: str  # The semantic content (text/caption)
     verified: bool  # Whether item was found in corpus
     metadata: dict = field(default_factory=dict)
+    file_path: Optional[str] = None
     
     def __repr__(self) -> str:
         status = "VERIFIED" if self.verified else "UNVERIFIED"
@@ -50,6 +51,17 @@ class DecodingResult:
     ecc_errors_fixed: list[int] = field(default_factory=list)
     ecc_payload: Optional[str] = None
     
+    @property
+    def file_paths(self) -> list[str]:
+        """Get file paths for decoded items."""
+        return [d.file_path for d in self.decoded if d.file_path]
+
+    @property
+    def file_path(self) -> Optional[str]:
+        """Get primary file path if available."""
+        paths = self.file_paths
+        return paths[0] if paths else None
+
     @property
     def contents(self) -> list[str]:
         """Get the semantic content from each decoded item."""
@@ -213,7 +225,8 @@ class SemanticDecoder:
                     modality=item.modality,
                     content=content,
                     verified=True,
-                    metadata=item.metadata
+                    metadata=item.metadata,
+                    file_path=item.file_path
                 ))
             else:
                 # Item not found - unverified

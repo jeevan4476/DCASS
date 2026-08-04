@@ -117,6 +117,7 @@ class EncodeResponse(BaseModel):
     media_ids: list[str]
     chunks: list[str]
     encoded: list[dict]
+    media_sequence: list[dict] = Field(default_factory=list)
     modality_breakdown: dict[str, int]
     elapsed_ms: float
 
@@ -128,6 +129,7 @@ class DecodeRequest(BaseModel):
 class DecodeResponse(BaseModel):
     reconstructed_meaning: str
     items: list[dict]
+    decoded: list[dict] = Field(default_factory=list)
     verification_rate: float
     all_verified: bool
     elapsed_ms: float
@@ -169,19 +171,35 @@ def encode(req: EncodeRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
     encoded_items = []
+    media_seq_items = []
     for enc in result.encoded:
+        fpath = enc.file_path or (enc.media.file_path if enc.media else "")
         encoded_items.append({
             "media_id": enc.media.id,
             "modality": enc.media.modality,
             "score": round(enc.media.normalized_score, 4),
             "content": enc.media.content[:120],
-            "file_path": enc.media.file_path,
+            "file_path": fpath,
+        })
+
+    for item in result.media_sequence:
+        fpath = item.file_path or ""
+        media_seq_items.append({
+            "id": item.id,
+            "media_id": item.id,
+            "modality": item.modality,
+            "content": item.content[:120],
+            "score": round(item.score, 4),
+            "normalized_score": round(item.normalized_score, 4),
+            "file_path": fpath,
+            "metadata": item.metadata,
         })
 
     return EncodeResponse(
         media_ids=result.media_ids,
         chunks=[c.original for c in result.chunks],
         encoded=encoded_items,
+        media_sequence=media_seq_items,
         modality_breakdown=result.modality_breakdown,
         elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
     )
@@ -194,24 +212,28 @@ def decode(req: DecodeRequest):
     result = decoder.decode(req.media_ids)
 
     items = []
+    decoded_items = []
     for d in result.decoded:
-        file_path = ""
-        if d.verified:
+        file_path = d.file_path or ""
+        if not file_path and d.verified:
             item = decoder.index.get_by_id(d.media_id)
             if item:
-                file_path = item.file_path
+                file_path = item.file_path or ""
 
-        items.append({
+        item_dict = {
             "media_id": d.media_id,
             "modality": d.modality,
             "content": d.content[:200],
             "file_path": file_path,
             "verified": d.verified,
-        })
+        }
+        items.append(item_dict)
+        decoded_items.append(item_dict)
 
     return DecodeResponse(
         reconstructed_meaning=result.reconstructed_meaning,
         items=items,
+        decoded=decoded_items,
         verification_rate=result.verification_rate,
         all_verified=result.all_verified,
         elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),

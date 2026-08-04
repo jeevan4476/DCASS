@@ -110,41 +110,93 @@ class MediaItem:
     metadata: dict = field(default_factory=dict)
     
     @property
-    def file_path(self) -> str:
+    def file_path(self) -> Optional[str]:
         """Resolve exact absolute local file path on disk."""
-        project_root = Path(__file__).parent.parent.parent.parent
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
         
         if self.modality == "image":
-            content_str = str(self.metadata.get("content", self.metadata.get("image_path", self.content)))
-            if Path(content_str).is_absolute() and Path(content_str).exists():
-                return content_str
-            
-            candidate30k = project_root / "storage" / "data" / "raw" / "flickr30k" / Path(content_str).name
-            if candidate30k.exists():
-                return str(candidate30k)
-            
-            candidate8k = project_root / "storage" / "data" / "raw" / "flickr8k" / Path(content_str).name
-            if candidate8k.exists():
-                return str(candidate8k)
-            
-            return str(candidate30k)
+            raw_path = self.metadata.get("path") or self.metadata.get("image_path") or self.metadata.get("file_path")
+            if not raw_path and _is_path_like(self.content):
+                raw_path = self.content
+
+            if raw_path:
+                p = Path(raw_path)
+                if p.is_absolute() and p.exists():
+                    return str(p.resolve())
+                rel_p = (project_root / p).resolve()
+                if rel_p.exists():
+                    return str(rel_p)
+
+                filename = p.name
+                cand30k = project_root / "storage" / "data" / "raw" / "flickr30k" / "images" / filename
+                if cand30k.exists():
+                    return str(cand30k.resolve())
+                cand8k = project_root / "storage" / "data" / "raw" / "flickr8k" / "images" / filename
+                if cand8k.exists():
+                    return str(cand8k.resolve())
+                return str(rel_p)
+
+            cand30k = project_root / "storage" / "data" / "raw" / "flickr30k" / "images" / f"{self.id}.jpg"
+            if cand30k.exists():
+                return str(cand30k.resolve())
+            cand8k = project_root / "storage" / "data" / "raw" / "flickr8k" / "images" / f"{self.id}.jpg"
+            if cand8k.exists():
+                return str(cand8k.resolve())
+            return str((project_root / "storage" / "data" / "indices" / "image_metadata.json").resolve())
 
         elif self.modality == "audio":
-            content_str = str(self.metadata.get("audio_path", self.metadata.get("content", self.content)))
-            if Path(content_str).is_absolute() and Path(content_str).exists():
-                return content_str
-            
-            candidate_aud = project_root / "storage" / "data" / "audio" / "cache" / Path(content_str).name
-            if candidate_aud.exists():
-                return str(candidate_aud)
-                
-            return str(candidate_aud)
+            raw_path = self.metadata.get("audio_path") or self.metadata.get("path") or self.metadata.get("file_path")
+            if not raw_path and _is_path_like(self.content):
+                raw_path = self.content
 
-        else:
-            wiki_json = project_root / "storage" / "data" / "raw" / "wikipedia" / "sentences.json"
-            if wiki_json.exists():
-                return str(wiki_json)
-            return str(project_root / "storage" / "data" / "indices" / "text_metadata.json")
+            if raw_path:
+                p = Path(raw_path)
+                if p.is_absolute() and p.exists():
+                    return str(p.resolve())
+                rel_p = (project_root / p).resolve()
+                if rel_p.exists():
+                    return str(rel_p)
+                cand_aud = project_root / "storage" / "data" / "audio" / "cache" / p.name
+                if cand_aud.exists():
+                    return str(cand_aud.resolve())
+                return str(rel_p)
+
+            candidates = [
+                project_root / "storage" / "data" / "audio" / "dataset_info.txt",
+                project_root / "storage" / "data" / "indices" / "audio_metadata.json",
+                project_root / "storage" / "data" / "audio",
+            ]
+            cache_dir = project_root / "storage" / "data" / "audio" / "cache"
+            if cache_dir.exists():
+                for file_p in cache_dir.rglob("*.arrow"):
+                    candidates.insert(0, file_p)
+                    break
+            for cand in candidates:
+                if cand.exists():
+                    return str(cand.resolve())
+            return None
+
+        else:  # text
+            raw_path = self.metadata.get("file_path") or self.metadata.get("path") or self.metadata.get("text_path")
+            if raw_path:
+                p = Path(raw_path)
+                if p.is_absolute() and p.exists():
+                    return str(p.resolve())
+                rel_p = (project_root / p).resolve()
+                if rel_p.exists():
+                    return str(rel_p)
+
+            candidates = [
+                project_root / "storage" / "data" / "text" / "wikipedia" / "sentences.json",
+                project_root / "storage" / "data" / "raw" / "wikipedia" / "sentences.json",
+                project_root / "storage" / "data" / "text" / "wikipedia" / "sentences.txt",
+                project_root / "storage" / "data" / "raw" / "wikipedia" / "sentences.txt",
+                project_root / "storage" / "data" / "indices" / "text_metadata.json",
+            ]
+            for cand in candidates:
+                if cand.exists():
+                    return str(cand.resolve())
+            return None
 
     def __repr__(self) -> str:
         return f"MediaItem({self.modality}:{self.id}, score={self.normalized_score:.3f})"

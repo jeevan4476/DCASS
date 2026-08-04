@@ -63,13 +63,25 @@ def test_api_encode_and_decode_e2e():
     assert "media_ids" in encode_data
     assert "chunks" in encode_data
     assert "encoded" in encode_data
+    assert "media_sequence" in encode_data
     assert "modality_breakdown" in encode_data
     assert "elapsed_ms" in encode_data
     
     media_ids = encode_data["media_ids"]
     assert len(media_ids) > 0
     assert len(encode_data["encoded"]) == len(media_ids)
+    assert len(encode_data["media_sequence"]) == len(media_ids)
     assert len(encode_data["chunks"]) > 0
+
+    for item in encode_data["encoded"]:
+        assert "file_path" in item
+        assert isinstance(item["file_path"], str)
+        assert len(item["file_path"]) > 0
+
+    for item in encode_data["media_sequence"]:
+        assert "file_path" in item
+        assert isinstance(item["file_path"], str)
+        assert len(item["file_path"]) > 0
 
     # 2. Test POST /api/decode with returned media_ids
     decode_payload = {"media_ids": media_ids}
@@ -79,6 +91,7 @@ def test_api_encode_and_decode_e2e():
 
     assert "reconstructed_meaning" in decode_data
     assert "items" in decode_data
+    assert "decoded" in decode_data
     assert "verification_rate" in decode_data
     assert "all_verified" in decode_data
     assert "elapsed_ms" in decode_data
@@ -86,7 +99,18 @@ def test_api_encode_and_decode_e2e():
     assert decode_data["all_verified"] is True
     assert decode_data["verification_rate"] == 1.0
     assert len(decode_data["items"]) == len(media_ids)
+    assert len(decode_data["decoded"]) == len(media_ids)
     assert len(decode_data["reconstructed_meaning"]) > 0
+
+    for item in decode_data["items"]:
+        assert "file_path" in item
+        assert isinstance(item["file_path"], str)
+        assert len(item["file_path"]) > 0
+
+    for item in decode_data["decoded"]:
+        assert "file_path" in item
+        assert isinstance(item["file_path"], str)
+        assert len(item["file_path"]) > 0
 
 
 def test_api_search():

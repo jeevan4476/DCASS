@@ -474,6 +474,19 @@ class TestEncoderIntegration:
         
         assert len(result.encoded) >= 1
 
+    def test_real_encode_file_paths(self, loaded_encoder):
+        """Test encoding returns valid non-empty absolute file paths for selected media items."""
+        result = loaded_encoder.encode("A cute dog running in the park")
+        assert len(result.encoded) >= 1
+        for item in result.encoded:
+            assert item.file_path is not None
+            assert isinstance(item.file_path, str)
+            assert len(item.file_path) > 0
+            assert Path(item.file_path).is_absolute()
+            assert item.media.file_path == item.file_path
+        assert len(result.file_paths) >= 1
+        assert all(Path(p).is_absolute() for p in result.file_paths)
+
 
 # ============================================================
 # Convenience Function Tests

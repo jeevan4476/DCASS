@@ -64,7 +64,12 @@ class EncodedChunk:
     chunk: SemanticChunk         # Original semantic chunk
     media: MediaItem             # Selected media item
     alternatives: list[MediaItem] = field(default_factory=list)  # Other options
+    file_path: Optional[str] = None
     
+    def __post_init__(self):
+        if self.file_path is None and self.media is not None:
+            self.file_path = self.media.file_path
+
     def __repr__(self) -> str:
         return f"EncodedChunk('{self.chunk.original}' -> {self.media.modality}:{self.media.id})"
 
@@ -78,6 +83,17 @@ class EncodingResult:
     ecc_codeword: Optional[bytes] = None
     ecc_parity_bytes: int = 0
     
+    @property
+    def file_paths(self) -> list[str]:
+        """Get file paths for encoded media items."""
+        return [e.file_path or (e.media.file_path if e.media else "") for e in self.encoded if e.file_path or e.media]
+
+    @property
+    def file_path(self) -> Optional[str]:
+        """Get primary file path if available."""
+        paths = self.file_paths
+        return paths[0] if paths else None
+
     @property
     def media_sequence(self) -> list[MediaItem]:
         """Get the sequence of selected media items."""
