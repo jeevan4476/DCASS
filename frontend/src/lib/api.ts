@@ -33,6 +33,7 @@ export interface EncodeRequest {
   message: string;
   mode?: 'best' | 'round_robin' | 'balanced';
   modalities?: string[];
+  use_ecc?: boolean;
 }
 
 export interface EncodeResponse {
@@ -43,13 +44,25 @@ export interface EncodeResponse {
     modality: string;
     score: number;
     content: string;
+    file_path?: string;
+  }>;
+  media_sequence?: Array<{
+    id: string;
+    media_id: string;
+    modality: string;
+    content: string;
+    score: number;
+    file_path?: string;
   }>;
   modality_breakdown: Record<string, number>;
   elapsed_ms: number;
+  raw_codeword_hex?: string;
 }
 
 export interface DecodeRequest {
   media_ids: string[];
+  use_ecc?: boolean;
+  raw_codeword_hex?: string;
 }
 
 export interface DecodeResponse {
@@ -58,6 +71,14 @@ export interface DecodeResponse {
     media_id: string;
     modality: string;
     content: string;
+    file_path?: string;
+    verified: boolean;
+  }>;
+  decoded?: Array<{
+    media_id: string;
+    modality: string;
+    content: string;
+    file_path?: string;
     verified: boolean;
   }>;
   verification_rate: number;
@@ -77,6 +98,7 @@ export interface SearchResponse {
     modality: string;
     score: number;
     content: string;
+    file_path?: string;
   }>;
   elapsed_ms: number;
 }
@@ -110,12 +132,18 @@ export async function checkReady(): Promise<{ ready: boolean; initializing: bool
 }
 
 export async function encodeMessage(request: EncodeRequest): Promise<EncodeResponse> {
-  const response = await apiLongTimeout.post('/encode', request);
+  const response = await apiLongTimeout.post('/encode', {
+    use_ecc: true,
+    ...request,
+  });
   return response.data;
 }
 
 export async function decodeSequence(request: DecodeRequest): Promise<DecodeResponse> {
-  const response = await apiLongTimeout.post('/decode', request);
+  const response = await apiLongTimeout.post('/decode', {
+    use_ecc: true,
+    ...request,
+  });
   return response.data;
 }
 
@@ -126,11 +154,6 @@ export async function searchCorpus(request: SearchRequest): Promise<SearchRespon
 
 export async function getStatus(): Promise<StatusResponse> {
   const response = await api.get('/status');
-  return response.data;
-}
-
-export async function getLatestBenchmark(): Promise<any> {
-  const response = await api.get('/benchmark/latest');
   return response.data;
 }
 

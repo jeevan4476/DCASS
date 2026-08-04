@@ -11,7 +11,7 @@ export default function Navigation() {
     { href: '/status', label: 'Status' },
     { href: '/encode', label: 'Encode' },
     { href: '/decode', label: 'Decode' },
-    { href: '/wire', label: 'Wire View' },
+    { href: '/logs', label: 'System Logs' },
   ];
 
   return (

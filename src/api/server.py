@@ -111,6 +111,7 @@ class EncodeRequest(BaseModel):
     message: str
     mode: Literal["best", "round_robin", "balanced"] = "best"
     modalities: list[str] = Field(default=["image", "text", "audio"])
+    use_ecc: bool = True
 
 
 class EncodeResponse(BaseModel):
@@ -120,10 +121,13 @@ class EncodeResponse(BaseModel):
     media_sequence: list[dict] = Field(default_factory=list)
     modality_breakdown: dict[str, int]
     elapsed_ms: float
+    raw_codeword_hex: Optional[str] = None
 
 
 class DecodeRequest(BaseModel):
     media_ids: list[str]
+    use_ecc: bool = True
+    raw_codeword_hex: Optional[str] = None
 
 
 class DecodeResponse(BaseModel):
@@ -166,7 +170,12 @@ def encode(req: EncodeRequest):
     t0 = time.perf_counter()
     try:
         encoder = _get_encoder()
-        result = encoder.encode(req.message, modalities=req.modalities, diversity_mode=req.mode)
+        result = encoder.encode(
+            req.message,
+            modalities=req.modalities,
+            diversity_mode=req.mode,
+            use_ecc=req.use_ecc
+        )
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -195,6 +204,8 @@ def encode(req: EncodeRequest):
             "metadata": item.metadata,
         })
 
+    raw_codeword_hex = result.ecc_codeword.hex() if result.ecc_codeword else None
+
     return EncodeResponse(
         media_ids=result.media_ids,
         chunks=[c.original for c in result.chunks],
@@ -202,6 +213,7 @@ def encode(req: EncodeRequest):
         media_sequence=media_seq_items,
         modality_breakdown=result.modality_breakdown,
         elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
+        raw_codeword_hex=raw_codeword_hex,
     )
 
 
@@ -209,7 +221,19 @@ def encode(req: EncodeRequest):
 def decode(req: DecodeRequest):
     t0 = time.perf_counter()
     decoder = _get_decoder()
-    result = decoder.decode(req.media_ids)
+    
+    raw_codeword = None
+    if req.raw_codeword_hex:
+        try:
+            raw_codeword = bytes.fromhex(req.raw_codeword_hex)
+        except ValueError:
+            pass
+
+    result = decoder.decode(
+        req.media_ids,
+        use_ecc=req.use_ecc,
+        raw_codeword=raw_codeword
+    )
 
     items = []
     decoded_items = []

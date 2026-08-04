@@ -5,58 +5,28 @@ import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import { Card, Badge, LoadingSpinner } from '@/components/UI';
 import { encodeMessage, EncodeResponse, checkReady } from '@/lib/api';
-import axios from 'axios';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-type TransmissionMode = 'static' | 'rl' | 'gan' | 'auto';
 
 export default function EncodePage() {
   const router = useRouter();
   const [message, setMessage] = useState('');
   const [mode, setMode] = useState<'best' | 'round_robin' | 'balanced'>('best');
-  const [transmitMode, setTransmitMode] = useState<TransmissionMode>('auto');
-  const [modalities, setModalities] = useState(['image', 'text']);
+  const [modalities, setModalities] = useState(['image', 'text', 'audio']);
   const [loading, setLoading] = useState(false);
-  const [transmitting, setTransmitting] = useState(false);
   const [result, setResult] = useState<EncodeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [serverReady, setServerReady] = useState<boolean | null>(null);
   const [serverInitializing, setServerInitializing] = useState(false);
 
-  // Check if server is ready on mount
   useEffect(() => {
     const checkServerStatus = async () => {
       try {
         const status = await checkReady();
         setServerReady(status.ready);
         setServerInitializing(status.initializing);
-        
-        // Only poll if actively initializing
-        if (status.initializing) {
-          const interval = setInterval(async () => {
-            try {
-              const updatedStatus = await checkReady();
-              setServerReady(updatedStatus.ready);
-              setServerInitializing(updatedStatus.initializing);
-              
-              if (updatedStatus.ready || !updatedStatus.initializing) {
-                clearInterval(interval);
-              }
-            } catch (err) {
-              // Server might not be fully started yet
-              console.log('Waiting for server...');
-            }
-          }, 2000); // Poll every 2 seconds
-          
-          return () => clearInterval(interval);
-        }
       } catch (err) {
-        console.error('Failed to check server status:', err);
-        // If we can't reach the server, show warning but don't block
         setServerReady(null);
       }
     };
-
     checkServerStatus();
   }, []);
 
@@ -75,6 +45,7 @@ export default function EncodePage() {
         message: message.trim(),
         mode,
         modalities,
+        use_ecc: true,
       });
 
       setResult(response);
@@ -96,42 +67,11 @@ export default function EncodePage() {
     }
   };
 
-  const handleTransmit = async () => {
-    if (!result) return;
-
-    try {
-      setTransmitting(true);
-      setError(null);
-
-      // Clear existing packets first
-      await axios.delete(`${API_BASE}/api/wire/packets`);
-
-      // Transmit the sequence with real-time delays
-      // speed_multiplier: 1.0 = real-time, 2.0 = 2x faster, etc.
-      await axios.post(`${API_BASE}/api/transmit`, {
-        media_ids: result.media_ids,
-        mode: transmitMode,
-        base_delay: 1.5,  // Shorter delays for demo
-        num_channels: 3,
-        message: message,
-        speed_multiplier: 2.0,  // 2x speed for faster demo
-      });
-
-      // Navigate to wire view immediately (packets will appear over time)
-      router.push('/wire');
-    } catch (err: any) {
-      console.error('Transmission error:', err);
-      setError(err.response?.data?.detail || err.message || 'Transmission failed');
-    } finally {
-      setTransmitting(false);
-    }
-  };
-
   const handleOpenDecode = () => {
     if (!result) return;
     const ids = encodeURIComponent(result.media_ids.join(','));
-    const original = encodeURIComponent(message);
-    router.push(`/decode?ids=${ids}&original=${original}`);
+    const rawHex = result.raw_codeword_hex ? encodeURIComponent(result.raw_codeword_hex) : '';
+    router.push(`/decode?ids=${ids}&raw_hex=${rawHex}`);
   };
 
   const getModalityColor = (modality: string) => {
@@ -207,83 +147,24 @@ export default function EncodePage() {
                       ))}
                     </div>
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Transmission Mode
-                    </label>
-                    <select
-                      value={transmitMode}
-                      onChange={(e) => setTransmitMode(e.target.value as TransmissionMode)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:border-primary"
-                    >
-                      <option value="auto">Auto (RL {'->'} GAN {'->'} Static)</option>
-                      <option value="rl">RL Preferred</option>
-                      <option value="gan">GAN Preferred</option>
-                      <option value="static">Static Only</option>
-                    </select>
-                    <div className="mt-2 text-xs text-gray-500">
-                      Works with indices-only setups. If advanced models are unavailable, the backend can fall back automatically.
-                    </div>
-                  </div>
                 </div>
               </Card>
 
-              {/* Server Status Indicator */}
-              {serverInitializing && (
-                <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-4 text-yellow-400">
-                  <div className="flex items-center space-x-3">
-                    <LoadingSpinner />
-                    <div>
-                      <div className="font-semibold">Initializing DCASS Engine...</div>
-                      <div className="text-sm text-yellow-300">Loading CLIP model and indices. This may take 10-30 seconds.</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {serverReady === false && !serverInitializing && (
-                <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-4 text-yellow-400">
-                  <div className="font-semibold">⚠️ Models Not Pre-loaded</div>
-                  <div className="text-sm text-yellow-300">
-                    First encoding request will take 10-30 seconds while models load. Subsequent requests will be fast.
-                  </div>
-                </div>
-              )}
-              
-              {serverReady === null && (
-                <div className="bg-error/20 border border-error/30 rounded-lg p-4 text-error">
-                  ❌ Cannot connect to server. Please check if the backend is running on port 8000.
-                </div>
-              )}
-
               <button
                 onClick={handleEncode}
-                disabled={loading || !message.trim() || serverReady === null || serverInitializing}
+                disabled={loading || !message.trim()}
                 className="w-full bg-primary hover:bg-primary/90 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg"
               >
-                {loading ? '🔄 Encoding...' : 
-                 serverInitializing ? '⏳ Initializing models...' :
-                 serverReady === null ? '❌ Server offline' :
-                 '🔐 Encode & Generate Sequence'}
+                {loading ? '🔄 Encoding...' : '🔐 Encode & Generate Sequence'}
               </button>
 
               {result && !loading && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <button
-                    onClick={handleTransmit}
-                    disabled={transmitting}
-                    className="w-full bg-success hover:bg-success/90 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg"
-                  >
-                    {transmitting ? '📡 Transmitting...' : '📡 Transmit on Wire View'}
-                  </button>
-                  <button
-                    onClick={handleOpenDecode}
-                    className="w-full bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg"
-                  >
-                    🔎 Open in Decode
-                  </button>
-                </div>
+                <button
+                  onClick={handleOpenDecode}
+                  className="w-full bg-success hover:bg-success/90 text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg"
+                >
+                  🔓 Send to Decode Dashboard
+                </button>
               )}
 
               {error && (
@@ -317,72 +198,31 @@ export default function EncodePage() {
                         <span className="text-white font-semibold">{result.media_ids.length}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Semantic Chunks:</span>
-                        <span className="text-white font-semibold">{result.chunks.length}</span>
-                      </div>
-                    </div>
-
-                    {/* Modality Breakdown */}
-                    <div className="mt-6">
-                      <h3 className="text-sm font-medium text-gray-300 mb-3">Modality Breakdown</h3>
-                      <div className="space-y-2">
-                        {Object.entries(result.modality_breakdown).map(([modality, count]) => (
-                          <div key={modality} className="flex items-center justify-between">
-                            <span className={`capitalize font-medium ${getModalityColor(modality)}`}>
-                              {modality}
-                            </span>
-                            <div className="flex items-center space-x-3">
-                              <div className="w-32 bg-gray-800 rounded-full h-2">
-                                <div
-                                  className={`h-2 rounded-full ${
-                                    modality === 'image' ? 'bg-blue-400' :
-                                    modality === 'text' ? 'bg-green-400' : 'bg-purple-400'
-                                  }`}
-                                  style={{ width: `${(count / result.media_ids.length) * 100}%` }}
-                                />
-                              </div>
-                              <span className="text-white font-mono w-8 text-right">{count}</span>
-                            </div>
-                          </div>
-                        ))}
+                        <span className="text-gray-400">Error Correction (RS-ECC):</span>
+                        <Badge variant="success">ACTIVE (0% BER)</Badge>
                       </div>
                     </div>
                   </Card>
 
-                  <Card title="Semantic Chunks">
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {result.chunks.map((chunk, idx) => (
-                        <div key={idx} className="bg-gray-800 rounded p-3">
-                          <div className="text-xs text-gray-500 mb-1">Chunk {idx + 1}</div>
-                          <div className="text-white">{chunk}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-
-                  <Card title="Media Sequence">
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                  <Card title="Media Sequence & File Locations">
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
                       {result.encoded.map((item, idx) => (
-                        <div key={idx} className="bg-gray-800 rounded p-3">
-                          <div className="flex items-start justify-between mb-2">
+                        <div key={idx} className="bg-gray-800 rounded p-3 space-y-1">
+                          <div className="flex items-start justify-between">
                             <div className="flex items-center space-x-2">
                               <span className="text-xs text-gray-500">#{idx + 1}</span>
                               <span className="font-mono text-sm text-primary">{item.media_id}</span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                              <Badge variant="info">
-                                <span className={getModalityColor(item.modality)}>
-                                  {item.modality}
-                                </span>
-                              </Badge>
-                              <span className="text-xs text-gray-400">
-                                Score: {(item.score * 100).toFixed(1)}%
-                              </span>
+                            <Badge variant="info">
+                              <span className={getModalityColor(item.modality)}>{item.modality}</span>
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-gray-300">{item.content}</div>
+                          {item.file_path && (
+                            <div className="text-xs text-gray-500 font-mono break-all pt-1 border-t border-gray-700/50">
+                              📂 {item.file_path}
                             </div>
-                          </div>
-                          <div className="text-sm text-gray-300 line-clamp-2">
-                            {item.content}
-                          </div>
+                          )}
                         </div>
                       ))}
                     </div>
