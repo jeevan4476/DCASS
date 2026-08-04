@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary & Overview
 
-**Spherical K-Means Voronoi Codebook Partitioning (VCP)** is the core discrete quantization engine of DCASS (Dynamic Context-Aware Semantic Steganography). Implemented in [`src/corpus/cluster/voronoi_codebook.py`](file:///home/jeevan/projects/DCASS/src/corpus/cluster/voronoi_codebook.py), VCP bridges continuous multi-modal embedding spaces ($\mathbb{R}^{512}$) and discrete symbol steganography by partitioning the 512-dimensional unit hypersphere $\mathbb{S}^{511}$ into **$K = 256$ non-overlapping Voronoi clusters**.
+**Spherical K-Means Voronoi Codebook Partitioning (VCP)** is the core discrete quantization engine of DCASS (Dynamic Context-Aware Semantic Steganography). Implemented in [`src/corpus/cluster/voronoi_codebook.py`](file:///DCASS/src/corpus/cluster/voronoi_codebook.py), VCP bridges continuous multi-modal embedding spaces ($\mathbb{R}^{512}$) and discrete symbol steganography by partitioning the 512-dimensional unit hypersphere $\mathbb{S}^{511}$ into **$K = 256$ non-overlapping Voronoi clusters**.
 
 ### Core Problem Solved
 Traditional vector steganography relies on unconstrained nearest-neighbor ($k$-NN) retrieval in continuous embedding space. This approach suffers from **15% to 25% quantization noise and boundary drift**, where minor vector perturbations (e.g., floating-point rounding, compression, model re-quantization) cause nearest-neighbor search to return an incorrect candidate.
@@ -124,7 +124,7 @@ $$\bar{\rho} = \frac{N}{K} = \frac{153,281}{256} \approx 598.75 \text{ vectors /
 
 ## 3. Class & API Reference: `VoronoiCodebook`
 
-The `VoronoiCodebook` class is located in [`src/corpus/cluster/voronoi_codebook.py`](file:///home/jeevan/projects/DCASS/src/corpus/cluster/voronoi_codebook.py).
+The `VoronoiCodebook` class is located in [`src/corpus/cluster/voronoi_codebook.py`](file:///DCASS/src/corpus/cluster/voronoi_codebook.py).
 
 ```python
 class VoronoiCodebook:
@@ -261,7 +261,7 @@ def load(self, input_path: Union[str, Path]) -> None
 
 ## 4. Integration with `SemanticEncoder` and `SemanticDecoder`
 
-VCP integrates into DCASS's encoding and decoding pipelines, interfacing with [`src/engine/encoder.py`](file:///home/jeevan/projects/DCASS/src/engine/encoder.py), [`src/engine/decoder.py`](file:///home/jeevan/projects/DCASS/src/engine/decoder.py), and [`src/corpus/index/unified_index.py`](file:///home/jeevan/projects/DCASS/src/corpus/index/unified_index.py).
+VCP integrates into DCASS's encoding and decoding pipelines, interfacing with [`src/engine/encoder.py`](file:///DCASS/src/engine/encoder.py), [`src/engine/decoder.py`](file:///DCASS/src/engine/decoder.py), and [`src/corpus/index/unified_index.py`](file:///DCASS/src/corpus/index/unified_index.py).
 
 ### 4.1 System Integration Workflow
 
@@ -302,7 +302,7 @@ sequenceDiagram
 
 ### 4.2 Step-by-Step Encoder Integration (`SemanticEncoder`)
 
-To integrate `VoronoiCodebook` into [`SemanticEncoder`](file:///home/jeevan/projects/DCASS/src/engine/encoder.py):
+To integrate `VoronoiCodebook` into [`SemanticEncoder`](file:///DCASS/src/engine/encoder.py):
 
 1. **Load Codebook**: Initialize and load `voronoi_codebook.npz` alongside `UnifiedSemanticIndex`.
 2. **Payload RS-ECC Codeword**: Convert text payload into RS-ECC codeword bytes via `RSErrorCorrection.encode_bytes()`.
@@ -315,7 +315,7 @@ To integrate `VoronoiCodebook` into [`SemanticEncoder`](file:///home/jeevan/proj
 
 ### 4.3 Step-by-Step Decoder Integration (`SemanticDecoder`)
 
-To integrate `VoronoiCodebook` into [`SemanticDecoder`](file:///home/jeevan/projects/DCASS/src/engine/decoder.py):
+To integrate `VoronoiCodebook` into [`SemanticDecoder`](file:///DCASS/src/engine/decoder.py):
 
 1. **Extract Media Embeddings**: Retrieve normalized 512-dim embedding $\mathbf{v}_k$ for each received media ID $m_k$.
 2. **Voronoi Centroid Assignment**: Pass embeddings to `codebook.assign(embeddings)`. This computes:
@@ -329,7 +329,7 @@ To integrate `VoronoiCodebook` into [`SemanticDecoder`](file:///home/jeevan/proj
 
 ### 5.1 Fitting and Saving the Codebook
 
-The script [`scripts/cluster/fit_voronoi_codebook.py`](file:///home/jeevan/projects/DCASS/scripts/cluster/fit_voronoi_codebook.py) fits the codebook across all multi-modal indices.
+The script [`scripts/cluster/fit_voronoi_codebook.py`](file:///DCASS/scripts/cluster/fit_voronoi_codebook.py) fits the codebook across all multi-modal indices.
 
 ```python
 import numpy as np
