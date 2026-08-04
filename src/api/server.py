@@ -175,6 +175,7 @@ def encode(req: EncodeRequest):
             "modality": enc.media.modality,
             "score": round(enc.media.normalized_score, 4),
             "content": enc.media.content[:120],
+            "file_path": enc.media.file_path,
         })
 
     return EncodeResponse(
@@ -194,10 +195,17 @@ def decode(req: DecodeRequest):
 
     items = []
     for d in result.decoded:
+        file_path = ""
+        if d.verified:
+            item = decoder.index.get_by_id(d.media_id)
+            if item:
+                file_path = item.file_path
+
         items.append({
             "media_id": d.media_id,
             "modality": d.modality,
             "content": d.content[:200],
+            "file_path": file_path,
             "verified": d.verified,
         })
 

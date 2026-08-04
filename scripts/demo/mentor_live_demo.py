@@ -116,7 +116,7 @@ def main():
     decoder = SemanticDecoder()
     decoder.load()
 
-    secret_message = "Attack at midnight near river bank"
+    secret_message = "Attack at midnight near river bank and i will be bombing the taj mahal for my good wife and my kids"
     print(f"\n  • Input Secret Payload:    '{secret_message}'")
 
     print("  • Executing Multi-Modal Vector Search...")

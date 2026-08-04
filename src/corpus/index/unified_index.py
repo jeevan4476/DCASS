@@ -109,6 +109,43 @@ class MediaItem:
     normalized_score: float  # normalized score (0-1)
     metadata: dict = field(default_factory=dict)
     
+    @property
+    def file_path(self) -> str:
+        """Resolve exact absolute local file path on disk."""
+        project_root = Path(__file__).parent.parent.parent.parent
+        
+        if self.modality == "image":
+            content_str = str(self.metadata.get("content", self.metadata.get("image_path", self.content)))
+            if Path(content_str).is_absolute() and Path(content_str).exists():
+                return content_str
+            
+            candidate30k = project_root / "storage" / "data" / "raw" / "flickr30k" / Path(content_str).name
+            if candidate30k.exists():
+                return str(candidate30k)
+            
+            candidate8k = project_root / "storage" / "data" / "raw" / "flickr8k" / Path(content_str).name
+            if candidate8k.exists():
+                return str(candidate8k)
+            
+            return str(candidate30k)
+
+        elif self.modality == "audio":
+            content_str = str(self.metadata.get("audio_path", self.metadata.get("content", self.content)))
+            if Path(content_str).is_absolute() and Path(content_str).exists():
+                return content_str
+            
+            candidate_aud = project_root / "storage" / "data" / "audio" / "cache" / Path(content_str).name
+            if candidate_aud.exists():
+                return str(candidate_aud)
+                
+            return str(candidate_aud)
+
+        else:
+            wiki_json = project_root / "storage" / "data" / "raw" / "wikipedia" / "sentences.json"
+            if wiki_json.exists():
+                return str(wiki_json)
+            return str(project_root / "storage" / "data" / "indices" / "text_metadata.json")
+
     def __repr__(self) -> str:
         return f"MediaItem({self.modality}:{self.id}, score={self.normalized_score:.3f})"
 

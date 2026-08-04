@@ -58,7 +58,7 @@ class DecodingResult:
     @property
     def reconstructed_meaning(self) -> str:
         """Reconstruct the semantic meaning from all items (with RS-ECC recovery if active)."""
-        if self.ecc_payload is not None and self.ecc_payload.strip():
+        if self.ecc_success and self.ecc_payload is not None and self.ecc_payload.strip():
             return self.ecc_payload
         return " | ".join(self.contents)
     
