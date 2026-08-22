@@ -12,6 +12,7 @@ Architecture:
 from __future__ import annotations
 
 import json
+import warnings
 import numpy as np
 import faiss
 from pathlib import Path
@@ -416,6 +417,7 @@ class UnifiedSemanticIndex:
         # Must use the same model that built the audio FAISS index.
         self._clap_model = None
         self._clap_processor = None
+        self._clap_failed = False
 
         # FAISS indices and metadata (loaded on demand)
         self.indices: dict[Modality, faiss.Index] = {}
@@ -516,8 +518,6 @@ class UnifiedSemanticIndex:
         Falls back to CLIP if CLAP is unavailable (with a warning).
         """
         if not _CLAP_AVAILABLE:
-            import warnings
-
             warnings.warn(
                 "transformers not installed; audio queries will use CLIP instead of CLAP. "
                 "Audio search results will be unreliable. "
@@ -527,11 +527,32 @@ class UnifiedSemanticIndex:
             )
             return self._encode_text(text)
 
+        if self._clap_failed:
+            # A previous load attempt failed (e.g. torch < 2.6 refusing to
+            # torch.load CLAP weights). Do not retry per query - fall back.
+            return self._encode_text(text)
+
         if self._clap_model is None:
-            print(f"Loading CLAP model ({_CLAP_MODEL_ID}) on {self.device}...")
-            self._clap_processor = ClapProcessor.from_pretrained(_CLAP_MODEL_ID)
-            self._clap_model = ClapModel.from_pretrained(_CLAP_MODEL_ID).to(self.device)
-            self._clap_model.eval()
+            try:
+                print(f"Loading CLAP model ({_CLAP_MODEL_ID}) on {self.device}...")
+                self._clap_processor = ClapProcessor.from_pretrained(_CLAP_MODEL_ID)
+                self._clap_model = ClapModel.from_pretrained(_CLAP_MODEL_ID).to(
+                    self.device
+                )
+                self._clap_model.eval()
+            except Exception as e:
+                self._clap_failed = True
+                self._clap_model = None
+                self._clap_processor = None
+                warnings.warn(
+                    f"Failed to load CLAP model ({e}); audio queries will use "
+                    "CLIP instead of CLAP. Audio search results will be "
+                    "unreliable. Fix: upgrade torch>=2.6 or install safetensors "
+                    "weights for the CLAP checkpoint.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                return self._encode_text(text)
 
         with torch.no_grad():
             inputs = self._clap_processor(
