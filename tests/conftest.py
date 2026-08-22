@@ -18,25 +18,23 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration: mark test as integration test (requires indices)"
     )
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
+    config.addinivalue_line("markers", "slow: mark test as slow running")
 
 
 def pytest_collection_modifyitems(config, items):
     """
     Modify test collection.
-    
+
     - Skip integration tests if --no-integration flag is passed
     - Add slow marker to integration tests
     """
     skip_integration = pytest.mark.skip(reason="--no-integration flag passed")
-    
+
     for item in items:
         # Mark integration tests as slow
         if "integration" in item.keywords:
             item.add_marker(pytest.mark.slow)
-        
+
         # Skip integration tests if flag passed
         if config.getoption("--no-integration", default=False):
             if "integration" in item.keywords:
@@ -49,19 +47,17 @@ def pytest_addoption(parser):
         "--no-integration",
         action="store_true",
         default=False,
-        help="Skip integration tests that require indices"
+        help="Skip integration tests that require indices",
     )
     parser.addoption(
-        "--run-slow",
-        action="store_true",
-        default=False,
-        help="Run slow tests"
+        "--run-slow", action="store_true", default=False, help="Run slow tests"
     )
 
 
 # ============================================================
 # Shared Fixtures
 # ============================================================
+
 
 @pytest.fixture(scope="session")
 def project_root():
@@ -72,7 +68,7 @@ def project_root():
 @pytest.fixture(scope="session")
 def indices_path(project_root):
     """Return path to indices directory."""
-    return project_root / "data" / "indices"
+    return project_root / "storage" / "data" / "indices"
 
 
 @pytest.fixture(scope="session")

@@ -20,6 +20,7 @@ from ...analysis.adversarial.warden import DeepPacketInspectionWarden
 @dataclass
 class ChannelState:
     """State of a single distribution channel."""
+
     channel_id: int
     rate_limit: float  # Max transmissions per minute
     last_transmission_time: float  # Seconds since start
@@ -35,6 +36,7 @@ class ChannelState:
 @dataclass
 class TransmissionRecord:
     """Record of a single transmission."""
+
     media_id: str
     channel_id: int
     timestamp: float
@@ -91,7 +93,7 @@ class StealthEnvironment:
         lambda_stealth: float = 100.0,
         channel_rate_limits: Optional[list[float]] = None,
         max_episode_time: float = 3600.0,  # 1 hour max
-        warden_window_size: int = 20  # Number of recent transmissions to evaluate
+        warden_window_size: int = 20,  # Number of recent transmissions to evaluate
     ):
         self.num_channels = num_channels
         self.max_sequence_length = max_sequence_length
@@ -112,8 +114,8 @@ class StealthEnvironment:
             # Default: channels have different rate limits
             channel_rate_limits = [
                 10.0,  # Channel 0: 10 items/minute
-                5.0,   # Channel 1: 5 items/minute
-                15.0   # Channel 2: 15 items/minute
+                5.0,  # Channel 1: 5 items/minute
+                15.0,  # Channel 2: 15 items/minute
             ]
         self.base_rate_limits = channel_rate_limits
 
@@ -135,13 +137,13 @@ class StealthEnvironment:
 
     def _compute_state_dim(self) -> int:
         """Compute dimensionality of state vector."""
-        # Queue size (1) + time_of_day (1) + channel states (num_channels * 3) + history features (10)
-        return 1 + 1 + (self.num_channels * 3) + 10
+        # Queue size (1) + time-of-day cyclical encoding (sin + cos = 2)
+        # + channel states (num_channels * 3) + history features (4:
+        # avg delay, delay std, channel diversity, tx rate).
+        return 1 + 2 + (self.num_channels * 3) + 4
 
     def reset(
-        self,
-        media_sequence: list[str],
-        start_hour: Optional[int] = None
+        self, media_sequence: list[str], start_hour: Optional[int] = None
     ) -> np.ndarray:
         """
         Reset environment for a new episode.
@@ -159,7 +161,7 @@ class StealthEnvironment:
                 channel_id=i,
                 rate_limit=self.base_rate_limits[i],
                 last_transmission_time=-60.0,  # Allow immediate first transmission
-                transmission_count=0
+                transmission_count=0,
             )
             for i in range(self.num_channels)
         ]
@@ -172,7 +174,9 @@ class StealthEnvironment:
 
         # Reset time
         self.current_time = 0.0
-        self.start_hour = start_hour if start_hour is not None else np.random.randint(0, 24)
+        self.start_hour = (
+            start_hour if start_hour is not None else np.random.randint(0, 24)
+        )
 
         # Reset episode tracking
         self.episode_step = 0
@@ -203,11 +207,15 @@ class StealthEnvironment:
         # Channel states
         for channel in self.channels:
             time_since_last = self.current_time - channel.last_transmission_time
-            state_components.extend([
-                channel.rate_limit / 20.0,  # Normalize by max rate
-                np.clip(time_since_last / 60.0, 0, 1),  # Time since last (normalized)
-                channel.transmission_count / max(len(self.transmission_history), 1)
-            ])
+            state_components.extend(
+                [
+                    channel.rate_limit / 20.0,  # Normalize by max rate
+                    np.clip(
+                        time_since_last / 60.0, 0, 1
+                    ),  # Time since last (normalized)
+                    channel.transmission_count / max(len(self.transmission_history), 1),
+                ]
+            )
 
         # Transmission history features
         if len(self.transmission_history) > 0:
@@ -228,7 +236,9 @@ class StealthEnvironment:
             # Transmission rate (items per minute)
             if len(recent_history) > 1:
                 time_span = recent_history[-1].timestamp - recent_history[0].timestamp
-                tx_rate = len(recent_history) / (time_span / 60.0) if time_span > 0 else 0
+                tx_rate = (
+                    len(recent_history) / (time_span / 60.0) if time_span > 0 else 0
+                )
                 state_components.append(np.clip(tx_rate / 10.0, 0, 1))
             else:
                 state_components.append(0.0)
@@ -240,11 +250,10 @@ class StealthEnvironment:
         while len(state_components) < self.state_dim:
             state_components.append(0.0)
 
-        return np.array(state_components[:self.state_dim], dtype=np.float32)
+        return np.array(state_components[: self.state_dim], dtype=np.float32)
 
     def step(
-        self,
-        action: Dict[str, Any]
+        self, action: Dict[str, Any]
     ) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         """
         Execute one step in the environment.
@@ -287,17 +296,13 @@ class StealthEnvironment:
         # Send media item
         media_id = self.media_queue.popleft()
 
-        # Record transmission
-        delay_from_previous = (
-            delay if len(self.transmission_history) > 0
-            else delay  # First transmission
-        )
-
+        # Record transmission. The first item has no predecessor, so the
+        # action delay is recorded as-is.
         record = TransmissionRecord(
             media_id=media_id,
             channel_id=channel_id,
             timestamp=self.current_time,
-            delay_from_previous=delay_from_previous
+            delay_from_previous=delay,
         )
         self.transmission_history.append(record)
 
@@ -321,7 +326,7 @@ class StealthEnvironment:
             "queue_remaining": len(self.media_queue),
             "current_time": self.current_time,
             "episode_step": self.episode_step,
-            "total_reward": self.total_reward
+            "total_reward": self.total_reward,
         }
 
         # Get next state
@@ -349,7 +354,7 @@ class StealthEnvironment:
 
         # Evaluate recent transmission window
         if len(self.transmission_history) >= self.warden_window_size:
-            recent = self.transmission_history[-self.warden_window_size:]
+            recent = self.transmission_history[-self.warden_window_size :]
 
             # Extract delays and channels
             delays = [r.delay_from_previous for r in recent]
@@ -363,7 +368,11 @@ class StealthEnvironment:
             # Get Warden verdict
             with torch.no_grad():
                 verdict = self.warden(delays_tensor, channels_tensor)
-                bot_probability = float(verdict.bot_probability[0].item() if verdict.bot_probability.dim() > 0 else verdict.bot_probability.item())
+                bot_probability = float(
+                    verdict.bot_probability[0].item()
+                    if verdict.bot_probability.dim() > 0
+                    else verdict.bot_probability.item()
+                )
 
             # Penalty scales with detection probability
             warden_penalty = bot_probability * self.lambda_stealth
@@ -371,11 +380,17 @@ class StealthEnvironment:
         # Path diversity & entropy reward
         diversity_bonus = 0.0
         if len(self.transmission_history) >= 2:
-            if self.transmission_history[-1].channel_id != self.transmission_history[-2].channel_id:
+            if (
+                self.transmission_history[-1].channel_id
+                != self.transmission_history[-2].channel_id
+            ):
                 diversity_bonus += 2.0  # Encourage multi-platform channel hopping
-            
+
             # Channel distribution Shannon entropy bonus
-            channel_counts = np.bincount([r.channel_id for r in self.transmission_history], minlength=self.num_channels)
+            channel_counts = np.bincount(
+                [r.channel_id for r in self.transmission_history],
+                minlength=self.num_channels,
+            )
             probs = channel_counts / len(self.transmission_history)
             entropy = -np.sum(probs * np.log2(np.clip(probs, 1e-6, 1.0)))
             max_entropy = np.log2(self.num_channels)
@@ -392,7 +407,9 @@ class StealthEnvironment:
         Get binary mask for available channels (1 = can send, 0 = cooling down).
         """
         t = self.current_time if projected_time is None else projected_time
-        mask = np.array([1.0 if ch.can_send(t) else 0.0 for ch in self.channels], dtype=np.float32)
+        mask = np.array(
+            [1.0 if ch.can_send(t) else 0.0 for ch in self.channels], dtype=np.float32
+        )
         if np.sum(mask) == 0:
             mask = np.ones(self.num_channels, dtype=np.float32)
         return mask
@@ -407,7 +424,7 @@ class StealthEnvironment:
         if len(self.transmission_history) == 0:
             return 0.0
 
-        history = self.transmission_history[-self.warden_window_size:]
+        history = self.transmission_history[-self.warden_window_size :]
 
         delays = [r.delay_from_previous for r in history]
         channels = [r.channel_id for r in history]
@@ -423,7 +440,11 @@ class StealthEnvironment:
 
         with torch.no_grad():
             verdict = self.warden(delays_tensor, channels_tensor)
-            return float(verdict.bot_probability[0].item() if verdict.bot_probability.dim() > 0 else verdict.bot_probability.item())
+            return float(
+                verdict.bot_probability[0].item()
+                if verdict.bot_probability.dim() > 0
+                else verdict.bot_probability.item()
+            )
 
     def render(self, mode: str = "human") -> Optional[str]:
         """
@@ -437,7 +458,9 @@ class StealthEnvironment:
         """
         lines = []
         lines.append(f"=== Stealth Environment (Step {self.episode_step}) ===")
-        lines.append(f"Time: {self.current_time:.1f}s | Queue: {len(self.media_queue)} items")
+        lines.append(
+            f"Time: {self.current_time:.1f}s | Queue: {len(self.media_queue)} items"
+        )
         lines.append(f"Total Reward: {self.total_reward:.2f}")
 
         # Channel states
@@ -477,11 +500,7 @@ if __name__ == "__main__":
 
     # Create environment
     warden = DeepPacketInspectionWarden(num_channels=3)
-    env = StealthEnvironment(
-        num_channels=3,
-        warden=warden,
-        lambda_stealth=50.0
-    )
+    env = StealthEnvironment(num_channels=3, warden=warden, lambda_stealth=50.0)
 
     # Reset with a media sequence
     media_sequence = [f"media_{i:03d}" for i in range(20)]
@@ -499,15 +518,14 @@ if __name__ == "__main__":
             break
 
         # Random action
-        action = {
-            "delay": np.random.uniform(5, 15),
-            "channel": np.random.randint(0, 3)
-        }
+        action = {"delay": np.random.uniform(5, 15), "channel": np.random.randint(0, 3)}
 
         next_state, reward, done, info = env.step(action)
         total_reward += reward
 
-        print(f"Step {step}: delay={action['delay']:.1f}s, channel={action['channel']}, reward={reward:.2f}")
+        print(
+            f"Step {step}: delay={action['delay']:.1f}s, channel={action['channel']}, reward={reward:.2f}"
+        )
 
     # Render final state
     print("\nFinal State:")

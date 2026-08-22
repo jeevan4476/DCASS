@@ -6,7 +6,10 @@
 
 import axios from 'axios';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+// Convention: NEXT_PUBLIC_API_URL is the ORIGIN (no /api suffix).
+// The /api prefix lives here so every consumer agrees.
+const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE = `${API_ORIGIN.replace(/\/$/, '')}/api`;
 
 const api = axios.create({
   baseURL: API_BASE,

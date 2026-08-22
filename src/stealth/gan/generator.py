@@ -16,6 +16,7 @@ import torch.nn as nn
 from dataclasses import dataclass
 from typing import Optional, Iterator, Tuple
 
+
 @dataclass
 class TimingSchedule:
     """
@@ -26,13 +27,19 @@ class TimingSchedule:
         channel_logits: Channel selection logits, shape (batch_size, sequence_length, num_channels)
         confidence: Generator's confidence score, shape (batch_size,)
     """
+
     delays: torch.Tensor
     channel_logits: torch.Tensor
     confidence: torch.Tensor
 
     def sample_channels(self, temperature: float = 1.0) -> torch.Tensor:
         """
-        Sample channel indices from logits using Gumbel-Softmax or argmax.
+        Sample channel indices from logits using straight-through Gumbel-Softmax.
+
+        Uses the hard sample (argmax of the categorical) as the returned value
+        but routes gradients through the soft sample, so the channel head
+        receives gradient signal during training instead of staying at its
+        initialisation forever.
 
         Args:
             temperature: Sampling temperature (lower = more deterministic)
@@ -41,16 +48,32 @@ class TimingSchedule:
             Channel indices, shape (batch_size, sequence_length)
         """
         scaled_logits = self.channel_logits / max(temperature, 1e-4)
-        probs = torch.softmax(scaled_logits, dim=-1)
-        return torch.argmax(probs, dim=-1)
+        hard_one_hot = torch.nn.functional.gumbel_softmax(
+            scaled_logits, tau=max(temperature, 1e-4), hard=True, dim=-1
+        )
+        # Cache for straight-through backward passes; indices for consumers.
+        self._last_channel_probs = hard_one_hot
+        return hard_one_hot.argmax(dim=-1)
+
+    def channel_probs_straight_through(self, temperature: float = 1.0) -> torch.Tensor:
+        """
+        Return differentiable per-step channel distributions (hard=True
+        Gumbel-Softmax). Use this in training loops that need gradients to
+        reach `channel_head`; `sample_channels()` returns plain indices.
+        """
+        scaled_logits = self.channel_logits / max(temperature, 1e-4)
+        return torch.nn.functional.gumbel_softmax(
+            scaled_logits, tau=max(temperature, 1e-4), hard=True, dim=-1
+        )
 
     def to_dict(self) -> dict[str, torch.Tensor]:
         """Convert to dictionary for serialization."""
         return {
             "delays": self.delays,
             "channel_logits": self.channel_logits,
-            "confidence": self.confidence
+            "confidence": self.confidence,
         }
+
 
 class CausalGatedBlock(nn.Module):
     """
@@ -58,6 +81,7 @@ class CausalGatedBlock(nn.Module):
     Guarantees that each step only attends to previous time steps and provides
     native 100% stable 2nd-order analytical derivatives for WGAN-GP.
     """
+
     def __init__(self, channels: int, kernel_size: int = 3, dropout: float = 0.1):
         super().__init__()
         self.pad = kernel_size - 1
@@ -78,6 +102,7 @@ class CausalGatedBlock(nn.Module):
         out = self.norm(residual + self.dropout(out))
         return out
 
+
 class TemporalPatternGenerator(nn.Module):
     """
     Autoregressive GAN Generator for steganography transmission scheduling.
@@ -96,7 +121,7 @@ class TemporalPatternGenerator(nn.Module):
         num_channels: int = 3,
         max_sequence_length: int = 1000,
         time_embedding_dim: int = 32,
-        dropout: float = 0.1
+        dropout: float = 0.1,
     ):
         super().__init__()
 
@@ -111,7 +136,7 @@ class TemporalPatternGenerator(nn.Module):
             nn.Linear(2, time_embedding_dim),
             nn.GELU(),
             nn.Linear(time_embedding_dim, time_embedding_dim),
-            nn.LayerNorm(time_embedding_dim)
+            nn.LayerNorm(time_embedding_dim),
         )
 
         # Initial projection: Noise + Time -> Hidden
@@ -119,7 +144,7 @@ class TemporalPatternGenerator(nn.Module):
             nn.Linear(latent_dim + time_embedding_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.GELU(),
-            nn.Dropout(dropout)
+            nn.Dropout(dropout),
         )
 
         # Autoregressive sequence generator (GRU)
@@ -128,11 +153,13 @@ class TemporalPatternGenerator(nn.Module):
             hidden_size=hidden_dim,
             num_layers=2,
             batch_first=True,
-            dropout=dropout if dropout > 0 else 0.0
+            dropout=dropout if dropout > 0 else 0.0,
         )
 
         # Causal temporal convolutional block for long-range temporal dependencies
-        self.temporal_block = CausalGatedBlock(channels=hidden_dim, kernel_size=3, dropout=dropout)
+        self.temporal_block = CausalGatedBlock(
+            channels=hidden_dim, kernel_size=3, dropout=dropout
+        )
 
         # Output heads
         # 1. Delay head: strictly positive inter-item delays (Softplus + base offset)
@@ -143,7 +170,7 @@ class TemporalPatternGenerator(nn.Module):
             nn.Linear(128, 64),
             nn.GELU(),
             nn.Linear(64, 1),
-            nn.Softplus()
+            nn.Softplus(),
         )
 
         # 2. Channel head: logits over distribution channels
@@ -151,15 +178,12 @@ class TemporalPatternGenerator(nn.Module):
             nn.Linear(hidden_dim, 64),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(64, num_channels)
+            nn.Linear(64, num_channels),
         )
 
         # 3. Confidence head: generator confidence in [0, 1]
         self.confidence_head = nn.Sequential(
-            nn.Linear(hidden_dim, 64),
-            nn.GELU(),
-            nn.Linear(64, 1),
-            nn.Sigmoid()
+            nn.Linear(hidden_dim, 64), nn.GELU(), nn.Linear(64, 1), nn.Sigmoid()
         )
 
         self.apply(self._init_weights)
@@ -176,27 +200,23 @@ class TemporalPatternGenerator(nn.Module):
                 nn.init.zeros_(module.bias)
         elif isinstance(module, nn.GRU):
             for name, param in module.named_parameters():
-                if 'weight_ih' in name:
+                if "weight_ih" in name:
                     nn.init.xavier_uniform_(param.data)
-                elif 'weight_hh' in name:
+                elif "weight_hh" in name:
                     nn.init.orthogonal_(param.data)
-                elif 'bias' in name:
+                elif "bias" in name:
                     nn.init.zeros_(param.data)
 
     def encode_time_of_day(self, time_of_day: torch.Tensor) -> torch.Tensor:
         """Encode hour of day [0, 23] into cyclical unit circle embedding."""
         hour_radians = 2.0 * torch.pi * time_of_day.float() / 24.0
-        time_features = torch.stack([
-            torch.sin(hour_radians),
-            torch.cos(hour_radians)
-        ], dim=1)
+        time_features = torch.stack(
+            [torch.sin(hour_radians), torch.cos(hour_radians)], dim=1
+        )
         return self.time_encoder(time_features)
 
     def forward(
-        self,
-        z: torch.Tensor,
-        sequence_length: int,
-        time_of_day: torch.Tensor
+        self, z: torch.Tensor, sequence_length: int, time_of_day: torch.Tensor
     ) -> TimingSchedule:
         """
         Generate schedule for arbitrary sequence_length >= 1.
@@ -222,9 +242,7 @@ class TemporalPatternGenerator(nn.Module):
         confidence = self.confidence_head(final_state).squeeze(-1)
 
         return TimingSchedule(
-            delays=delays,
-            channel_logits=channel_logits,
-            confidence=confidence
+            delays=delays, channel_logits=channel_logits, confidence=confidence
         )
 
     def generate(
@@ -232,7 +250,7 @@ class TemporalPatternGenerator(nn.Module):
         batch_size: int = 1,
         sequence_length: int = 20,
         time_of_day: Optional[torch.Tensor] = None,
-        device: str = "cpu"
+        device: str = "cpu",
     ) -> TimingSchedule:
         """Generate a complete schedule for arbitrary length."""
         z = torch.randn(batch_size, self.latent_dim, device=device)
@@ -241,10 +259,7 @@ class TemporalPatternGenerator(nn.Module):
         return self.forward(z, sequence_length, time_of_day)
 
     def generate_stream(
-        self,
-        num_items: int,
-        time_of_day: Optional[float] = None,
-        device: str = "cpu"
+        self, num_items: int, time_of_day: Optional[float] = None, device: str = "cpu"
     ) -> Iterator[Tuple[float, int]]:
         """
         Autoregressively stream (delay, channel) one packet at a time.
@@ -252,6 +267,7 @@ class TemporalPatternGenerator(nn.Module):
         """
         if time_of_day is None:
             import datetime
+
             time_of_day = float(datetime.datetime.now().hour)
 
         t_tensor = torch.tensor([time_of_day], device=device)
@@ -260,7 +276,7 @@ class TemporalPatternGenerator(nn.Module):
                 batch_size=1,
                 sequence_length=num_items,
                 time_of_day=t_tensor,
-                device=device
+                device=device,
             )
             delays = schedule.delays[0].cpu().tolist()
             channels = schedule.sample_channels()[0].cpu().tolist()
@@ -268,10 +284,16 @@ class TemporalPatternGenerator(nn.Module):
         for d, c in zip(delays, channels):
             yield (float(d), int(c))
 
-def sample_latent(batch_size: int, latent_dim: int = 128, device: str = "cpu") -> torch.Tensor:
+
+def sample_latent(
+    batch_size: int, latent_dim: int = 128, device: str = "cpu"
+) -> torch.Tensor:
     """Sample latent Gaussian noise."""
     return torch.randn(batch_size, latent_dim, device=device)
 
-def compute_generator_loss(fake_warden_output: torch.Tensor, throughput_penalty: float = 0.0) -> torch.Tensor:
+
+def compute_generator_loss(
+    fake_warden_output: torch.Tensor, throughput_penalty: float = 0.0
+) -> torch.Tensor:
     """Compute generator adversarial loss."""
     return -torch.mean(fake_warden_output) + throughput_penalty

@@ -201,15 +201,9 @@ class MediaItem:
             )
             if cand8k.exists():
                 return str(cand8k.resolve())
-            return str(
-                (
-                    project_root
-                    / "storage"
-                    / "data"
-                    / "indices"
-                    / "image_metadata.json"
-                ).resolve()
-            )
+            # Honest fallback: the carrier is not on disk. Do NOT return a
+            # metadata JSON as if it were the image.
+            return None
 
         elif self.modality == "audio":
             raw_path = (
@@ -234,19 +228,12 @@ class MediaItem:
                     return str(cand_aud.resolve())
                 return str(rel_p)
 
-            candidates = [
-                project_root / "storage" / "data" / "audio" / "dataset_info.txt",
-                project_root / "storage" / "data" / "indices" / "audio_metadata.json",
-                project_root / "storage" / "data" / "audio",
-            ]
+            # No resolvable audio carrier on disk - return None rather than a
+            # metadata/dataset_info file masquerading as the media.
             cache_dir = project_root / "storage" / "data" / "audio" / "cache"
             if cache_dir.exists():
                 for file_p in cache_dir.rglob("*.arrow"):
-                    candidates.insert(0, file_p)
-                    break
-            for cand in candidates:
-                if cand.exists():
-                    return str(cand.resolve())
+                    return str(file_p.resolve())
             return None
 
         else:  # text

@@ -17,6 +17,11 @@ from typing import Literal, Optional
 from src.distribution.noise import NoiseController
 from src.distribution.profiles import ACTIVITY_PROFILES
 
+# Anchored to the project root so schedules work regardless of CWD.
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+DEFAULT_GAN_CHECKPOINT = _PROJECT_ROOT / "storage" / "models" / "gan_generator.pt"
+DEFAULT_RL_CHECKPOINT = _PROJECT_ROOT / "storage" / "models" / "rl_agent.pt"
+
 
 class StealthScheduler:
     """
@@ -54,13 +59,16 @@ class StealthScheduler:
     def schedule(
         self,
         media_ids: list[str],
-        mode: Literal["static", "gan", "rl"] = "static",
+        mode: Literal["static", "gan", "rl", "auto"] = "static",
         base_delay: float = 3.0,
         gan_checkpoint: Optional[Path] = None,
         rl_checkpoint: Optional[Path] = None,
     ) -> dict:
         """
         Produce a timed schedule for *media_ids*.
+
+        mode="auto" runs the rl -> gan -> static cascade, matching the
+        documented behaviour in scripts/runtime/run_sender.py.
 
         Returns
         -------
@@ -70,27 +78,49 @@ class StealthScheduler:
             channels – list[int]  channel index per item
             mode_used – str  actual mode that ran (may differ from *mode* on fallback)
         """
+        if mode == "auto":
+            schedule = self._schedule_rl(
+                media_ids,
+                base_delay,
+                self._resolve_checkpoint(rl_checkpoint, DEFAULT_RL_CHECKPOINT),
+            )
+            if schedule["mode_used"] == "rl":
+                return schedule
+            schedule = self._schedule_gan(
+                media_ids,
+                base_delay,
+                self._resolve_checkpoint(gan_checkpoint, DEFAULT_GAN_CHECKPOINT),
+            )
+            if schedule["mode_used"] == "gan":
+                return schedule
+            return self._schedule_static(media_ids, base_delay)
+
         if mode == "gan":
-            if gan_checkpoint is None:
-                default_ckpt = Path("storage/models/gan_generator.pt")
-                if default_ckpt.exists():
-                    gan_checkpoint = default_ckpt
-            return self._schedule_gan(media_ids, base_delay, gan_checkpoint)
+            checkpoint = self._resolve_checkpoint(
+                gan_checkpoint, DEFAULT_GAN_CHECKPOINT
+            )
+            return self._schedule_gan(media_ids, base_delay, checkpoint)
         elif mode == "rl":
-            if rl_checkpoint is None:
-                default_rl = Path("storage/models/rl_agent.pt")
-                if default_rl.exists():
-                    rl_checkpoint = default_rl
-            return self._schedule_rl(media_ids, base_delay, rl_checkpoint)
+            checkpoint = self._resolve_checkpoint(rl_checkpoint, DEFAULT_RL_CHECKPOINT)
+            return self._schedule_rl(media_ids, base_delay, checkpoint)
         else:
             return self._schedule_static(media_ids, base_delay)
+
+    @staticmethod
+    def _resolve_checkpoint(explicit: Optional[Path], default: Path) -> Optional[Path]:
+        """Prefer an explicit path; otherwise use the project-root default if present."""
+        if explicit is not None:
+            return Path(explicit)
+        return default if default.exists() else None
 
     # ------------------------------------------------------------------
     # static (NoiseController) fallback
     # ------------------------------------------------------------------
 
     def _schedule_static(self, media_ids: list[str], base_delay: float) -> dict:
-        profile_kwargs = ACTIVITY_PROFILES.get(self.profile, ACTIVITY_PROFILES["casual"])
+        profile_kwargs = ACTIVITY_PROFILES.get(
+            self.profile, ACTIVITY_PROFILES["casual"]
+        )
         noise = NoiseController(seed=self.seed, **profile_kwargs)
 
         base_delays = [int(base_delay)] * len(media_ids)
@@ -117,29 +147,48 @@ class StealthScheduler:
 
         from src.stealth.gan.generator import TemporalPatternGenerator
 
+        ckpt = torch.load(checkpoint, map_location=self.device, weights_only=False)
+        # Prefer dimensions stored in the checkpoint; fall back to the
+        # architecture defaults they were trained with.
+        config = ckpt.get("config", {}) if isinstance(ckpt, dict) else {}
+        if not isinstance(config, dict):  # TrainingConfig dataclass from the trainer
+            config = {
+                "latent_dim": getattr(config, "latent_dim", 128),
+                "hidden_dim": getattr(config, "hidden_dim", 256),
+                "max_sequence_length": 100,
+            }
         self._generator = TemporalPatternGenerator(
-            latent_dim=128, hidden_dim=256,
-            num_channels=self.num_channels, max_sequence_length=100,
+            latent_dim=config.get("latent_dim", 128),
+            hidden_dim=config.get("hidden_dim", 256),
+            num_channels=self.num_channels,
+            max_sequence_length=config.get("max_sequence_length", 100),
         )
-        ckpt = torch.load(checkpoint, map_location=self.device)
         self._generator.load_state_dict(ckpt["generator_state"])
         self._generator.to(self.device)
         self._generator.eval()
         return True
 
-    def _schedule_gan(self, media_ids: list[str], base_delay: float,
-                      checkpoint: Optional[Path]) -> dict:
+    def _schedule_gan(
+        self, media_ids: list[str], base_delay: float, checkpoint: Optional[Path]
+    ) -> dict:
         if not self._load_generator(checkpoint):
-            print("[StealthScheduler] GAN checkpoint not found — falling back to static")
+            print(
+                "[StealthScheduler] GAN checkpoint not found — falling back to static"
+            )
             return self._schedule_static(media_ids, base_delay)
 
         import torch
+
         seq_len = len(media_ids)
-        time_of_day = torch.tensor([float(np.random.randint(0, 24))], device=self.device)
+        time_of_day = torch.tensor(
+            [float(np.random.randint(0, 24))], device=self.device
+        )
 
         with torch.no_grad():
             schedule = self._generator.generate(
-                batch_size=1, sequence_length=seq_len, time_of_day=time_of_day,
+                batch_size=1,
+                sequence_length=seq_len,
+                time_of_day=time_of_day,
                 device=self.device,
             )
 
@@ -178,8 +227,9 @@ class StealthScheduler:
         self._rl_agent.actor_critic.eval()
         return True
 
-    def _schedule_rl(self, media_ids: list[str], base_delay: float,
-                     checkpoint: Optional[Path]) -> dict:
+    def _schedule_rl(
+        self, media_ids: list[str], base_delay: float, checkpoint: Optional[Path]
+    ) -> dict:
         if not self._load_rl_agent(checkpoint):
             print("[StealthScheduler] RL checkpoint not found — falling back to static")
             return self._schedule_static(media_ids, base_delay)

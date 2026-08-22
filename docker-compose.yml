@@ -273,7 +273,8 @@ services:
     profiles:
       - web
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      # The slim production image has no curl; use python's stdlib instead.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -296,7 +297,9 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://dcass-api:8000
+      # NEXT_PUBLIC_* is baked into the browser bundle, so this must be a URL
+      # the USER'S BROWSER can resolve, not a container-internal hostname.
+      - NEXT_PUBLIC_API_URL=http://localhost:${API_PORT:-8000}
     networks:
       - dcass-network
     depends_on:

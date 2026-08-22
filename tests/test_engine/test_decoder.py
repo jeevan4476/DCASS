@@ -411,7 +411,7 @@ class TestDecoderIntegration:
     def check_indices(self):
         """Skip if indices don't exist."""
         from pathlib import Path
-        index_path = Path(__file__).parent.parent.parent / "data" / "indices" / "text.index"
+        index_path = Path(__file__).parent.parent.parent / "storage" / "data" / "indices" / "text.index"
         if not index_path.exists():
             pytest.skip("Indices not built")
     
@@ -437,7 +437,7 @@ class TestDecodeMediaSequenceFunction:
     def check_indices(self):
         """Skip if indices don't exist."""
         from pathlib import Path
-        index_path = Path(__file__).parent.parent.parent / "data" / "indices" / "text.index"
+        index_path = Path(__file__).parent.parent.parent / "storage" / "data" / "indices" / "text.index"
         if not index_path.exists():
             pytest.skip("Indices not built")
     

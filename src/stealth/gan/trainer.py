@@ -23,7 +23,7 @@ from .generator import TemporalPatternGenerator, sample_latent, compute_generato
 from ...analysis.adversarial.warden import (
     DeepPacketInspectionWarden,
     compute_warden_loss,
-    compute_gradient_penalty
+    compute_gradient_penalty,
 )
 
 
@@ -48,6 +48,7 @@ class TrainingConfig:
         checkpoint_dir: Directory for saving checkpoints
         log_interval: Steps between logging
     """
+
     latent_dim: int = 128
     hidden_dim: int = 256
     num_channels: int = 3
@@ -67,6 +68,7 @@ class TrainingConfig:
 @dataclass
 class TrainingMetrics:
     """Metrics from a training step."""
+
     epoch: int
     step: int
     generator_loss: float
@@ -105,7 +107,7 @@ class HumanTrafficDataset(Dataset):
 
         # Load data
         if data_path.exists():
-            with open(data_path, 'r') as f:
+            with open(data_path, "r") as f:
                 self.data = json.load(f)
         else:
             # Generate synthetic data for testing
@@ -131,11 +133,9 @@ class HumanTrafficDataset(Dataset):
             # Random time of day
             time_of_day = np.random.randint(0, 24)
 
-            data.append({
-                "delays": delays,
-                "channels": channels,
-                "time_of_day": time_of_day
-            })
+            data.append(
+                {"delays": delays, "channels": channels, "time_of_day": time_of_day}
+            )
 
         return data
 
@@ -147,8 +147,8 @@ class HumanTrafficDataset(Dataset):
         sample = self.data[idx]
 
         # Extract fields
-        delays = sample["delays"][:self.max_sequence_length]
-        channels = sample["channels"][:self.max_sequence_length]
+        delays = sample["delays"][: self.max_sequence_length]
+        channels = sample["channels"][: self.max_sequence_length]
         time_of_day = sample["time_of_day"]
 
         # Pad if necessary
@@ -161,7 +161,7 @@ class HumanTrafficDataset(Dataset):
             "delays": torch.tensor(delays, dtype=torch.float32),
             "channels": torch.tensor(channels, dtype=torch.long),
             "time_of_day": torch.tensor(time_of_day, dtype=torch.float32),
-            "sequence_length": torch.tensor(seq_len, dtype=torch.long)
+            "sequence_length": torch.tensor(seq_len, dtype=torch.long),
         }
 
 
@@ -180,7 +180,7 @@ class GANTrainer:
         self,
         config: TrainingConfig,
         generator: Optional[TemporalPatternGenerator] = None,
-        warden: Optional[DeepPacketInspectionWarden] = None
+        warden: Optional[DeepPacketInspectionWarden] = None,
     ):
         """
         Initialize trainer.
@@ -198,12 +198,11 @@ class GANTrainer:
             latent_dim=config.latent_dim,
             hidden_dim=config.hidden_dim,
             num_channels=config.num_channels,
-            max_sequence_length=config.max_sequence_length
+            max_sequence_length=config.max_sequence_length,
         )
 
         self.warden = warden or DeepPacketInspectionWarden(
-            num_channels=config.num_channels,
-            hidden_dim=config.hidden_dim
+            num_channels=config.num_channels, hidden_dim=config.hidden_dim
         )
 
         # Move to device
@@ -212,15 +211,11 @@ class GANTrainer:
 
         # Optimizers
         self.generator_optimizer = optim.Adam(
-            self.generator.parameters(),
-            lr=config.generator_lr,
-            betas=(0.5, 0.999)
+            self.generator.parameters(), lr=config.generator_lr, betas=(0.5, 0.999)
         )
 
         self.warden_optimizer = optim.Adam(
-            self.warden.parameters(),
-            lr=config.warden_lr,
-            betas=(0.5, 0.999)
+            self.warden.parameters(), lr=config.warden_lr, betas=(0.5, 0.999)
         )
 
         # Training state
@@ -231,10 +226,7 @@ class GANTrainer:
         # Create checkpoint directory
         config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    def train_step(
-        self,
-        real_batch: dict[str, torch.Tensor]
-    ) -> TrainingMetrics:
+    def train_step(self, real_batch: dict[str, torch.Tensor]) -> TrainingMetrics:
         """
         Perform one training step (Warden + Generator update).
 
@@ -264,9 +256,13 @@ class GANTrainer:
             fake_schedule = self.generator(z, actual_seq_len, time_of_day)
 
             # Get Warden verdicts
-            real_verdict = self.warden(real_delays[:, :actual_seq_len], real_channels[:, :actual_seq_len])
+            real_verdict = self.warden(
+                real_delays[:, :actual_seq_len], real_channels[:, :actual_seq_len]
+            )
 
-            fake_delays = fake_schedule.delays
+            # Detach: the critic update must not backprop through the
+            # generator (5x wasted backward passes otherwise).
+            fake_delays = fake_schedule.delays.detach()
             fake_channels = fake_schedule.sample_channels()
             fake_verdict = self.warden(fake_delays, fake_channels)
 
@@ -282,7 +278,7 @@ class GANTrainer:
                     fake_delays.detach(),
                     real_channels[:, :actual_seq_len],
                     fake_channels.detach(),
-                    lambda_gp=self.config.lambda_gp
+                    lambda_gp=self.config.lambda_gp,
                 )
                 warden_loss = warden_loss + gradient_penalty
 
@@ -297,13 +293,19 @@ class GANTrainer:
         z = sample_latent(batch_size, self.config.latent_dim, device=self.device)
         fake_schedule = self.generator(z, actual_seq_len, time_of_day)
 
-        # Get Warden's verdict on fake data
-        fake_channels = fake_schedule.sample_channels()
-        fake_verdict = self.warden(fake_schedule.delays, fake_channels)
+        # Get Warden's verdict on fake data.
+        # Use straight-through Gumbel-Softmax channel probabilities so the
+        # generator's channel head receives gradient signal; plain argmax
+        # indices would leave channel_head untrained forever (R-23).
+        fake_channel_probs = fake_schedule.channel_probs_straight_through()
+        fake_verdict = self.warden(fake_schedule.delays, fake_channel_probs)
+        fake_channels = fake_channel_probs.argmax(dim=-1)
 
         # Compute Generator loss (Wasserstein: wants to maximise E[D(G(z))]).
         # Must use raw_critic_score (unbounded), not sigmoid bot_probability.
-        generator_loss = compute_generator_loss(fake_verdict.feature_importance["raw_critic_score"])
+        generator_loss = compute_generator_loss(
+            fake_verdict.feature_importance["raw_critic_score"]
+        )
 
         # Backward pass
         generator_loss.backward()
@@ -311,7 +313,9 @@ class GANTrainer:
 
         # ==================== Collect Metrics ====================
         with torch.no_grad():
-            real_verdict = self.warden(real_delays[:, :actual_seq_len], real_channels[:, :actual_seq_len])
+            real_verdict = self.warden(
+                real_delays[:, :actual_seq_len], real_channels[:, :actual_seq_len]
+            )
             fake_verdict = self.warden(fake_schedule.delays, fake_channels)
 
             metrics = TrainingMetrics(
@@ -322,7 +326,9 @@ class GANTrainer:
                 real_bot_prob=real_verdict.bot_probability.mean().item(),
                 fake_bot_prob=fake_verdict.bot_probability.mean().item(),
                 generator_confidence=fake_schedule.confidence.mean().item(),
-                gradient_penalty=gradient_penalty.item() if gradient_penalty is not None else None
+                gradient_penalty=gradient_penalty.item()
+                if gradient_penalty is not None
+                else None,
             )
 
         self.global_step += 1
@@ -332,7 +338,7 @@ class GANTrainer:
         self,
         train_loader: DataLoader,
         num_epochs: Optional[int] = None,
-        callback: Optional[Callable[[TrainingMetrics], None]] = None
+        callback: Optional[Callable[[TrainingMetrics], None]] = None,
     ) -> list[TrainingMetrics]:
         """
         Train the GAN for multiple epochs.
@@ -348,7 +354,9 @@ class GANTrainer:
         num_epochs = num_epochs or self.config.num_epochs
 
         print(f"Starting GAN training for {num_epochs} epochs on {self.device}")
-        print(f"Generator params: {sum(p.numel() for p in self.generator.parameters()):,}")
+        print(
+            f"Generator params: {sum(p.numel() for p in self.generator.parameters()):,}"
+        )
         print(f"Warden params: {sum(p.numel() for p in self.warden.parameters()):,}")
 
         for epoch in range(num_epochs):
@@ -373,9 +381,15 @@ class GANTrainer:
             self.save_checkpoint(f"epoch_{epoch:03d}")
 
             # Epoch summary
-            avg_gen_loss = sum(m.generator_loss for m in epoch_metrics) / len(epoch_metrics)
-            avg_warden_loss = sum(m.warden_loss for m in epoch_metrics) / len(epoch_metrics)
-            avg_fake_prob = sum(m.fake_bot_prob for m in epoch_metrics) / len(epoch_metrics)
+            avg_gen_loss = sum(m.generator_loss for m in epoch_metrics) / len(
+                epoch_metrics
+            )
+            avg_warden_loss = sum(m.warden_loss for m in epoch_metrics) / len(
+                epoch_metrics
+            )
+            avg_fake_prob = sum(m.fake_bot_prob for m in epoch_metrics) / len(
+                epoch_metrics
+            )
 
             print(f"\nEpoch {epoch} Summary:")
             print(f"  Generator Loss: {avg_gen_loss:.4f}")
@@ -385,7 +399,9 @@ class GANTrainer:
 
         return self.metrics_history
 
-    def _log_metrics(self, metrics: TrainingMetrics, batch_idx: int, total_batches: int):
+    def _log_metrics(
+        self, metrics: TrainingMetrics, batch_idx: int, total_batches: int
+    ):
         """Log training metrics to console."""
         print(
             f"[Epoch {metrics.epoch}][{batch_idx}/{total_batches}] "
@@ -408,7 +424,7 @@ class GANTrainer:
             "generator_optimizer": self.generator_optimizer.state_dict(),
             "warden_optimizer": self.warden_optimizer.state_dict(),
             "config": self.config,
-            "metrics_history": self.metrics_history
+            "metrics_history": self.metrics_history,
         }
 
         torch.save(checkpoint, checkpoint_path)
@@ -430,9 +446,7 @@ class GANTrainer:
 
 
 def train_gan(
-    data_path: Path,
-    config: Optional[TrainingConfig] = None,
-    save_final: bool = True
+    data_path: Path, config: Optional[TrainingConfig] = None, save_final: bool = True
 ) -> GANTrainer:
     """
     Convenience function to train a GAN from scratch.
@@ -450,10 +464,7 @@ def train_gan(
     # Create dataset and dataloader
     dataset = HumanTrafficDataset(data_path, config.max_sequence_length)
     train_loader = DataLoader(
-        dataset,
-        batch_size=config.batch_size,
-        shuffle=True,
-        num_workers=0
+        dataset, batch_size=config.batch_size, shuffle=True, num_workers=0
     )
 
     # Create trainer
@@ -473,12 +484,7 @@ if __name__ == "__main__":
     # Quick test
     print("Testing GANTrainer...")
 
-    config = TrainingConfig(
-        batch_size=8,
-        num_epochs=2,
-        log_interval=1,
-        device="cpu"
-    )
+    config = TrainingConfig(batch_size=8, num_epochs=2, log_interval=1, device="cpu")
 
     # Create synthetic dataset
     data_path = Path("data/synthetic_traffic.json")

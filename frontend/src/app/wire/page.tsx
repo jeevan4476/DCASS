@@ -5,7 +5,7 @@ import Navigation from '@/components/Navigation';
 import { Card, Badge } from '@/components/UI';
 import axios from 'axios';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { API_BASE } from '@/lib/api';
 
 interface Packet {
   media_id: string;
@@ -45,13 +45,13 @@ export default function WirePage() {
     const pollData = async () => {
       try {
         // Poll packets
-        const packetsResponse = await axios.get(`${API_BASE}/api/wire/packets`);
+        const packetsResponse = await axios.get(`${API_BASE}/wire/packets`);
         if (packetsResponse.data.packets) {
           setPackets(packetsResponse.data.packets);
         }
         
         // Poll transmission status
-        const statusResponse = await axios.get(`${API_BASE}/api/transmit/status`);
+        const statusResponse = await axios.get(`${API_BASE}/transmit/status`);
         setTransmissionStatus(statusResponse.data);
       } catch (err) {
         console.error('Error polling data:', err);
@@ -98,7 +98,7 @@ export default function WirePage() {
 
   const clearPackets = async () => {
     try {
-      await axios.delete(`${API_BASE}/api/wire/packets`);
+      await axios.delete(`${API_BASE}/wire/packets`);
       setPackets([]);
     } catch (err) {
       console.error('Error clearing packets:', err);

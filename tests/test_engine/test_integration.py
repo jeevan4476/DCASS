@@ -17,7 +17,7 @@ from pathlib import Path
 # Skip all tests in this module if indices don't exist
 def check_indices_exist():
     """Check if indices exist."""
-    index_path = Path(__file__).parent.parent.parent / "data" / "indices" / "text.index"
+    index_path = Path(__file__).parent.parent.parent / "storage" / "data" / "indices" / "text.index"
     return index_path.exists()
 
 

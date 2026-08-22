@@ -34,6 +34,13 @@ class NoiseController:
     def apply(
         self, image_sequence: List[str], base_delays: List[int]
     ) -> Tuple[List[str], List[int]]:
+        """
+        Apply human-like noise to a schedule.
+
+        Delay semantics: `delays[i]` is the pause AFTER item i (idle gaps are
+        folded into the previous item's delay). Consumers must dispatch first,
+        then wait — the Scheduler and the API transmitter both follow this.
+        """
         noisy_images = []
         noisy_delays = []
 

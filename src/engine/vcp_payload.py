@@ -77,9 +77,17 @@ class VCPPayloadMapper:
             )
 
         if self.codebook is None:
-            path = self.codebook_path or (self.index.base_path / "voronoi_codebook.npz")
-            self.codebook = VoronoiCodebook()
-            self.codebook.load(path)
+            # Allow the index to carry a pre-fitted/shared codebook instance
+            # (used by tests and by callers that fit or load it themselves).
+            shared = getattr(self.index, "_vcp_codebook", None)
+            if shared is not None:
+                self.codebook = shared
+            else:
+                path = self.codebook_path or (
+                    self.index.base_path / "voronoi_codebook.npz"
+                )
+                self.codebook = VoronoiCodebook()
+                self.codebook.load(path)
 
         if self.codebook.cluster_assignments is None:
             raise RuntimeError("Voronoi codebook has no cluster assignments")
@@ -163,9 +171,19 @@ class VCPPayloadMapper:
             )
 
         if not candidates:
+            available = len(self._symbol_to_globals.get(int(symbol), []))
+            if available == 0:
+                raise RuntimeError(
+                    f"Cannot encode byte 0x{int(symbol):02x}: its VCP cluster has "
+                    f"NO carriers in the corpus (modalities {sorted(allowed_modalities)}). "
+                    f"Re-fit the codebook or rebuild indices so every byte symbol "
+                    f"is populated."
+                )
             raise RuntimeError(
-                f"No available VCP carrier found for byte 0x{int(symbol):02x} "
-                f"in modalities {sorted(allowed_modalities)}"
+                f"Cannot encode byte 0x{int(symbol):02x}: all {available} carriers in "
+                f"its cluster are already used. This usually means the message repeats "
+                f"this byte more often than the corpus can supply distinct carriers; "
+                f"retry with avoid_duplicates=False or use a larger corpus."
             )
 
         candidates.sort(

@@ -681,7 +681,7 @@ def get_transmission_status():
 @app.post("/api/transmit/stop")
 def stop_transmission():
     """Stop the current transmission (best effort)."""
-    global _transmission_active, _transmission_progress
+    global _transmission_active, _transmission_progress, _transmission_stop_requested
 
     with _transmission_lock:
         if _transmission_active:
