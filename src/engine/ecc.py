@@ -8,12 +8,13 @@ to eliminate vector quantization noise and semantic drift during covert transmis
 Key Features:
 - Appends R parity bytes to secret payloads before FAISS vector search
 - Fixes up to t = floor(R / 2) arbitrary corrupted media items or vector mismatches
-- Guarantees 0% Bit Error Rate (100.0% exact bit recovery)
+- Correctness is guaranteed only when the number of corrupted bytes is <= t
 """
 
 from __future__ import annotations
 from typing import Tuple, List, Optional
 import reedsolo
+
 
 class RSErrorCorrection:
     """
@@ -25,7 +26,7 @@ class RSErrorCorrection:
         Initialize RS-ECC codec.
 
         Args:
-            parity_bytes: Number of parity bytes (R). 
+            parity_bytes: Number of parity bytes (R).
                          Can correct up to t = floor(R / 2) byte errors.
         """
         self.parity_bytes = parity_bytes
@@ -67,9 +68,13 @@ class RSErrorCorrection:
             decoded_bytes, _, errata_pos = self._codec.decode(bytearray(codeword))
             decoded_str = decoded_bytes.decode("utf-8", errors="replace")
             return decoded_str, True, list(errata_pos)
-        except (reedsolo.ReedSolomonError, Exception) as e:
-            # Fallback: return raw slice if decoding fails
-            raw_data = codeword[:-self.parity_bytes] if len(codeword) > self.parity_bytes else codeword
+        except reedsolo.ReedSolomonError:
+            # Uncorrectable corruption: return raw slice, flagged as failure
+            raw_data = (
+                codeword[: -self.parity_bytes]
+                if len(codeword) > self.parity_bytes
+                else codeword
+            )
             return raw_data.decode("utf-8", errors="replace"), False, []
 
     def __repr__(self) -> str:

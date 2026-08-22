@@ -1,7 +1,8 @@
 # src/distribution/base_channel.py
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 class BaseChannel(ABC):
     def __init__(self, name: str):
@@ -23,7 +24,7 @@ class BaseChannel(ABC):
         return {
             "channel": self.name,
             "image_id": image_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     def _base_log_with_timestamp(

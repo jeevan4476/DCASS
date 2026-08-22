@@ -11,6 +11,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import time
 import json
 import asyncio
@@ -28,6 +29,7 @@ from src.corpus.index.unified_index import resolve_indices_base_path
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
+_DEFAULT_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
 app = FastAPI(
     title="DCASS API",
     description="Dynamic Context-Aware Semantic Steganography",
@@ -36,7 +38,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # Wildcard origins combined with credentials is invalid per the CORS spec;
+    # restrict to known frontend origins (override via DCASS_CORS_ORIGINS).
+    allow_origins=[
+        o.strip()
+        for o in os.environ.get("DCASS_CORS_ORIGINS", _DEFAULT_ORIGINS).split(",")
+        if o.strip()
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,30 +55,43 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 _encoder = None
 _decoder = None
+_engine_lock = threading.Lock()
 _initializing = False
 _ready = False
 
 # Transmission state
 _transmission_active = False
+_transmission_stop_requested = False
 _transmission_progress = {"current": 0, "total": 0, "status": "idle"}
 _transmission_lock = threading.Lock()
+
+# Cached index counts for /api/status (avoids re-reading FAISS files per call)
+_index_counts_cache: Optional[dict] = None
 
 
 def _get_encoder():
     global _encoder
     if _encoder is None:
-        from src.engine.encoder import SemanticEncoder
-        _encoder = SemanticEncoder(expand_synonyms=True)
-        _encoder.load()
+        with _engine_lock:
+            if _encoder is None:
+                from src.engine.encoder import SemanticEncoder
+
+                encoder = SemanticEncoder(expand_synonyms=True)
+                encoder.load()
+                _encoder = encoder
     return _encoder
 
 
 def _get_decoder():
     global _decoder
     if _decoder is None:
-        from src.engine.decoder import SemanticDecoder
-        _decoder = SemanticDecoder()
-        _decoder.load()
+        with _engine_lock:
+            if _decoder is None:
+                from src.engine.decoder import SemanticDecoder
+
+                decoder = SemanticDecoder()
+                decoder.load()
+                _decoder = decoder
     return _decoder
 
 
@@ -86,12 +107,12 @@ def warmup():
         print("\n📦 Loading encoder and CLIP model...")
         encoder = _get_encoder()
         print(f"✅ Encoder ready: {encoder}")
-        
+
         # Load decoder
         print("\n📦 Loading decoder...")
         decoder = _get_decoder()
         print(f"✅ Decoder ready: {decoder}")
-        
+
         _ready = True
         print("\n" + "=" * 70)
         print("✅ DCASS engine ready!")
@@ -193,28 +214,32 @@ def encode(req: EncodeRequest):
     media_seq_items = []
     for enc in result.encoded:
         fpath = enc.file_path or (enc.media.file_path if enc.media else "")
-        encoded_items.append({
-            "media_id": enc.media.id,
-            "modality": enc.media.modality,
-            "score": round(enc.media.normalized_score, 4),
-            "content": enc.media.content[:120],
-            "file_path": fpath,
-            "payload_byte": enc.payload_byte,
-            "cluster_id": enc.cluster_id,
-        })
+        encoded_items.append(
+            {
+                "media_id": enc.media.id,
+                "modality": enc.media.modality,
+                "score": round(enc.media.normalized_score, 4),
+                "content": enc.media.content[:120],
+                "file_path": fpath,
+                "payload_byte": enc.payload_byte,
+                "cluster_id": enc.cluster_id,
+            }
+        )
 
     for item in result.media_sequence:
         fpath = item.file_path or ""
-        media_seq_items.append({
-            "id": item.id,
-            "media_id": item.id,
-            "modality": item.modality,
-            "content": item.content[:120],
-            "score": round(item.score, 4),
-            "normalized_score": round(item.normalized_score, 4),
-            "file_path": fpath,
-            "metadata": item.metadata,
-        })
+        media_seq_items.append(
+            {
+                "id": item.id,
+                "media_id": item.id,
+                "modality": item.modality,
+                "content": item.content[:120],
+                "score": round(item.score, 4),
+                "normalized_score": round(item.normalized_score, 4),
+                "file_path": fpath,
+                "metadata": item.metadata,
+            }
+        )
 
     raw_codeword_hex = result.ecc_codeword.hex() if result.ecc_codeword else None
 
@@ -236,7 +261,7 @@ def encode(req: EncodeRequest):
 def decode(req: DecodeRequest):
     t0 = time.perf_counter()
     decoder = _get_decoder()
-    
+
     raw_codeword = None
     if req.raw_codeword_hex:
         try:
@@ -294,12 +319,14 @@ def search(req: SearchRequest):
 
     items = []
     for r in results:
-        items.append({
-            "id": r.id,
-            "modality": r.modality,
-            "score": round(r.normalized_score, 4),
-            "content": r.content[:200],
-        })
+        items.append(
+            {
+                "id": r.id,
+                "modality": r.modality,
+                "score": round(r.normalized_score, 4),
+                "content": r.content[:200],
+            }
+        )
 
     return SearchResponse(
         results=items,
@@ -310,29 +337,57 @@ def search(req: SearchRequest):
 @app.get("/api/status", response_model=StatusResponse)
 def status():
     import torch
+
+    global _index_counts_cache
     indices_path = resolve_indices_base_path()
     models_path = Path(__file__).parent.parent.parent / "storage" / "models"
 
     index_info = {}
     total = 0
+
+    # Cache counts keyed on (path, size, mtime) so repeated status calls do
+    # not re-read every FAISS index from disk.
+    cache_key = {}
     for mod in ["image", "text", "audio"]:
         idx_file = indices_path / f"{mod}.index"
-        meta_file = indices_path / f"{mod}_metadata.json"
-        if idx_file.exists() and meta_file.exists():
+        if idx_file.exists():
+            st = idx_file.stat()
+            cache_key[mod] = (str(idx_file), st.st_size, st.st_mtime)
+        else:
+            cache_key[mod] = None
+
+    if _index_counts_cache is None or _index_counts_cache.get("key") != cache_key:
+        counts = {}
+        for mod in ["image", "text", "audio"]:
+            if cache_key[mod] is None:
+                counts[mod] = None
+                continue
             try:
                 import faiss
-                idx = faiss.read_index(str(idx_file))
-                count = idx.ntotal
-                total += count
-                index_info[mod] = {"status": "ok", "count": count}
+
+                idx = faiss.read_index(cache_key[mod][0])
+                counts[mod] = idx.ntotal
             except Exception as e:
-                index_info[mod] = {"status": "error", "error": str(e)}
-        else:
+                counts[mod] = f"error: {e}"
+        _index_counts_cache = {"key": cache_key, "counts": counts}
+    else:
+        counts = _index_counts_cache["counts"]
+
+    for mod in ["image", "text", "audio"]:
+        c = counts.get(mod)
+        if c is None:
             index_info[mod] = {"status": "missing"}
+        elif isinstance(c, int):
+            total += c
+            index_info[mod] = {"status": "ok", "count": c}
+        else:
+            index_info[mod] = {"status": "error", "error": str(c)}
 
     stealth = {
-        "gan_checkpoint": (models_path / "gan_generator.pt").exists() or (models_path / "gan" / "final.pt").exists(),
-        "rl_checkpoint": (models_path / "rl_agent.pt").exists() or (models_path / "rl" / "ppo_agent_final.pt").exists(),
+        "gan_checkpoint": (models_path / "gan_generator.pt").exists()
+        or (models_path / "gan" / "final.pt").exists(),
+        "rl_checkpoint": (models_path / "rl_agent.pt").exists()
+        or (models_path / "rl" / "ppo_agent_final.pt").exists(),
         "voronoi_codebook": (indices_path / "voronoi_codebook.npz").exists(),
     }
 
@@ -359,7 +414,13 @@ def ready():
 
 @app.get("/api/benchmark/latest")
 def benchmark_latest():
-    results_dir = Path(__file__).parent.parent.parent / "storage" / "data" / "benchmarks" / "results"
+    results_dir = (
+        Path(__file__).parent.parent.parent
+        / "storage"
+        / "data"
+        / "benchmarks"
+        / "results"
+    )
     if not results_dir.exists():
         return {"available": False}
 
@@ -377,17 +438,21 @@ def benchmark_latest():
 def get_wire_packets():
     """List all packets in shared_channel directory."""
     shared_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
-    
+
     if not shared_dir.exists():
-        return {"packets": [], "count": 0, "error": "shared_channel directory not found"}
-    
+        return {
+            "packets": [],
+            "count": 0,
+            "error": "shared_channel directory not found",
+        }
+
     packets = []
     try:
         for f in sorted(shared_dir.glob("*.json")):
             # Skip manifest file
             if f.name.startswith("_"):
                 continue
-                
+
             try:
                 with open(f, "r", encoding="utf-8") as fp:
                     data = json.load(fp)
@@ -398,7 +463,7 @@ def get_wire_packets():
                 continue
     except Exception as e:
         return {"packets": [], "count": 0, "error": str(e)}
-    
+
     return {"packets": packets, "count": len(packets)}
 
 
@@ -406,18 +471,22 @@ def get_wire_packets():
 def clear_wire_packets():
     """Clear all packets from shared_channel directory."""
     shared_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
-    
+
     if not shared_dir.exists():
         return {"success": False, "error": "shared_channel directory not found"}
-    
+
     deleted_count = 0
     try:
         for f in shared_dir.glob("*.json"):
+            # Keep sender-side control files (e.g. _manifest.json), consistent
+            # with the GET endpoint which skips them.
+            if f.name.startswith("_"):
+                continue
             f.unlink()
             deleted_count += 1
     except Exception as e:
         return {"success": False, "error": str(e)}
-    
+
     return {"success": True, "deleted": deleted_count}
 
 
@@ -440,21 +509,22 @@ def _transmit_packets_sync(
     Synchronous function to transmit packets with real delays.
     Runs in a background thread.
     """
-    global _transmission_active, _transmission_progress
-    
+    global _transmission_active, _transmission_progress, _transmission_stop_requested
+
     items = schedule["items"]
     delays = schedule["delays"]
     channels = schedule["channels"]
     mode_used = schedule["mode_used"]
-    
+
     with _transmission_lock:
         _transmission_active = True
+        _transmission_stop_requested = False
         _transmission_progress = {
             "current": 0,
             "total": len([i for i in items if i is not None]),
             "status": "transmitting",
         }
-    
+
     try:
         # Write manifest
         manifest = {
@@ -467,17 +537,21 @@ def _transmit_packets_sync(
         }
         with open(shared_dir / "_manifest.json", "w") as f:
             json.dump(manifest, f, indent=2)
-        
+
         # Transmit packets with real delays
         packet_count = 0
         for idx, (media_id, delay, channel) in enumerate(zip(items, delays, channels)):
+            with _transmission_lock:
+                if _transmission_stop_requested:
+                    break
+
             if media_id is None:
                 # Noise gap - just wait
                 actual_delay = delay / speed_multiplier
                 if actual_delay > 0:
                     time.sleep(actual_delay)
                 continue
-            
+
             # Write packet
             packet = {
                 "media_id": media_id,
@@ -487,27 +561,37 @@ def _transmit_packets_sync(
                 "timestamp": time.time(),
                 "mode_used": mode_used,
             }
-            
+
             filename = f"{media_id}_{channel}_{idx:04d}.json"
             with open(shared_dir / filename, "w") as f:
                 json.dump(packet, f, indent=2)
-            
+
             packet_count += 1
-            
+
             # Update progress
             with _transmission_lock:
                 _transmission_progress["current"] = packet_count
-            
-            # Apply delay before next packet (scaled by speed_multiplier)
+
+            # Apply delay before next packet (scaled by speed_multiplier),
+            # in short slices so a stop request is honored promptly.
             actual_delay = delay / speed_multiplier
             if actual_delay > 0 and idx < len(items) - 1:
-                time.sleep(actual_delay)
-        
+                remaining = actual_delay
+                while remaining > 0:
+                    with _transmission_lock:
+                        if _transmission_stop_requested:
+                            break
+                    slice_sleep = min(0.25, remaining)
+                    time.sleep(slice_sleep)
+                    remaining -= slice_sleep
+
         # Mark as complete
         with _transmission_lock:
-            _transmission_progress["status"] = "complete"
+            _transmission_progress["status"] = (
+                "stopped" if _transmission_stop_requested else "complete"
+            )
             _transmission_active = False
-            
+
     except Exception as e:
         with _transmission_lock:
             _transmission_progress["status"] = f"error: {str(e)}"
@@ -519,43 +603,46 @@ def _transmit_packets_sync(
 def transmit_sequence(req: TransmitRequest, background_tasks: BackgroundTasks):
     """
     Start transmitting a media sequence through the shared channel.
-    
+
     This starts a background task that writes packets with real delays,
     simulating realistic transmission timing.
     """
     global _transmission_active, _transmission_progress
-    
-    # Check if already transmitting
-    if _transmission_active:
-        raise HTTPException(
-            status_code=409,
-            detail="Transmission already in progress. Wait for it to complete or check /api/transmit/status"
-        )
-    
+
+    # Atomically claim the transmitter so concurrent requests cannot double-start
+    with _transmission_lock:
+        if _transmission_active:
+            raise HTTPException(
+                status_code=409,
+                detail="Transmission already in progress. Wait for it to complete or check /api/transmit/status",
+            )
+        _transmission_active = True
+        _transmission_progress = {"current": 0, "total": 0, "status": "starting"}
+
     try:
         from src.stealth.stealth_scheduler import StealthScheduler
-        
+
         # Initialize scheduler
         scheduler = StealthScheduler(
             num_channels=req.num_channels,
             device="cpu",
             profile="casual",
         )
-        
+
         # Get schedule
         schedule = scheduler.schedule(
             media_ids=req.media_ids,
             mode=req.mode,
             base_delay=req.base_delay,
         )
-        
+
         # Prepare shared_channel directory
         shared_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
         shared_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Calculate estimated time
         total_delay = sum(schedule["delays"]) / req.speed_multiplier
-        
+
         # Start background transmission in a thread
         thread = threading.Thread(
             target=_transmit_packets_sync,
@@ -563,7 +650,7 @@ def transmit_sequence(req: TransmitRequest, background_tasks: BackgroundTasks):
             daemon=True,
         )
         thread.start()
-        
+
         return {
             "success": True,
             "status": "started",
@@ -573,8 +660,12 @@ def transmit_sequence(req: TransmitRequest, background_tasks: BackgroundTasks):
             "speed_multiplier": req.speed_multiplier,
             "message": "Transmission started in background. Poll /api/transmit/status for progress.",
         }
-        
+
     except Exception as e:
+        # Release the claim if scheduling failed before the worker took over.
+        with _transmission_lock:
+            _transmission_active = False
+            _transmission_progress = {"current": 0, "total": 0, "status": "idle"}
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -591,11 +682,11 @@ def get_transmission_status():
 def stop_transmission():
     """Stop the current transmission (best effort)."""
     global _transmission_active, _transmission_progress
-    
+
     with _transmission_lock:
         if _transmission_active:
-            _transmission_active = False
-            _transmission_progress["status"] = "stopped"
+            _transmission_stop_requested = True
+            _transmission_progress["status"] = "stopping"
             return {"success": True, "message": "Transmission stop requested"}
         else:
             return {"success": False, "message": "No active transmission"}

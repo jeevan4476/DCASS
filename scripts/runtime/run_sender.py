@@ -47,6 +47,7 @@ log = logging.getLogger("dcass.sender")
 # Packet writer
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class PacketWriter:
     """Writes packet metadata JSON files to the shared channel directory."""
 
@@ -95,12 +96,15 @@ class PacketWriter:
         )
         return file_path
 
-    def write_manifest(self, schedule: dict, message: str):
+    def write_manifest(
+        self, schedule: dict, message: str, payload_mode: str = "exact_vcp"
+    ):
         """Write a session manifest for debugging / auditing."""
         manifest = {
             "message": message,
             "mode_requested": schedule.get("mode_requested", "unknown"),
             "mode_used": schedule.get("mode_used", "unknown"),
+            "payload_mode": payload_mode,
             "total_items": len(schedule["items"]),
             "total_delay_seconds": round(sum(schedule["delays"]), 2),
             "timestamp": time.time(),
@@ -114,6 +118,7 @@ class PacketWriter:
 # ═══════════════════════════════════════════════════════════════════════════
 # Core sender logic
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def resolve_mode_cascade(
     scheduler: StealthScheduler,
@@ -196,8 +201,12 @@ def send_sequence(
 
     # 1. Produce schedule (dynamic → static cascade)
     schedule = resolve_mode_cascade(
-        scheduler, media_ids, mode, base_delay,
-        gan_checkpoint, rl_checkpoint,
+        scheduler,
+        media_ids,
+        mode,
+        base_delay,
+        gan_checkpoint,
+        rl_checkpoint,
     )
 
     items = schedule["items"]
@@ -211,7 +220,7 @@ def send_sequence(
     log.info("=" * 60)
 
     # 2. Write manifest
-    writer.write_manifest(schedule, message="(sequence)")
+    writer.write_manifest(schedule, message="(sequence)", payload_mode="exact_vcp")
 
     # 3. Transmit packets with the scheduled delays
     for idx, (media_id, delay, channel) in enumerate(zip(items, delays, channels)):
@@ -244,6 +253,7 @@ def send_sequence(
 # Training (deferred — kept for later use)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def train_agent_in_container(episodes: int):
     """Train the RL agent inside the Docker container. For later use."""
     from src.stealth.rl.agent import PPOAgent, PPOConfig
@@ -265,7 +275,9 @@ def train_agent_in_container(episodes: int):
         n = rng.integers(10, 30)
         return [f"media_{i:03d}" for i in range(n)]
 
-    agent.train(num_episodes=episodes, media_sequence_generator=media_gen, log_interval=10)
+    agent.train(
+        num_episodes=episodes, media_sequence_generator=media_gen, log_interval=10
+    )
 
     ckpt_dir = Path("/app/checkpoints/rl")
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -278,6 +290,7 @@ def train_agent_in_container(episodes: int):
 # CLI entry-point
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="DCASS Sender (Alice) — stealth sequence transmitter",
@@ -285,11 +298,14 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument(
-        "--shared-dir", type=str, default="/app/shared_channel",
+        "--shared-dir",
+        type=str,
+        default="/app/shared_channel",
         help="Shared directory for transmissions (mounted Docker volume)",
     )
     parser.add_argument(
-        "--mode", type=str,
+        "--mode",
+        type=str,
         choices=["auto", "rl", "gan", "static", "train"],
         default="static",
         help=(
@@ -299,45 +315,62 @@ def main():
         ),
     )
     parser.add_argument(
-        "--base-delay", type=float, default=3.0,
+        "--base-delay",
+        type=float,
+        default=3.0,
         help="Base inter-item delay in seconds (for static mode)",
     )
     parser.add_argument(
-        "--num-channels", type=int, default=3,
+        "--num-channels",
+        type=int,
+        default=3,
         help="Number of distribution channels",
     )
     parser.add_argument(
-        "--profile", type=str, default="casual",
+        "--profile",
+        type=str,
+        default="casual",
         help="Activity profile for static noise (casual / stealth / burst)",
     )
     parser.add_argument(
-        "--gan-checkpoint", type=str, default=None,
+        "--gan-checkpoint",
+        type=str,
+        default=None,
         help="Path to trained GAN checkpoint (.pt)",
     )
     parser.add_argument(
-        "--rl-checkpoint", type=str, default=None,
+        "--rl-checkpoint",
+        type=str,
+        default=None,
         help="Path to trained RL (PPO) checkpoint (.pt)",
     )
     parser.add_argument(
-        "--episodes", type=int, default=100,
+        "--episodes",
+        type=int,
+        default=100,
         help="Number of training episodes (only for --mode train)",
     )
     parser.add_argument(
-        "--sequence-length", type=int, default=20,
+        "--sequence-length",
+        type=int,
+        default=20,
         help="Fallback number of media items when --no-encode is set",
     )
     parser.add_argument(
-        "--message", type=str, default="Meet at the cafe at noon",
+        "--message",
+        type=str,
+        default="Meet at the cafe at noon",
         help="Secret message to encode into a media sequence",
     )
     parser.add_argument(
         "--no-encode",
         action="store_true",
         help="Skip SemanticEncoder and transmit dummy media_NNN IDs "
-             "(sniff test only; Bob won't be able to decode)",
+        "(sniff test only; Bob won't be able to decode)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Skip real delays (write packets immediately)",
     )
 
@@ -367,18 +400,27 @@ def main():
 
     if args.no_encode:
         media_ids = [f"media_{i:03d}" for i in range(args.sequence_length)]
-        log.warning("--no-encode: transmitting %d dummy IDs (Bob cannot decode)",
-                    len(media_ids))
+        log.warning(
+            "--no-encode: transmitting %d dummy IDs (Bob cannot decode)", len(media_ids)
+        )
     else:
         from src.engine.encoder import SemanticEncoder
+
         log.info("Loading SemanticEncoder and indices...")
         encoder = SemanticEncoder(expand_synonyms=True)
         encoder.load()
-        log.info("Encoding message into media sequence...")
-        encode_result = encoder.encode(args.message)
+        log.info("Encoding message into media sequence (exact_vcp + RS-ECC)...")
+        encode_result = encoder.encode(
+            args.message,
+            payload_mode="exact_vcp",
+            use_ecc=True,
+        )
         media_ids = encode_result.media_ids
-        log.info("Encoder produced %d media items: %s",
-                 len(media_ids), encode_result.modality_breakdown)
+        log.info(
+            "Encoder produced %d media items: %s",
+            len(media_ids),
+            encode_result.modality_breakdown,
+        )
 
     log.info("Media sequence length: %d", len(media_ids))
 

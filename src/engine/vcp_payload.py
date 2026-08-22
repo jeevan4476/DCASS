@@ -67,7 +67,9 @@ class VCPPayloadMapper:
         if self._loaded:
             return
 
-        missing_modalities = [m for m in CANONICAL_MODALITIES if m not in self.index.indices]
+        missing_modalities = [
+            m for m in CANONICAL_MODALITIES if m not in self.index.indices
+        ]
         if missing_modalities:
             raise RuntimeError(
                 "Exact VCP payload mode requires all canonical indices to be loaded: "
@@ -114,6 +116,17 @@ class VCPPayloadMapper:
 
         self._loaded = True
 
+        # Warn about byte symbols with no carriers: encoding any message that
+        # contains such a byte will fail at select_carrier() time.
+        empty_symbols = [s for s, g in sorted(self._symbol_to_globals.items()) if not g]
+        if empty_symbols:
+            print(
+                f"[VCPPayloadMapper] WARNING: {len(empty_symbols)} byte symbols have "
+                f"zero carriers in the corpus: "
+                f"{[f'0x{s:02x}' for s in empty_symbols[:16]]}"
+                f"{'...' if len(empty_symbols) > 16 else ''}"
+            )
+
     def select_carrier(
         self,
         symbol: int,
@@ -145,7 +158,9 @@ class VCPPayloadMapper:
                 query=query,
             )
             score = self._score_candidate(query, media, local_index)
-            candidates.append(PayloadCarrier(media, int(symbol), global_index, local_index, score))
+            candidates.append(
+                PayloadCarrier(media, int(symbol), global_index, local_index, score)
+            )
 
         if not candidates:
             raise RuntimeError(
@@ -153,7 +168,10 @@ class VCPPayloadMapper:
                 f"in modalities {sorted(allowed_modalities)}"
             )
 
-        candidates.sort(key=lambda c: (c.semantic_score, c.media.normalized_score, c.media.id), reverse=True)
+        candidates.sort(
+            key=lambda c: (c.semantic_score, c.media.normalized_score, c.media.id),
+            reverse=True,
+        )
         return candidates[0]
 
     def decode_symbols(self, media_ids: list[str]) -> tuple[bytes, list[str]]:
@@ -208,9 +226,12 @@ class VCPPayloadMapper:
         Routes through the correct encoder for each modality:
         - image/text: CLIP text encoder
         - audio: CLAP text encoder (same space as the CLAP audio FAISS index)
+
+        Returns 0.0 (neutral) when scoring is unavailable so that a failure
+        never artificially promotes a candidate to the top of the ranking.
         """
         if not query or not hasattr(self.index, "_encode_query"):
-            return 1.0
+            return self._fallback_score(modality, local_index)
 
         try:
             # Key the cache on (query, modality) because different encoders
@@ -227,5 +248,21 @@ class VCPPayloadMapper:
             if norm > 0:
                 vector = vector / norm
             return float(np.dot(query_embedding, vector))
-        except Exception:
-            return 1.0
+        except Exception as e:
+            print(
+                f"[VCPPayloadMapper] vector scoring failed for {modality}[{local_index}]: {e}"
+            )
+            return self._fallback_score(modality, local_index)
+
+    def _fallback_score(self, modality: Modality, local_index: int) -> float:
+        """Neutral score derived from stored normalized score, not a constant."""
+        meta_list = self.index.metadata.get(modality, [])
+        if 0 <= local_index < len(meta_list):
+            media_id = meta_list[local_index].get("id", f"{modality}_{local_index}")
+        else:
+            media_id = f"{modality}_{local_index}"
+        entry = self._id_to_entry.get(media_id)
+        if entry is None:
+            return 0.0
+        _, _, meta = entry
+        return float(meta.get("normalized_score", 0.0))

@@ -27,13 +27,14 @@ from src.corpus.index.unified_index import UnifiedSemanticIndex
 @dataclass
 class ReceivedPacket:
     """Represents a received media packet."""
+
     media_id: str
     channel_id: int
     sequence_number: int
     timestamp: float
     file_path: Path
 
-    def __lt__(self, other: 'ReceivedPacket') -> bool:
+    def __lt__(self, other: "ReceivedPacket") -> bool:
         """Sort by sequence number."""
         return self.sequence_number < other.sequence_number
 
@@ -45,22 +46,38 @@ class ReassemblyBuffer:
 
     Since the RL agent might send packets out of order to maximize stealth,
     we need to collect them, wait for a silence threshold, then reassemble.
+    Duplicate sequence numbers are ignored so re-reads or sender retries do
+    not corrupt the payload byte order.
     """
+
     packets: List[ReceivedPacket] = field(default_factory=list)
+    seen_sequence_numbers: set = field(default_factory=set)
+    expected_total: Optional[int] = None
     last_packet_time: float = field(default_factory=time.time)
     silence_threshold: float = 10.0  # Seconds of silence before reassembly
 
-    def add_packet(self, packet: ReceivedPacket):
-        """Add a packet to the buffer."""
+    def add_packet(self, packet: ReceivedPacket) -> bool:
+        """Add a packet to the buffer. Returns False if it was a duplicate."""
+        if packet.sequence_number in self.seen_sequence_numbers:
+            return False
+        self.seen_sequence_numbers.add(packet.sequence_number)
         self.packets.append(packet)
         self.last_packet_time = time.time()
+        return True
 
     def is_complete(self) -> bool:
         """Check if we should reassemble (silence threshold reached)."""
         if not self.packets:
             return False
 
+        # If we know the expected total from the manifest, wait until we have
+        # every packet (with an upper bound via the silence threshold).
         time_since_last = time.time() - self.last_packet_time
+        if self.expected_total is not None and len(self.packets) < self.expected_total:
+            # Do not wait forever for packets that may never arrive; fall back
+            # to the silence threshold once it has elapsed twice over.
+            return time_since_last >= max(self.silence_threshold * 2, 1.0)
+
         return time_since_last >= self.silence_threshold
 
     def reassemble(self) -> List[str]:
@@ -80,6 +97,7 @@ class ReassemblyBuffer:
 
         # Clear buffer
         self.packets.clear()
+        self.seen_sequence_numbers.clear()
 
         return media_ids
 
@@ -127,16 +145,21 @@ class ReceiverDaemon:
         self._decoder_loaded = False
         self._decode_enabled = decode_enabled
         self._exit_after_decode = exit_after_decode
+        self._payload_mode = "exact_vcp"
         self._done = False
 
         # Tracking
         self.processed_files: set[str] = set()
+        self.failed_files: dict[str, int] = {}
+        self.max_parse_retries = 5
         self.decoded_messages: List[str] = []
 
         print(f"[Receiver] Initialized")
         print(f"  Watch directory: {self.watch_directory}")
         print(f"  Silence threshold: {silence_threshold}s")
-        print(f"  Decoding:          {'enabled' if decode_enabled else 'disabled (sniff-only)'}")
+        print(
+            f"  Decoding:          {'enabled' if decode_enabled else 'disabled (sniff-only)'}"
+        )
 
     @property
     def decoder(self) -> SemanticDecoder:
@@ -163,7 +186,7 @@ class ReceiverDaemon:
         """
         try:
             # Read metadata file
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 metadata = json.load(f)
 
             packet = ReceivedPacket(
@@ -171,7 +194,7 @@ class ReceiverDaemon:
                 channel_id=metadata.get("channel_id", 0),
                 sequence_number=metadata.get("sequence_number", 0),
                 timestamp=metadata.get("timestamp", time.time()),
-                file_path=file_path
+                file_path=file_path,
             )
 
             return packet
@@ -190,6 +213,23 @@ class ReceiverDaemon:
         print(f"[Receiver] Watching {self.watch_directory}...")
 
         while True:
+            # Pick up expected total and payload mode from the sender manifest
+            # (if present) so we can wait for the full sequence and decode with
+            # the correct payload mode.
+            manifest_path = self.watch_directory / "_manifest.json"
+            if manifest_path.exists() and self.buffer.expected_total is None:
+                try:
+                    with open(manifest_path, "r") as f:
+                        manifest = json.load(f)
+                    self.buffer.expected_total = (
+                        int(manifest.get("total_items", 0)) or None
+                    )
+                    self._payload_mode = manifest.get(
+                        "payload_mode", self._payload_mode
+                    )
+                except Exception:
+                    pass
+
             # Scan for new files
             for file_path in self.watch_directory.glob("*.json"):
                 # Skip sender-side control files (e.g. _manifest.json)
@@ -206,10 +246,22 @@ class ReceiverDaemon:
                         f"[Receiver] Received packet: {packet.media_id} "
                         f"(seq={packet.sequence_number}, channel={packet.channel_id})"
                     )
-                    self.buffer.add_packet(packet)
-
-                # Mark as processed
-                self.processed_files.add(file_path.name)
+                    if not self.buffer.add_packet(packet):
+                        print(f"[Receiver] Duplicate packet ignored: {file_path.name}")
+                    # Mark as processed only after a successful parse so that
+                    # partially-written files (sender still writing) get retried.
+                    self.processed_files.add(file_path.name)
+                    self.failed_files.pop(file_path.name, None)
+                else:
+                    # Likely a partial write; retry a bounded number of times.
+                    attempts = self.failed_files.get(file_path.name, 0) + 1
+                    self.failed_files[file_path.name] = attempts
+                    if attempts >= self.max_parse_retries:
+                        print(
+                            f"[Receiver] Giving up on unreadable file: {file_path.name}"
+                        )
+                        self.processed_files.add(file_path.name)
+                        self.failed_files.pop(file_path.name, None)
 
             # Check if buffer is ready for reassembly
             if self.buffer.is_complete():
@@ -223,10 +275,13 @@ class ReceiverDaemon:
 
     async def reassemble_and_decode(self):
         """Reassemble buffered packets and decode message."""
-        print(f"[Receiver] Silence threshold reached. Reassembling {len(self.buffer)} packets...")
+        print(
+            f"[Receiver] Silence threshold reached. Reassembling {len(self.buffer)} packets..."
+        )
 
         # Reassemble media ID sequence
         media_ids = self.buffer.reassemble()
+        self.buffer.expected_total = None
 
         if not media_ids:
             print("[Receiver] No packets to reassemble")
@@ -239,9 +294,15 @@ class ReceiverDaemon:
             print("-" * 60)
             return
 
-        # Decode media sequence back to semantic meaning
+        # Decode media sequence back to semantic meaning.
+        # use_ecc must match the sender: exact_vcp payloads carry RS parity
+        # bytes that would otherwise be decoded as message content.
         try:
-            result = self.decoder.decode(media_ids)
+            result = self.decoder.decode(
+                media_ids,
+                payload_mode=self._payload_mode,
+                use_ecc=(self._payload_mode == "exact_vcp"),
+            )
         except Exception as e:
             print(f"[Receiver] Decoding error: {e}")
             print("-" * 60)
@@ -253,13 +314,21 @@ class ReceiverDaemon:
         print("=" * 60)
         for i, item in enumerate(result.decoded, 1):
             status = "OK " if item.verified else "MISS"
-            snippet = item.content if len(item.content) <= 80 else item.content[:77] + "..."
+            snippet = (
+                item.content if len(item.content) <= 80 else item.content[:77] + "..."
+            )
             print(f"  {i:2d}. [{status}] [{item.modality}] {item.media_id}")
-            print(f"       \"{snippet}\"")
+            print(f'       "{snippet}"')
         print("-" * 60)
         print(f"  Verification rate : {result.verification_rate:.1%}")
         print(f"  All verified      : {result.all_verified}")
-        print(f"  Reconstructed     : \"{result.reconstructed_meaning}\"")
+        if result.payload_mode == "exact_vcp":
+            ecc_state = "OK" if result.ecc_success else "FAILED"
+            print(
+                f"  ECC               : {ecc_state} "
+                f"(errors fixed: {len(result.ecc_errors_fixed)})"
+            )
+        print(f'  Reconstructed     : "{result.reconstructed_meaning}"')
         print("=" * 60)
         self.decoded_messages.append(result.reconstructed_meaning)
         print("-" * 60)
@@ -283,37 +352,35 @@ class ReceiverDaemon:
 
 def main():
     """Main entry point for receiver daemon."""
-    parser = argparse.ArgumentParser(
-        description="DCASS Receiver Daemon (Bob)"
-    )
+    parser = argparse.ArgumentParser(description="DCASS Receiver Daemon (Bob)")
     parser.add_argument(
         "--watch",
         type=str,
         default="/app/shared_channel",
-        help="Directory to watch for incoming packets"
+        help="Directory to watch for incoming packets",
     )
     parser.add_argument(
         "--timeout",
         type=float,
         default=10.0,
-        help="Silence threshold (seconds) before reassembly"
+        help="Silence threshold (seconds) before reassembly",
     )
     parser.add_argument(
         "--poll-interval",
         type=float,
         default=1.0,
-        help="Seconds between directory polls"
+        help="Seconds between directory polls",
     )
     parser.add_argument(
         "--no-decode",
         action="store_true",
         help="Sniff-only mode: log reassembled media IDs but skip decoding "
-             "(use when FAISS indices are not available in the container)"
+        "(use when FAISS indices are not available in the container)",
     )
     parser.add_argument(
         "--exit-after-decode",
         action="store_true",
-        help="Exit after the first successful reassembly+decode (one-shot demo mode)"
+        help="Exit after the first successful reassembly+decode (one-shot demo mode)",
     )
 
     args = parser.parse_args()
