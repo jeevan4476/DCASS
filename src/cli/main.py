@@ -156,9 +156,7 @@ def print_header(title: str, char: str = "="):
 
 def print_section(title: str):
     """Print a section header."""
-    print(
-        f"\n{colored('[', Colors.DIM)}{colored(title, Colors.YELLOW)}{colored(']', Colors.DIM)}"
-    )
+    print(f"\n{colored('[', Colors.DIM)}{colored(title, Colors.YELLOW)}{colored(']', Colors.DIM)}")
 
 
 def print_kv(key: str, value: str, indent: int = 2):
@@ -228,9 +226,7 @@ def cmd_encode(args):
     for i, enc in enumerate(result.encoded, 1):
         badge = modality_badge(enc.media.modality)
         score = f"{enc.media.normalized_score:.3f}"
-        score_color = (
-            Colors.GREEN if enc.media.normalized_score > 0.5 else Colors.YELLOW
-        )
+        score_color = Colors.GREEN if enc.media.normalized_score > 0.5 else Colors.YELLOW
 
         print(f"  {i}. {badge} {colored(enc.media.id, Colors.CYAN)}")
         print(f"     Score: {colored(score, score_color)}")
@@ -358,9 +354,7 @@ def cmd_decode(args):
     print_section("VERIFICATION")
     rate = result.verification_rate
     rate_str = f"{rate * 100:.1f}%"
-    rate_color = (
-        Colors.GREEN if rate == 1.0 else (Colors.YELLOW if rate > 0.5 else Colors.RED)
-    )
+    rate_color = Colors.GREEN if rate == 1.0 else (Colors.YELLOW if rate > 0.5 else Colors.RED)
     print_kv("Rate", colored(rate_str, rate_color))
 
     if result.all_verified:
@@ -399,9 +393,7 @@ def cmd_demo(args):
     encoder = _get_encoder()
 
     try:
-        encode_result = encoder.encode(
-            args.message, diversity_mode=cast(DiversityMode, args.mode)
-        )
+        encode_result = encoder.encode(args.message, diversity_mode=cast(DiversityMode, args.mode))
     except (ValueError, RuntimeError) as e:
         print_error(str(e))
         return 1
@@ -446,6 +438,16 @@ def cmd_demo(args):
         print_warning("Demo complete - some items unverified")
 
     return 0
+
+
+def cmd_doctor(args):
+    """Full runtime diagnostics: the definition of 'the system is ready'."""
+    from src.diagnostics import run_doctor
+
+    print_header("DCASS DOCTOR")
+    report = run_doctor()
+    print(report.render())
+    return 0 if report.ok else 1
 
 
 def cmd_status(args):
@@ -534,9 +536,7 @@ def cmd_search(args):
         score = f"{item.normalized_score:.3f}"
         score_color = Colors.GREEN if item.normalized_score > 0.5 else Colors.YELLOW
 
-        print(
-            f"  {i}. {badge} {colored(item.id, Colors.CYAN)} ({colored(score, score_color)})"
-        )
+        print(f"  {i}. {badge} {colored(item.id, Colors.CYAN)} ({colored(score, score_color)})")
 
         content = item.content
         if len(content) > 60:
@@ -695,16 +695,12 @@ Examples:
         """,
     )
 
-    parser.add_argument(
-        "--no-color", action="store_true", help="Disable colored output"
-    )
+    parser.add_argument("--no-color", action="store_true", help="Disable colored output")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Encode command
-    encode_parser = subparsers.add_parser(
-        "encode", help="Encode a message into media sequence"
-    )
+    encode_parser = subparsers.add_parser("encode", help="Encode a message into media sequence")
     encode_parser.add_argument("message", help="Message to encode")
     encode_parser.add_argument(
         "--mode",
@@ -719,9 +715,7 @@ Examples:
         default="all",
         help="Restrict to specific modality (default: all)",
     )
-    encode_parser.add_argument(
-        "--json", "-j", action="store_true", help="Output JSON format"
-    )
+    encode_parser.add_argument("--json", "-j", action="store_true", help="Output JSON format")
 
     # Optional: one-shot encode + distribute
     encode_parser.add_argument(
@@ -748,18 +742,12 @@ Examples:
     )
 
     # Decode command
-    decode_parser = subparsers.add_parser(
-        "decode", help="Decode media IDs to semantic meaning"
-    )
+    decode_parser = subparsers.add_parser("decode", help="Decode media IDs to semantic meaning")
     decode_parser.add_argument("ids", help="Comma-separated media IDs")
-    decode_parser.add_argument(
-        "--json", "-j", action="store_true", help="Output JSON format"
-    )
+    decode_parser.add_argument("--json", "-j", action="store_true", help="Output JSON format")
 
     # Demo command
-    demo_parser = subparsers.add_parser(
-        "demo", help="Full encode -> decode demonstration"
-    )
+    demo_parser = subparsers.add_parser("demo", help="Full encode -> decode demonstration")
     demo_parser.add_argument("message", help="Message to encode and decode")
     demo_parser.add_argument(
         "--mode",
@@ -772,10 +760,14 @@ Examples:
     # Status command
     subparsers.add_parser("status", help="Show system status and index information")
 
-    # Search command
-    search_parser = subparsers.add_parser(
-        "search", help="Search the corpus for a query"
+    # Doctor command (full runtime diagnostics + Phase 0 ground truth)
+    subparsers.add_parser(
+        "doctor",
+        help="Validate the entire runtime; exits non-zero on hard failures",
     )
+
+    # Search command
+    search_parser = subparsers.add_parser("search", help="Search the corpus for a query")
     search_parser.add_argument("query", help="Search query")
     search_parser.add_argument(
         "--k", "-k", type=int, default=5, help="Number of results (default: 5)"
@@ -788,9 +780,7 @@ Examples:
     )
 
     # Verify command
-    verify_parser = subparsers.add_parser(
-        "verify", help="Verify media IDs exist in corpus"
-    )
+    verify_parser = subparsers.add_parser("verify", help="Verify media IDs exist in corpus")
     verify_parser.add_argument("ids", help="Comma-separated media IDs to verify")
 
     # Distribute command
@@ -823,9 +813,7 @@ Examples:
     )
 
     # Benchmark command
-    benchmark_parser = subparsers.add_parser(
-        "benchmark", help="Run semantic recovery benchmark"
-    )
+    benchmark_parser = subparsers.add_parser("benchmark", help="Run semantic recovery benchmark")
     benchmark_parser.add_argument(
         "--modes",
         "-m",
@@ -869,6 +857,7 @@ def main():
         "decode": cmd_decode,
         "demo": cmd_demo,
         "status": cmd_status,
+        "doctor": cmd_doctor,
         "search": cmd_search,
         "verify": cmd_verify,
         "distribute": cmd_distribute,

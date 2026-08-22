@@ -63,7 +63,7 @@ DCASS is organized into **four logical layers**:
 
 1. **Corpus & Indexing**
    - Large-scale text, image, and audio datasets
-   - Semantic embeddings (Sentence-Transformers, CLIP, CLAP)
+   - Semantic embeddings (CLIP ViT-B/32, CLAP)
    - Unified FAISS vector index
 
 2. **Encoding / Decoding Engine**
@@ -90,11 +90,11 @@ DCASS is organized into **four logical layers**:
 |---------|------------|
 | Language | Python |
 | ML Framework | PyTorch |
-| Embeddings | Sentence-Transformers, CLIP, CLAP |
+| Embeddings | CLIP ViT-B/32 (images + text), CLAP (audio) |
 | Vector DB | FAISS |
 | GAN | Custom PyTorch implementation |
-| RL | Stable-Baselines3 / RLlib |
-| CLI | Typer / Click |
+| RL | Hand-written PPO (`src/stealth/rl/agent.py`) - no SB3 dependency |
+| CLI | argparse (`src/cli/main.py`) |
 | Data Processing | NumPy, Pandas, Librosa |
 
 ---

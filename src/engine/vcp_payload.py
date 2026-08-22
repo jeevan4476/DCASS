@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import json
+
 import numpy as np
 
 from src.corpus.cluster.voronoi_codebook import VoronoiCodebook
@@ -21,6 +23,7 @@ from src.corpus.index.unified_index import (
     Modality,
     UnifiedSemanticIndex,
     extract_semantic_content,
+    resolve_indices_base_path,
 )
 
 
@@ -67,15 +70,14 @@ class VCPPayloadMapper:
         if self._loaded:
             return
 
-        missing_modalities = [
-            m for m in CANONICAL_MODALITIES if m not in self.index.indices
-        ]
+        missing_modalities = [m for m in CANONICAL_MODALITIES if m not in self.index.indices]
         if missing_modalities:
             raise RuntimeError(
                 "Exact VCP payload mode requires all canonical indices to be loaded: "
                 + ", ".join(CANONICAL_MODALITIES)
             )
 
+        codebook_from_disk = False
         if self.codebook is None:
             # Allow the index to carry a pre-fitted/shared codebook instance
             # (used by tests and by callers that fit or load it themselves).
@@ -83,11 +85,61 @@ class VCPPayloadMapper:
             if shared is not None:
                 self.codebook = shared
             else:
-                path = self.codebook_path or (
-                    self.index.base_path / "voronoi_codebook.npz"
-                )
+                path = self.codebook_path or (self.index.base_path / "voronoi_codebook.npz")
                 self.codebook = VoronoiCodebook()
                 self.codebook.load(path)
+                codebook_from_disk = True
+
+        # ------------------------------------------------------------------
+        # Codebook <-> index binding check (WP-3): refuse to run when the
+        # sidecar exists but the live indices no longer match, so a rebuilt
+        # index produces a loud failure instead of silently wrong bytes.
+        # Only applies when the codebook came from disk - injected in-memory
+        # codebooks (tests) have no certified pairing.
+        # ------------------------------------------------------------------
+        if not codebook_from_disk:
+            pass  # skip binding verification for shared/injected codebooks
+        else:
+            base = getattr(self.index, "base_path", None) or resolve_indices_base_path()
+            sidecar_path = Path(base) / "voronoi_codebook.meta.json"
+            if sidecar_path.exists():
+                try:
+                    import hashlib
+
+                    with open(sidecar_path, "r", encoding="utf-8") as f:
+                        sidecar = json.load(f)
+                    expected = sidecar.get("index_fingerprints", {})
+                    for modality in ("image", "text", "audio"):
+                        idx = self.index.indices.get(modality)
+                        exp = expected.get(modality, {}).get("fingerprint")
+                        if idx is None or not exp or not hasattr(idx, "reconstruct"):
+                            continue
+                        ntotal = int(idx.ntotal)
+                        v0 = np.asarray(idx.reconstruct(0), dtype=np.float32).tobytes()
+                        vn = (
+                            np.asarray(idx.reconstruct(ntotal - 1), dtype=np.float32).tobytes()
+                            if ntotal > 1
+                            else b""
+                        )
+                        live_fp = hashlib.sha256(v0 + vn + str(ntotal).encode()).hexdigest()[:16]
+                        if live_fp != exp:
+                            raise RuntimeError(
+                                f"Codebook/index binding BROKEN for '{modality}': "
+                                f"live fingerprint {live_fp} != certified {exp}. "
+                                f"An index was rebuilt without re-fitting the "
+                                f"codebook - decoding now would produce WRONG "
+                                f"bytes. Re-fit the codebook and re-bless via "
+                                f"scripts/cluster/bless_codebook.py --bless."
+                            )
+                except RuntimeError:
+                    raise
+                except Exception as e:
+                    print(f"[VCPPayloadMapper] binding check skipped: {e}")
+            else:
+                print(
+                    "[VCPPayloadMapper] note: no voronoi_codebook.meta.json sidecar; "
+                    "run scripts/cluster/bless_codebook.py --bless to certify the pairing."
+                )
 
         if self.codebook.cluster_assignments is None:
             raise RuntimeError("Voronoi codebook has no cluster assignments")
@@ -166,9 +218,7 @@ class VCPPayloadMapper:
                 query=query,
             )
             score = self._score_candidate(query, media, local_index)
-            candidates.append(
-                PayloadCarrier(media, int(symbol), global_index, local_index, score)
-            )
+            candidates.append(PayloadCarrier(media, int(symbol), global_index, local_index, score))
 
         if not candidates:
             available = len(self._symbol_to_globals.get(int(symbol), []))
@@ -212,6 +262,23 @@ class VCPPayloadMapper:
         """Return the byte symbol for a media ID, if it exists in the corpus."""
         self.load()
         return self._id_to_symbol.get(media_id)
+
+    def usable_clusters(self, min_carriers: int = 1) -> list[int]:
+        """
+        Cluster ids with at least *min_carriers* carriers (Decision 3 / WP-6).
+
+        The keyed bijection requires |usable| == 256 so every byte maps to a
+        distinct cluster. The Phase-0 measurement on the shipped corpus gives
+        256 usable clusters with min density 48, so this passes trivially;
+        it exists to fail LOUDLY on a future corpus where empty/thin clusters
+        would otherwise corrupt keyed traffic.
+        """
+        self.load()
+        return [
+            s
+            for s, globals_list in sorted(self._symbol_to_globals.items())
+            if len(globals_list) >= min_carriers
+        ]
 
     def _make_media_item(
         self,
@@ -267,9 +334,7 @@ class VCPPayloadMapper:
                 vector = vector / norm
             return float(np.dot(query_embedding, vector))
         except Exception as e:
-            print(
-                f"[VCPPayloadMapper] vector scoring failed for {modality}[{local_index}]: {e}"
-            )
+            print(f"[VCPPayloadMapper] vector scoring failed for {modality}[{local_index}]: {e}")
             return self._fallback_score(modality, local_index)
 
     def _fallback_score(self, modality: Modality, local_index: int) -> float:

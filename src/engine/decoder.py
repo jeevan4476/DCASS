@@ -25,6 +25,7 @@ from src.corpus.index.unified_index import (
     extract_semantic_content,
 )
 from src.engine.ecc import RSErrorCorrection
+from src.engine.payload_framing import FrameError, unframe_payload
 from src.engine.vcp_payload import VCPPayloadMapper
 
 PayloadMode = Literal["semantic_legacy", "exact_vcp"]
@@ -268,8 +269,15 @@ class SemanticDecoder:
                     inv = context_manager.derive_inverse_permutation(epoch)
                     recovered = bytes(int(inv[int(s)]) for s in codeword)
                     if rs_ecc is not None:
-                        text, ok, fixed = rs_ecc.decode(recovered)
+                        data, ok, fixed = rs_ecc.decode_bytes(recovered)
                         if ok:
+                            # Decision 4: RS success alone has a small
+                            # false-accept rate; require the frame CRC to
+                            # verify before accepting this epoch.
+                            try:
+                                text, _ = unframe_payload(data)
+                            except FrameError:
+                                continue  # CRC failed -> wrong epoch
                             context_used_epoch = epoch.epoch_id
                             return self._build_result(
                                 media_ids=media_ids,
@@ -356,13 +364,26 @@ class SemanticDecoder:
         if payload_mode == "exact_vcp":
             codeword, missing_ids = self.payload_mapper.decode_symbols(media_ids)
             payload_symbols = list(codeword)
+            rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
             if missing_ids:
                 ecc_success = False
-            elif use_ecc:
-                rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
-                ecc_payload, ecc_success, ecc_errors_fixed = rs_ecc.decode(codeword)
-            else:
                 ecc_payload = codeword.decode("utf-8", errors="replace")
+            elif use_ecc:
+                data, ecc_success, ecc_errors_fixed = rs_ecc.decode_bytes(codeword)
+                try:
+                    # Framed transport (current encoder default). A CRC
+                    # failure here means corruption beyond RS capacity.
+                    ecc_payload, _framed = unframe_payload(data)
+                except FrameError:
+                    ecc_success = False
+                    ecc_payload = data.decode("utf-8", errors="replace")
+            else:
+                # Legacy raw or framed-without-ECC: sniff the version byte.
+                try:
+                    ecc_payload, _framed = unframe_payload(bytes(codeword))
+                except FrameError:
+                    ecc_success = False
+                    ecc_payload = codeword.decode("utf-8", errors="replace")
         elif use_ecc and raw_codeword:
             rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
             ecc_payload, ecc_success, ecc_errors_fixed = rs_ecc.decode(raw_codeword)

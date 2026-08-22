@@ -144,7 +144,6 @@ class EncodeResponse(BaseModel):
     media_sequence: list[dict] = Field(default_factory=list)
     modality_breakdown: dict[str, int]
     elapsed_ms: float
-    raw_codeword_hex: Optional[str] = None
     payload_mode: str = "semantic_legacy"
     ecc_parity_bytes: int = 0
     payload_bytes: list[int] = Field(default_factory=list)
@@ -155,6 +154,9 @@ class DecodeRequest(BaseModel):
     media_ids: list[str]
     payload_mode: Literal["exact_vcp", "semantic_legacy"] = "exact_vcp"
     use_ecc: bool = True
+    # DEBUG ONLY (P2-12): legacy side-channel that carries the payload OUTSIDE
+    # the media sequence. The exact_vcp mode exists to eliminate it; do not
+    # use it for real transmissions.
     raw_codeword_hex: Optional[str] = None
     use_dynamic_context: bool = False
     context_bucket_seconds: int = Field(default=3600, ge=1)
@@ -254,7 +256,13 @@ def encode(req: EncodeRequest):
             }
         )
 
-    raw_codeword_hex = result.ecc_codeword.hex() if result.ecc_codeword else None
+    # Debug-only side channel (P2-12): the payload must live in the media
+    # sequence, not in a response field. Returned only for semantic_legacy.
+    raw_codeword_hex = (
+        result.ecc_codeword.hex()
+        if result.ecc_codeword and result.payload_mode == "semantic_legacy"
+        else None
+    )
 
     return EncodeResponse(
         media_ids=result.media_ids,
@@ -355,6 +363,15 @@ def search(req: SearchRequest):
         results=items,
         elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
     )
+
+
+@app.get("/api/doctor")
+def doctor():
+    """Full runtime diagnostics (same as `dcass doctor` CLI)."""
+    from src.diagnostics import run_doctor
+
+    report = run_doctor()
+    return report.to_dict()
 
 
 @app.get("/api/status", response_model=StatusResponse)

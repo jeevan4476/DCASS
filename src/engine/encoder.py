@@ -22,7 +22,37 @@ import re
 from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem, Modality
 from src.engine.chunker import SemanticChunker, SemanticChunk
 from src.engine.ecc import RSErrorCorrection
+from src.engine.payload_framing import frame_payload
 from src.engine.vcp_payload import PayloadCarrier, VCPPayloadMapper
+
+# Neutral ranking query used when no cover story is supplied and no context
+# epoch exists to derive one from. Deliberately bland: it correlates with
+# neither the plaintext nor anything sensitive.
+NEUTRAL_COVER_STORY = "a quiet everyday moment at home"
+
+# Decoy topics keyed selection rotates through (Decision 5). Deterministic
+# per-epoch choice keeps sender and receiver independent yet consistent.
+DECOY_TOPICS = [
+    "hiking trip in the mountains",
+    "cooking a new recipe for dinner",
+    "training for a weekend marathon",
+    "photography walk through the old town",
+    "gardening on the balcony",
+    "learning to play the guitar",
+    "road cycling along the river",
+    "visiting museums on a rainy day",
+]
+
+
+def _decoy_topic(context_manager, context_info: dict) -> str:
+    """Deterministic decoy topic derived from the epoch key when available."""
+    if context_info.get("epoch_id"):
+        import hashlib as _hl
+
+        seed = int.from_bytes(_hl.sha256(context_info["epoch_id"].encode()).digest()[:4], "big")
+        return DECOY_TOPICS[seed % len(DECOY_TOPICS)]
+    return NEUTRAL_COVER_STORY
+
 
 # Diversity mode type
 DiversityMode = Literal["best", "round_robin", "balanced"]
@@ -300,6 +330,7 @@ class SemanticEncoder:
         ecc_parity_bytes: int = 8,
         payload_mode: PayloadMode = "semantic_legacy",
         context_manager=None,
+        cover_story: Optional[str] = None,
     ) -> EncodingResult:
         """
         Encode a message into a media sequence.
@@ -337,6 +368,7 @@ class SemanticEncoder:
                 use_ecc=use_ecc,
                 ecc_parity_bytes=ecc_parity_bytes,
                 context_manager=context_manager,
+                cover_story=cover_story,
             )
 
         ecc_codeword = None
@@ -451,6 +483,7 @@ class SemanticEncoder:
         use_ecc: bool,
         ecc_parity_bytes: int,
         context_manager=None,
+        cover_story: Optional[str] = None,
     ) -> EncodingResult:
         """
         Encode message bytes into VCP carriers, so media IDs alone carry payload.
@@ -459,22 +492,48 @@ class SemanticEncoder:
         permuted per derivation epoch (dynamic context keying): byte b is
         carried by a media item in cluster P[b], where P is derived from the
         shared context source. The decoder must derive the same P.
+
+        The payload is FRAMED (version + length + CRC-16, see
+        src/engine/payload_framing.py) before RS encoding; the decoder uses
+        the CRC to accept an epoch candidate only on true success.
+
+        *cover_story* (Decision 5): carrier ranking query used INSTEAD of the
+        plaintext-derived chunk text, so the selected carriers carry no
+        topical correlation with the secret. Defaults to a decoy topic
+        derived from the epoch key when keying is active, else a neutral
+        constant.
         """
         if not message:
             raise ValueError("Message produced no valid chunks")
 
+        # Frame first (Decision 4): version + length + CRC-16 header.
+        try:
+            framed = frame_payload(message)
+        except ValueError as e:
+            raise ValueError(f"payload framing failed: {e}")
         if use_ecc:
             rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
-            payload = rs_ecc.encode(message)
+            payload = rs_ecc.encode(framed)
             parity_bytes = ecc_parity_bytes
         else:
-            payload = message.encode("utf-8")
+            payload = framed
             parity_bytes = 0
 
         # Dynamic context keying: permute byte -> carrier-cluster mapping.
         context_permutation = None
         context_info: dict = {}
         if context_manager is not None:
+            # Decision 3: the bijection needs all 256 clusters usable. The
+            # shipped corpus has 256/256 with min density 48; fail loudly if
+            # a future corpus cannot support keyed traffic.
+            usable = self.payload_mapper.usable_clusters(min_carriers=1)
+            if len(usable) < 256:
+                raise RuntimeError(
+                    f"Dynamic context keying requires 256 usable VCP clusters; "
+                    f"this corpus provides only {len(usable)}. Re-fit the "
+                    f"codebook / rebuild indices (base-K' transport is not "
+                    f"implemented because Phase 0 measured K'=256)."
+                )
             epoch = context_manager.current_epoch()
             context_permutation = context_manager.derive_permutation(epoch)
             context_info = {
@@ -484,9 +543,10 @@ class SemanticEncoder:
                 "sources": list(epoch.sources),
             }
 
-        semantic_chunks = self.chunker.chunk(message)
-        if not semantic_chunks:
-            semantic_chunks = [SemanticChunk(text=message, original=message, index=0)]
+        # Cover-story ranking query (Decision 5): never derive it from the
+        # plaintext - that would leak the message's topic through which
+        # carriers get chosen inside each cluster.
+        ranking_query = cover_story or _decoy_topic(context_manager, context_info)
 
         encoded_chunks: list[EncodedChunk] = []
         used_ids: set[str] = set()
@@ -498,8 +558,9 @@ class SemanticEncoder:
             target_cluster = (
                 int(context_permutation[symbol]) if context_permutation is not None else symbol
             )
-            semantic_chunk = semantic_chunks[idx % len(semantic_chunks)]
-            query = semantic_chunk.text or semantic_chunk.original
+            # Decision 5: rank carriers by the cover story, NOT by the
+            # plaintext-derived chunk text.
+            query = ranking_query
             allowed_modalities = self._modalities_for_payload_byte(
                 idx=idx,
                 modalities=modalities,

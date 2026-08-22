@@ -64,18 +64,25 @@ class RSErrorCorrection:
         Returns:
             Tuple of (decoded_str, is_success, list_of_fixed_error_positions)
         """
+        data, ok, fixed = self.decode_bytes(codeword)
+        return data.decode("utf-8", errors="replace"), ok, fixed
+
+    def decode_bytes(self, codeword: bytes) -> Tuple[bytes, bool, List[int]]:
+        """
+        Decode a received codeword to raw BYTES.
+
+        Unlike :meth:`decode`, no UTF-8 conversion is applied - framed
+        payloads contain arbitrary header bytes and must round-trip exactly.
+        """
         try:
             decoded_bytes, _, errata_pos = self._codec.decode(bytearray(codeword))
-            decoded_str = decoded_bytes.decode("utf-8", errors="replace")
-            return decoded_str, True, list(errata_pos)
+            return bytes(decoded_bytes), True, list(errata_pos)
         except reedsolo.ReedSolomonError:
             # Uncorrectable corruption: return raw slice, flagged as failure
             raw_data = (
-                codeword[: -self.parity_bytes]
-                if len(codeword) > self.parity_bytes
-                else codeword
+                codeword[: -self.parity_bytes] if len(codeword) > self.parity_bytes else codeword
             )
-            return raw_data.decode("utf-8", errors="replace"), False, []
+            return raw_data, False, []
 
     def __repr__(self) -> str:
         return f"RSErrorCorrection(parity_bytes={self.parity_bytes}, max_fixable_errors={self.max_correctable_errors})"
