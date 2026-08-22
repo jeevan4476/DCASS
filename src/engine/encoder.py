@@ -22,9 +22,11 @@ import re
 from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem, Modality
 from src.engine.chunker import SemanticChunker, SemanticChunk
 from src.engine.ecc import RSErrorCorrection
+from src.engine.vcp_payload import PayloadCarrier, VCPPayloadMapper
 
 # Diversity mode type
 DiversityMode = Literal["best", "round_robin", "balanced"]
+PayloadMode = Literal["semantic_legacy", "exact_vcp"]
 
 STOPWORDS = {
     "a", "an", "and", "are", "as", "at", "be", "before", "but", "by", "for",
@@ -65,6 +67,8 @@ class EncodedChunk:
     media: MediaItem             # Selected media item
     alternatives: list[MediaItem] = field(default_factory=list)  # Other options
     file_path: Optional[str] = None
+    payload_byte: Optional[int] = None
+    cluster_id: Optional[int] = None
     
     def __post_init__(self):
         if self.file_path is None and self.media is not None:
@@ -82,6 +86,8 @@ class EncodingResult:
     encoded: list[EncodedChunk]
     ecc_codeword: Optional[bytes] = None
     ecc_parity_bytes: int = 0
+    payload_mode: PayloadMode = "semantic_legacy"
+    payload_symbols: list[int] = field(default_factory=list)
     
     @property
     def file_paths(self) -> list[str]:
@@ -194,6 +200,7 @@ class SemanticEncoder:
         self._base_path = base_path
         self._device = device
         self._loaded = False
+        self._payload_mapper: Optional[VCPPayloadMapper] = None
     
     @property
     def index(self) -> UnifiedSemanticIndex:
@@ -229,6 +236,13 @@ class SemanticEncoder:
     def is_loaded(self) -> bool:
         """Check if encoder is ready for use."""
         return self._loaded
+
+    @property
+    def payload_mapper(self) -> VCPPayloadMapper:
+        """Get the exact VCP payload mapper."""
+        if self._payload_mapper is None:
+            self._payload_mapper = VCPPayloadMapper(self.index)
+        return self._payload_mapper
     
     def encode(
         self,
@@ -240,7 +254,8 @@ class SemanticEncoder:
         avoid_duplicates: bool = True,
         diversity_mode: DiversityMode = "best",
         use_ecc: bool = False,
-        ecc_parity_bytes: int = 8
+        ecc_parity_bytes: int = 8,
+        payload_mode: PayloadMode = "semantic_legacy"
     ) -> EncodingResult:
         """
         Encode a message into a media sequence.
@@ -255,6 +270,8 @@ class SemanticEncoder:
             diversity_mode: How to select modalities for each chunk
             use_ecc: If True, protects payload with Reed-Solomon Error Correction Code
             ecc_parity_bytes: Number of RS parity bytes (default 8)
+            payload_mode: "exact_vcp" maps RS/data bytes into VCP byte clusters;
+                          "semantic_legacy" preserves semantic chunk selection
             
         Returns:
             EncodingResult with encoded chunks and media sequence
@@ -263,6 +280,16 @@ class SemanticEncoder:
             raise RuntimeError("Encoder not loaded. Call load() first.")
         
         modalities = modalities or self.default_modalities
+
+        if payload_mode == "exact_vcp":
+            return self._encode_exact_vcp(
+                message=message,
+                modalities=modalities,
+                avoid_duplicates=avoid_duplicates,
+                diversity_mode=diversity_mode,
+                use_ecc=use_ecc,
+                ecc_parity_bytes=ecc_parity_bytes,
+            )
 
         ecc_codeword = None
         if use_ecc:
@@ -367,7 +394,115 @@ class SemanticEncoder:
             chunks=chunks,
             encoded=encoded_chunks,
             ecc_codeword=ecc_codeword,
-            ecc_parity_bytes=ecc_parity_bytes if use_ecc else 0
+            ecc_parity_bytes=ecc_parity_bytes if use_ecc else 0,
+            payload_mode=payload_mode,
+            payload_symbols=list(ecc_codeword) if ecc_codeword else []
+        )
+
+    def _encode_exact_vcp(
+        self,
+        message: str,
+        modalities: list[Modality],
+        avoid_duplicates: bool,
+        diversity_mode: DiversityMode,
+        use_ecc: bool,
+        ecc_parity_bytes: int,
+    ) -> EncodingResult:
+        """
+        Encode message bytes into VCP carriers, so media IDs alone carry payload.
+        """
+        if not message:
+            raise ValueError("Message produced no valid chunks")
+
+        if use_ecc:
+            rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
+            payload = rs_ecc.encode(message)
+            parity_bytes = ecc_parity_bytes
+        else:
+            payload = message.encode("utf-8")
+            parity_bytes = 0
+
+        semantic_chunks = self.chunker.chunk(message)
+        if not semantic_chunks:
+            semantic_chunks = [SemanticChunk(text=message, original=message, index=0)]
+
+        encoded_chunks: list[EncodedChunk] = []
+        used_ids: set[str] = set()
+        modality_counts: dict[str, int] = {m: 0 for m in modalities}
+
+        for idx, symbol in enumerate(payload):
+            semantic_chunk = semantic_chunks[idx % len(semantic_chunks)]
+            query = semantic_chunk.text or semantic_chunk.original
+            allowed_modalities = self._modalities_for_payload_byte(
+                idx=idx,
+                modalities=modalities,
+                diversity_mode=diversity_mode,
+                modality_counts=modality_counts,
+            )
+
+            try:
+                carrier = self.payload_mapper.select_carrier(
+                    symbol=symbol,
+                    query=query,
+                    modalities=allowed_modalities,
+                    used_ids=used_ids,
+                    avoid_duplicates=avoid_duplicates,
+                )
+            except RuntimeError:
+                if allowed_modalities != modalities:
+                    carrier = self.payload_mapper.select_carrier(
+                        symbol=symbol,
+                        query=query,
+                        modalities=modalities,
+                        used_ids=used_ids,
+                        avoid_duplicates=avoid_duplicates,
+                    )
+                else:
+                    raise
+
+            byte_chunk = SemanticChunk(
+                text=query,
+                original=f"byte[{idx}]=0x{symbol:02x}",
+                index=idx,
+            )
+            encoded_chunks.append(self._encoded_from_payload(byte_chunk, carrier))
+            used_ids.add(carrier.media.id)
+            modality_counts[carrier.media.modality] = modality_counts.get(carrier.media.modality, 0) + 1
+
+        return EncodingResult(
+            original_message=message,
+            chunks=[e.chunk for e in encoded_chunks],
+            encoded=encoded_chunks,
+            ecc_codeword=bytes(payload) if use_ecc else None,
+            ecc_parity_bytes=parity_bytes,
+            payload_mode="exact_vcp",
+            payload_symbols=list(payload),
+        )
+
+    def _modalities_for_payload_byte(
+        self,
+        idx: int,
+        modalities: list[Modality],
+        diversity_mode: DiversityMode,
+        modality_counts: dict[str, int],
+    ) -> list[Modality]:
+        if diversity_mode == "round_robin":
+            return [modalities[idx % len(modalities)]]
+        if diversity_mode == "balanced":
+            return sorted(modalities, key=lambda m: modality_counts.get(m, 0))
+        return modalities
+
+    def _encoded_from_payload(
+        self,
+        chunk: SemanticChunk,
+        carrier: PayloadCarrier,
+    ) -> EncodedChunk:
+        return EncodedChunk(
+            chunk=chunk,
+            media=carrier.media,
+            alternatives=[],
+            payload_byte=carrier.symbol,
+            cluster_id=carrier.symbol,
         )
     
     def encode_to_ids(

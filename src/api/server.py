@@ -110,6 +110,7 @@ def warmup():
 class EncodeRequest(BaseModel):
     message: str
     mode: Literal["best", "round_robin", "balanced"] = "best"
+    payload_mode: Literal["exact_vcp", "semantic_legacy"] = "exact_vcp"
     modalities: list[str] = Field(default=["image", "text", "audio"])
     use_ecc: bool = True
 
@@ -122,10 +123,14 @@ class EncodeResponse(BaseModel):
     modality_breakdown: dict[str, int]
     elapsed_ms: float
     raw_codeword_hex: Optional[str] = None
+    payload_mode: str = "semantic_legacy"
+    ecc_parity_bytes: int = 0
+    payload_bytes: list[int] = Field(default_factory=list)
 
 
 class DecodeRequest(BaseModel):
     media_ids: list[str]
+    payload_mode: Literal["exact_vcp", "semantic_legacy"] = "exact_vcp"
     use_ecc: bool = True
     raw_codeword_hex: Optional[str] = None
 
@@ -137,6 +142,10 @@ class DecodeResponse(BaseModel):
     verification_rate: float
     all_verified: bool
     elapsed_ms: float
+    payload_mode: str = "semantic_legacy"
+    ecc_success: bool = True
+    ecc_errors_fixed: list[int] = Field(default_factory=list)
+    payload_bytes: list[int] = Field(default_factory=list)
 
 
 class SearchRequest(BaseModel):
@@ -174,7 +183,8 @@ def encode(req: EncodeRequest):
             req.message,
             modalities=req.modalities,
             diversity_mode=req.mode,
-            use_ecc=req.use_ecc
+            use_ecc=req.use_ecc,
+            payload_mode=req.payload_mode,
         )
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -189,6 +199,8 @@ def encode(req: EncodeRequest):
             "score": round(enc.media.normalized_score, 4),
             "content": enc.media.content[:120],
             "file_path": fpath,
+            "payload_byte": enc.payload_byte,
+            "cluster_id": enc.cluster_id,
         })
 
     for item in result.media_sequence:
@@ -214,6 +226,9 @@ def encode(req: EncodeRequest):
         modality_breakdown=result.modality_breakdown,
         elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
         raw_codeword_hex=raw_codeword_hex,
+        payload_mode=result.payload_mode,
+        ecc_parity_bytes=result.ecc_parity_bytes,
+        payload_bytes=result.payload_symbols,
     )
 
 
@@ -232,7 +247,8 @@ def decode(req: DecodeRequest):
     result = decoder.decode(
         req.media_ids,
         use_ecc=req.use_ecc,
-        raw_codeword=raw_codeword
+        raw_codeword=raw_codeword,
+        payload_mode=req.payload_mode,
     )
 
     items = []
@@ -250,6 +266,8 @@ def decode(req: DecodeRequest):
             "content": d.content[:200],
             "file_path": file_path,
             "verified": d.verified,
+            "payload_byte": d.payload_byte,
+            "cluster_id": d.cluster_id,
         }
         items.append(item_dict)
         decoded_items.append(item_dict)
@@ -261,6 +279,10 @@ def decode(req: DecodeRequest):
         verification_rate=result.verification_rate,
         all_verified=result.all_verified,
         elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
+        payload_mode=result.payload_mode,
+        ecc_success=result.ecc_success,
+        ecc_errors_fixed=result.ecc_errors_fixed,
+        payload_bytes=result.payload_symbols,
     )
 
 
@@ -309,8 +331,9 @@ def status():
             index_info[mod] = {"status": "missing"}
 
     stealth = {
-        "gan_checkpoint": (models_path / "gan" / "final.pt").exists(),
-        "rl_checkpoint": (models_path / "rl" / "ppo_agent_final.pt").exists(),
+        "gan_checkpoint": (models_path / "gan_generator.pt").exists() or (models_path / "gan" / "final.pt").exists(),
+        "rl_checkpoint": (models_path / "rl_agent.pt").exists() or (models_path / "rl" / "ppo_agent_final.pt").exists(),
+        "voronoi_codebook": (indices_path / "voronoi_codebook.npz").exists(),
     }
 
     return StatusResponse(

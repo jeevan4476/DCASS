@@ -24,27 +24,15 @@ from .environment import StealthEnvironment
 class PPOConfig:
     """
     Configuration for PPO agent.
-
-    Attributes:
-        state_dim: Dimension of state vector
-        hidden_dim: Hidden layer dimension
-        learning_rate: Learning rate for optimizer
-        gamma: Discount factor
-        epsilon_clip: PPO clipping parameter
-        value_loss_coef: Coefficient for value loss
-        entropy_coef: Coefficient for entropy bonus
-        max_grad_norm: Maximum gradient norm for clipping
-        num_epochs: Number of epochs per update
-        batch_size: Mini-batch size for updates
-        device: Device to train on
     """
-    state_dim: int = 16
+    state_dim: int = 21
     hidden_dim: int = 256
     learning_rate: float = 3e-4
     gamma: float = 0.99
+    gae_lambda: float = 0.95  # GAE lambda parameter
     epsilon_clip: float = 0.2
     value_loss_coef: float = 0.5
-    entropy_coef: float = 0.01
+    entropy_coef: float = 0.05  # Increased for maximum channel path entropy
     max_grad_norm: float = 0.5
     num_epochs: int = 4
     batch_size: int = 64
@@ -56,6 +44,7 @@ class RolloutBuffer:
     """Buffer for storing episode rollouts."""
     states: List[np.ndarray] = field(default_factory=list)
     actions: List[dict] = field(default_factory=list)
+    masks: List[np.ndarray] = field(default_factory=list)
     rewards: List[float] = field(default_factory=list)
     values: List[float] = field(default_factory=list)
     log_probs: List[float] = field(default_factory=list)
@@ -65,6 +54,7 @@ class RolloutBuffer:
         """Clear the buffer."""
         self.states.clear()
         self.actions.clear()
+        self.masks.clear()
         self.rewards.clear()
         self.values.clear()
         self.log_probs.clear()
@@ -163,12 +153,17 @@ class ActorCritic(nn.Module):
 
         return delay_mean, delay_std, channel_logits, value
 
-    def act(self, state: torch.Tensor) -> Tuple[dict, float, float]:
+    def act(
+        self,
+        state: torch.Tensor,
+        channel_mask: Optional[torch.Tensor] = None
+    ) -> Tuple[dict, float, float]:
         """
-        Sample an action from the policy.
+        Sample an action from the policy with optional action masking.
 
         Args:
             state: State tensor, shape (batch_size, state_dim) or (state_dim,)
+            channel_mask: Optional binary mask (1=valid, 0=masked), shape (batch_size, num_channels)
 
         Returns:
             Tuple of (action_dict, log_prob, value)
@@ -179,10 +174,23 @@ class ActorCritic(nn.Module):
 
         delay_mean, delay_std, channel_logits, value = self.forward(state)
 
+        # Apply action masking for cooling-down channels
+        if channel_mask is not None:
+            if channel_mask.dim() == 1:
+                channel_mask = channel_mask.unsqueeze(0)
+            channel_logits = channel_logits + (1.0 - channel_mask) * -1e9
+
         # Sample delay from Gaussian
         delay_dist = Normal(delay_mean, delay_std)
         delay_sample = delay_dist.sample()
-        delay_log_prob = delay_dist.log_prob(delay_sample).sum(dim=-1)
+
+        # Clamp to a physically valid positive delay BEFORE computing log_prob so
+        # the stored log_prob matches the action actually executed in the environment.
+        # (If we clamped after, old_log_probs would reflect the raw sample while
+        #  evaluate() would compute log_prob of the clamped action, breaking PPO.)
+        delay_val = max(0.5, delay_sample.item())
+        delay_clamped = torch.tensor([[delay_val]], dtype=delay_mean.dtype, device=delay_mean.device)
+        delay_log_prob = delay_dist.log_prob(delay_clamped).sum(dim=-1)
 
         # Sample channel from Categorical
         channel_dist = Categorical(logits=channel_logits)
@@ -194,7 +202,7 @@ class ActorCritic(nn.Module):
 
         # Construct action
         action = {
-            "delay": delay_sample.item(),
+            "delay": delay_val,
             "channel": channel_sample.item()
         }
 
@@ -204,7 +212,8 @@ class ActorCritic(nn.Module):
         self,
         states: torch.Tensor,
         delay_actions: torch.Tensor,
-        channel_actions: torch.Tensor
+        channel_actions: torch.Tensor,
+        channel_masks: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Evaluate actions for PPO update.
@@ -213,11 +222,15 @@ class ActorCritic(nn.Module):
             states: Batch of states, shape (batch_size, state_dim)
             delay_actions: Batch of delay actions, shape (batch_size, 1)
             channel_actions: Batch of channel actions, shape (batch_size,)
+            channel_masks: Optional batch of channel masks, shape (batch_size, num_channels)
 
         Returns:
             Tuple of (log_probs, values, entropy)
         """
         delay_mean, delay_std, channel_logits, values = self.forward(states)
+
+        if channel_masks is not None:
+            channel_logits = channel_logits + (1.0 - channel_masks) * -1e9
 
         # Delay distribution
         delay_dist = Normal(delay_mean, delay_std)
@@ -242,17 +255,6 @@ class PPOAgent:
 
     Learns to maximize reward (throughput - stealth penalty) through
     policy gradient optimization with clipped objective.
-
-    Args:
-        env: StealthEnvironment instance
-        config: PPO configuration
-        actor_critic: Pre-initialized ActorCritic (created if None)
-
-    Example:
-        >>> env = StealthEnvironment(num_channels=3, warden=warden)
-        >>> agent = PPOAgent(env)
-        >>> agent.train(num_episodes=1000)
-        >>> agent.save("checkpoints/ppo_agent.pt")
     """
 
     def __init__(
@@ -291,20 +293,28 @@ class PPOAgent:
         self.episode_lengths: List[int] = []
         self.warden_scores: List[float] = []
 
-    def select_action(self, state: np.ndarray) -> Tuple[dict, float, float]:
+    def select_action(
+        self,
+        state: np.ndarray,
+        channel_mask: Optional[np.ndarray] = None
+    ) -> Tuple[dict, float, float]:
         """
         Select an action using the current policy.
 
         Args:
             state: Current state
+            channel_mask: Optional available channel binary mask
 
         Returns:
             Tuple of (action, log_prob, value)
         """
         state_tensor = torch.FloatTensor(state).to(self.device)
+        mask_tensor = None
+        if channel_mask is not None:
+            mask_tensor = torch.FloatTensor(channel_mask).to(self.device)
 
         with torch.no_grad():
-            action, log_prob, value = self.actor_critic.act(state_tensor)
+            action, log_prob, value = self.actor_critic.act(state_tensor, channel_mask=mask_tensor)
 
         return action, log_prob, value
 
@@ -328,12 +338,14 @@ class PPOAgent:
         episode_length = 0
 
         for step in range(max_steps):
-            # Select action
-            action, log_prob, value = self.select_action(state)
+            # Select action with action masking
+            mask = self.env.get_action_mask()
+            action, log_prob, value = self.select_action(state, channel_mask=mask)
 
             # Store in buffer
             self.buffer.states.append(state)
             self.buffer.actions.append(action)
+            self.buffer.masks.append(mask)
             self.buffer.log_probs.append(log_prob)
             self.buffer.values.append(value)
 
@@ -359,41 +371,45 @@ class PPOAgent:
 
         return episode_reward
 
-    def compute_returns(self) -> torch.Tensor:
+    def compute_gae(self, last_value: float = 0.0) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Compute discounted returns for the rollout buffer.
+        Compute Generalized Advantage Estimation (GAE-lambda) and returns.
 
         Returns:
-            Returns tensor, shape (num_steps,)
+            Tuple of (returns_tensor, normalized_advantages_tensor)
         """
-        returns = []
-        R = 0.0
+        rewards = self.buffer.rewards
+        values = self.buffer.values + [last_value]
+        dones = self.buffer.dones
 
-        for reward, done in zip(
-            reversed(self.buffer.rewards),
-            reversed(self.buffer.dones)
-        ):
-            if done:
-                R = 0.0
-            R = reward + self.config.gamma * R
-            returns.insert(0, R)
+        advantages = []
+        gae = 0.0
 
-        returns_tensor = torch.FloatTensor(returns).to(self.device)
+        for t in reversed(range(len(rewards))):
+            non_terminal = 1.0 - float(dones[t])
+            delta = rewards[t] + self.config.gamma * values[t + 1] * non_terminal - values[t]
+            gae = delta + self.config.gamma * self.config.gae_lambda * non_terminal * gae
+            advantages.insert(0, gae)
 
-        # Normalize returns
-        returns_tensor = (returns_tensor - returns_tensor.mean()) / (returns_tensor.std() + 1e-8)
+        returns = [adv + val for adv, val in zip(advantages, self.buffer.values)]
 
-        return returns_tensor
+        adv_tensor = torch.FloatTensor(advantages).to(self.device)
+        ret_tensor = torch.FloatTensor(returns).to(self.device)
+
+        # Normalize advantages
+        adv_tensor = (adv_tensor - adv_tensor.mean()) / (adv_tensor.std() + 1e-8)
+
+        return ret_tensor, adv_tensor
 
     def update(self) -> dict[str, float]:
         """
-        Update policy using PPO.
+        Update policy using PPO with GAE-lambda advantages and action mask replay.
 
         Returns:
             Dictionary of training metrics
         """
-        # Compute returns
-        returns = self.compute_returns()
+        # Compute GAE advantages and returns
+        returns, advantages = self.compute_gae()
 
         # Convert buffer to tensors
         states = torch.FloatTensor(np.array(self.buffer.states)).to(self.device)
@@ -406,12 +422,8 @@ class PPOAgent:
             a["channel"] for a in self.buffer.actions
         ]).to(self.device)
 
+        channel_masks = torch.FloatTensor(np.array(self.buffer.masks)).to(self.device)
         old_log_probs = torch.FloatTensor(self.buffer.log_probs).to(self.device)
-        old_values = torch.FloatTensor(self.buffer.values).to(self.device)
-
-        # Advantage estimation
-        advantages = returns - old_values
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         # PPO update for multiple epochs
         total_policy_loss = 0.0
@@ -419,9 +431,9 @@ class PPOAgent:
         total_entropy = 0.0
 
         for epoch in range(self.config.num_epochs):
-            # Evaluate current policy
+            # Evaluate current policy with replayed masks
             log_probs, values, entropy = self.actor_critic.evaluate(
-                states, delay_actions, channel_actions
+                states, delay_actions, channel_actions, channel_masks=channel_masks
             )
 
             # Ratio for PPO
@@ -524,7 +536,7 @@ class PPOAgent:
 
         return self.episode_rewards
 
-    def save(self, path: Path):
+    def save(self, path: Path | str):
         """Save agent checkpoint."""
         checkpoint = {
             "actor_critic_state": self.actor_critic.state_dict(),
@@ -534,18 +546,53 @@ class PPOAgent:
             "episode_lengths": self.episode_lengths,
             "warden_scores": self.warden_scores
         }
-        torch.save(checkpoint, path)
+        torch.save(checkpoint, str(path))
         print(f"Agent saved to {path}")
 
-    def load(self, path: Path):
-        """Load agent checkpoint."""
-        checkpoint = torch.load(path, map_location=self.device)
+    def load(self, path: Path | str):
+        """Load agent checkpoint into existing instance."""
+        checkpoint = torch.load(str(path), map_location=self.device, weights_only=False)
+        
+        # If config is present in checkpoint, recreate actor_critic if dimensions differ
+        if "config" in checkpoint and isinstance(checkpoint["config"], PPOConfig):
+            cfg = checkpoint["config"]
+            if (self.config.hidden_dim != cfg.hidden_dim or 
+                self.config.state_dim != cfg.state_dim):
+                self.config = cfg
+                self.actor_critic = ActorCritic(
+                    state_dim=cfg.state_dim,
+                    num_channels=self.env.num_channels,
+                    hidden_dim=cfg.hidden_dim
+                ).to(self.device)
+                self.optimizer = optim.Adam(
+                    self.actor_critic.parameters(),
+                    lr=self.config.learning_rate
+                )
+
         self.actor_critic.load_state_dict(checkpoint["actor_critic_state"])
-        self.optimizer.load_state_dict(checkpoint["optimizer_state"])
-        self.episode_rewards = checkpoint["episode_rewards"]
-        self.episode_lengths = checkpoint["episode_lengths"]
-        self.warden_scores = checkpoint["warden_scores"]
+        if "optimizer_state" in checkpoint:
+            self.optimizer.load_state_dict(checkpoint["optimizer_state"])
+        self.episode_rewards = checkpoint.get("episode_rewards", [])
+        self.episode_lengths = checkpoint.get("episode_lengths", [])
+        self.warden_scores = checkpoint.get("warden_scores", [])
         print(f"Agent loaded from {path}")
+
+    @classmethod
+    def load_from_file(
+        cls,
+        path: Path | str,
+        env: StealthEnvironment,
+        device: Optional[str] = None
+    ) -> PPOAgent:
+        """Create and load a PPOAgent directly from a checkpoint file."""
+        dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        checkpoint = torch.load(str(path), map_location=dev, weights_only=False)
+        cfg = checkpoint.get("config", PPOConfig(state_dim=env.state_dim, device=dev))
+        if isinstance(cfg, PPOConfig):
+            cfg.device = dev
+        agent = cls(env=env, config=cfg)
+        agent.load(path)
+        return agent
 
 
 if __name__ == "__main__":

@@ -301,8 +301,9 @@ class GANTrainer:
         fake_channels = fake_schedule.sample_channels()
         fake_verdict = self.warden(fake_schedule.delays, fake_channels)
 
-        # Compute Generator loss (wants to fool Warden)
-        generator_loss = compute_generator_loss(fake_verdict.bot_probability)
+        # Compute Generator loss (Wasserstein: wants to maximise E[D(G(z))]).
+        # Must use raw_critic_score (unbounded), not sigmoid bot_probability.
+        generator_loss = compute_generator_loss(fake_verdict.feature_importance["raw_critic_score"])
 
         # Backward pass
         generator_loss.backward()

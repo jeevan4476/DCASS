@@ -155,7 +155,9 @@ class DeepPacketInspectionWarden(nn.Module):
             nn.Sigmoid()  # Anomaly score [0, 1]
         )
 
-        # Classification head (global verdict)
+        # Classification head (global verdict).
+        # NOTE: No sigmoid here — this is an unbounded Wasserstein critic score.
+        # For bot-probability interpretation, use torch.sigmoid(raw_score) externally.
         self.classification_head = nn.Sequential(
             nn.Linear(hidden_dim * 2, 256),  # *2 for mean+max pooling
             nn.ReLU(),
@@ -166,7 +168,7 @@ class DeepPacketInspectionWarden(nn.Module):
             nn.Linear(128, 64),
             nn.ReLU(),
             nn.Linear(64, 1),
-            nn.Sigmoid()  # P(Bot)
+            # No Sigmoid: unbounded critic output required for WGAN-GP Wasserstein loss.
         )
 
         # Initialize weights
@@ -343,14 +345,19 @@ class DeepPacketInspectionWarden(nn.Module):
         max_pool = transformer_out.max(dim=1)[0]  # (batch_size, hidden_dim)
         global_features = torch.cat([mean_pool, max_pool], dim=1)  # (batch_size, hidden_dim*2)
 
-        # Final classification
-        bot_probability = self.classification_head(global_features).squeeze(-1)  # (batch_size,)
+        # Final classification: unbounded Wasserstein critic score.
+        raw_critic_score = self.classification_head(global_features).squeeze(-1)  # (batch_size,)
+
+        # Sigmoid-bounded bot probability for RL reward / interpretability.
+        # During GAN training use raw_critic_score directly (from feature_importance).
+        bot_probability = torch.sigmoid(raw_critic_score)
 
         # Feature importance (use anomaly scores as interpretability proxy)
         feature_importance = {
             "anomaly_scores": anomaly_scores,
             "global_attention": torch.softmax(anomaly_scores, dim=1),
-            "statistical_features": stat_features
+            "statistical_features": stat_features,
+            "raw_critic_score": raw_critic_score,  # unbounded Wasserstein critic value
         }
 
         return WardenVerdict(
@@ -363,20 +370,43 @@ class DeepPacketInspectionWarden(nn.Module):
 def compute_warden_loss(
     real_verdict: WardenVerdict,
     fake_verdict: WardenVerdict,
+    label_smoothing: float = 0.1  # kept for API compatibility, unused in WGAN-GP
+) -> torch.Tensor:
+    """
+    Compute Warden (Discriminator) loss for WGAN-GP training.
+
+    Wasserstein critic loss: L_D = E[D(fake)] - E[D(real)]
+    Minimising this maximises E[D(real)] - E[D(fake)], i.e. the Wasserstein-1
+    distance lower bound between real and generated distributions.
+
+    Requires:
+        - Warden classification_head has NO sigmoid activation (unbounded output).
+        - Gradient penalty added separately via compute_gradient_penalty().
+
+    Args:
+        real_verdict: Warden output for real human traffic.
+        fake_verdict: Warden output for generated (fake) traffic.
+        label_smoothing: Unused. Kept for backward-compatible call signatures.
+
+    Returns:
+        Wasserstein critic loss (scalar, negate w.r.t. real data minus fake data).
+    """
+    real_scores = real_verdict.feature_importance["raw_critic_score"]
+    fake_scores = fake_verdict.feature_importance["raw_critic_score"]
+
+    # Wasserstein critic loss: minimise E[D(fake)] - E[D(real)]
+    return fake_scores.mean() - real_scores.mean()
+
+
+def compute_warden_loss_bce(
+    real_verdict: WardenVerdict,
+    fake_verdict: WardenVerdict,
     label_smoothing: float = 0.1
 ) -> torch.Tensor:
     """
-    Compute Warden (Discriminator) loss for GAN training.
+    Deprecated BCE-based Warden loss. Kept for reference and test backward compat.
 
-    Uses binary cross-entropy with optional label smoothing to stabilize training.
-
-    Args:
-        real_verdict: Warden output for real human traffic
-        fake_verdict: Warden output for generated (fake) traffic
-        label_smoothing: Label smoothing factor (default: 0.1)
-
-    Returns:
-        Warden loss (scalar)
+    DO NOT use for WGAN-GP training — use compute_warden_loss() instead.
     """
     # Real labels (with smoothing): 0 → label_smoothing
     # Fake labels (with smoothing): 1 → 1 - label_smoothing
@@ -435,16 +465,18 @@ def compute_gradient_penalty(
     # For channels, use real channels (since they're discrete)
     interpolated_channels = real_channels
 
-    # Get Warden verdict on interpolated data
-    verdict = warden(interpolated_delays, interpolated_channels)
+    # Get Warden verdict on interpolated data with math attention & CuDNN disabled for double backwards
+    with torch.backends.cudnn.flags(enabled=False), \
+         torch.backends.cuda.sdp_kernel(enable_flash=False, enable_math=True, enable_mem_efficient=False):
+        verdict = warden(interpolated_delays, interpolated_channels)
 
-    # Compute gradients
-    gradients = torch.autograd.grad(
-        outputs=verdict.bot_probability.sum(),
-        inputs=interpolated_delays,
-        create_graph=True,
-        retain_graph=True
-    )[0]
+        # Compute gradients
+        gradients = torch.autograd.grad(
+            outputs=verdict.bot_probability.sum(),
+            inputs=interpolated_delays,
+            create_graph=True,
+            retain_graph=True
+        )[0]
 
     # Compute gradient penalty
     gradients = gradients.view(batch_size, -1)

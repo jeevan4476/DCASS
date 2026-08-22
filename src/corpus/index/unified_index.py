@@ -20,8 +20,16 @@ from typing import Optional, Literal
 
 import torch
 import clip
+try:
+    from transformers import ClapModel, ClapProcessor
+    _CLAP_AVAILABLE = True
+except ImportError:
+    _CLAP_AVAILABLE = False
 
 Modality = Literal["image", "text", "audio"]
+
+# CLAP model used to build the audio index (must match audio_step2_build_index.py).
+_CLAP_MODEL_ID = "laion/clap-htsat-unfused"
 
 
 def resolve_indices_base_path(base_path: Path | None = None) -> Path:
@@ -309,18 +317,23 @@ class UnifiedSemanticIndex:
         self.base_path = resolve_indices_base_path(base_path)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.enabled_modalities = enabled_modalities or ["image", "text", "audio"]
-        
-        # CLIP model (lazy loaded)
+
+        # CLIP model for image/text queries (lazy loaded)
         self._clip_model = None
         self._clip_preprocess = None
-        
+
+        # CLAP model for audio queries (lazy loaded).
+        # Must use the same model that built the audio FAISS index.
+        self._clap_model = None
+        self._clap_processor = None
+
         # FAISS indices and metadata (loaded on demand)
         self.indices: dict[Modality, faiss.Index] = {}
         self.metadata: dict[Modality, list[dict]] = {}
-        
+
         # Score normalizer
         self.normalizer = ScoreNormalizer()
-        
+
         # Track loaded state
         self._loaded = False
     
@@ -385,13 +398,59 @@ class UnifiedSemanticIndex:
         return status
     
     def _encode_text(self, text: str) -> np.ndarray:
-        """Encode text query using CLIP."""
+        """Encode text query using CLIP (for image and text modalities)."""
         with torch.no_grad():
             tokens = clip.tokenize([text], truncate=True).to(self.device)
             embedding = self.clip_model.encode_text(tokens)
             embedding = embedding / embedding.norm(dim=-1, keepdim=True)
             return embedding.cpu().numpy().astype("float32")
-    
+
+    def _encode_text_for_audio(self, text: str) -> np.ndarray:
+        """
+        Encode text query using CLAP (for audio modality).
+
+        The audio FAISS index was built with CLAP audio embeddings.
+        CLAP text and CLAP audio embeddings share the same latent space,
+        so CLAP text queries produce meaningful nearest-neighbor results.
+
+        Falls back to CLIP if CLAP is unavailable (with a warning).
+        """
+        if not _CLAP_AVAILABLE:
+            import warnings
+            warnings.warn(
+                "transformers not installed; audio queries will use CLIP instead of CLAP. "
+                "Audio search results will be unreliable. "
+                "Install with: pip install transformers",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            return self._encode_text(text)
+
+        if self._clap_model is None:
+            print(f"Loading CLAP model ({_CLAP_MODEL_ID}) on {self.device}...")
+            self._clap_processor = ClapProcessor.from_pretrained(_CLAP_MODEL_ID)
+            self._clap_model = ClapModel.from_pretrained(_CLAP_MODEL_ID).to(self.device)
+            self._clap_model.eval()
+
+        with torch.no_grad():
+            inputs = self._clap_processor(text=[text], return_tensors="pt", padding=True)
+            inputs = {k: v.to(self.device) for k, v in inputs.items()
+                      if k in ("input_ids", "attention_mask")}
+            embedding = self._clap_model.get_text_features(**inputs)
+            embedding = embedding / embedding.norm(dim=-1, keepdim=True)
+            return embedding.cpu().numpy().astype("float32")
+
+    def _encode_query(self, text: str, modality: Modality) -> np.ndarray:
+        """
+        Encode a text query for the given modality using the correct encoder.
+
+        - image / text: CLIP text encoder (same space as CLIP image/text FAISS index).
+        - audio: CLAP text encoder (same space as CLAP audio FAISS index).
+        """
+        if modality == "audio":
+            return self._encode_text_for_audio(text)
+        return self._encode_text(text)
+
     def search(
         self,
         query: str,
@@ -401,48 +460,59 @@ class UnifiedSemanticIndex:
     ) -> list[MediaItem]:
         """
         Search across all loaded modalities for semantically similar media.
-        
+
+        Each modality is searched with its own compatible query encoder:
+        - image/text: CLIP text encoder
+        - audio: CLAP text encoder
+
         Args:
             query: Text query to search for
             k: Number of results to return (total, not per modality)
             modalities: Modalities to search. Uses all loaded if None.
             min_score: Minimum normalized score threshold
-            
+
         Returns:
             List of MediaItem objects, sorted by normalized score (descending)
         """
         if not self._loaded:
             raise RuntimeError("Index not loaded. Call load() first.")
-        
+
         modalities = modalities or list(self.indices.keys())
-        
-        # Encode query once
-        query_embedding = self._encode_text(query)
-        
+
+        # Cache per-modality embeddings to avoid re-encoding when multiple
+        # modalities share the same encoder (image and text both use CLIP).
+        _embedding_cache: dict[str, np.ndarray] = {}
+
         all_results = []
-        
+
         for modality in modalities:
             if modality not in self.indices:
                 continue
-            
+
+            # Use the correct encoder for this modality.
+            encoder_key = "clap" if modality == "audio" else "clip"
+            if encoder_key not in _embedding_cache:
+                _embedding_cache[encoder_key] = self._encode_query(query, modality)
+            query_embedding = _embedding_cache[encoder_key]
+
             index = self.indices[modality]
             meta_list = self.metadata[modality]
-            
-            # Search this modality's index
-            # Request more results than k to allow for filtering
+
+            # Search this modality's index.
+            # Request more results than k to allow for filtering.
             n_search = min(k * 2, index.ntotal)
             scores, indices = index.search(query_embedding, n_search)
-            
+
             for score, idx in zip(scores[0], indices[0]):
                 if idx < 0 or idx >= len(meta_list):
                     continue
-                
+
                 meta = meta_list[idx]
                 normalized = self.normalizer.normalize(score, modality)
-                
+
                 if normalized < min_score:
                     continue
-                
+
                 content = extract_semantic_content(meta, modality)
 
                 item = MediaItem(
@@ -454,7 +524,7 @@ class UnifiedSemanticIndex:
                     metadata=meta
                 )
                 all_results.append(item)
-        
+
         # Sort by normalized score and return top k
         all_results.sort(key=lambda x: x.normalized_score, reverse=True)
         return all_results[:k]

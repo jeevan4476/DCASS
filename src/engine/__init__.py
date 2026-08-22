@@ -14,6 +14,7 @@ Components:
 from .encoder import SemanticEncoder, EncodingResult, EncodedChunk, encode_message
 from .decoder import SemanticDecoder, DecodingResult, DecodedItem, decode_media_sequence
 from .chunker import SemanticChunker, SemanticChunk, chunk_message
+from .vcp_payload import VCPPayloadMapper, PayloadCarrier
 
 __all__ = [
     # Encoder
@@ -32,4 +33,8 @@ __all__ = [
     "SemanticChunker",
     "SemanticChunk",
     "chunk_message",
+
+    # Exact payload mapping
+    "VCPPayloadMapper",
+    "PayloadCarrier",
 ]

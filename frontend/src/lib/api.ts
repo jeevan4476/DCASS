@@ -32,6 +32,7 @@ const apiLongTimeout = axios.create({
 export interface EncodeRequest {
   message: string;
   mode?: 'best' | 'round_robin' | 'balanced';
+  payload_mode?: 'exact_vcp' | 'semantic_legacy';
   modalities?: string[];
   use_ecc?: boolean;
 }
@@ -45,6 +46,8 @@ export interface EncodeResponse {
     score: number;
     content: string;
     file_path?: string;
+    payload_byte?: number;
+    cluster_id?: number;
   }>;
   media_sequence?: Array<{
     id: string;
@@ -57,10 +60,14 @@ export interface EncodeResponse {
   modality_breakdown: Record<string, number>;
   elapsed_ms: number;
   raw_codeword_hex?: string;
+  payload_mode?: string;
+  ecc_parity_bytes?: number;
+  payload_bytes?: number[];
 }
 
 export interface DecodeRequest {
   media_ids: string[];
+  payload_mode?: 'exact_vcp' | 'semantic_legacy';
   use_ecc?: boolean;
   raw_codeword_hex?: string;
 }
@@ -73,6 +80,8 @@ export interface DecodeResponse {
     content: string;
     file_path?: string;
     verified: boolean;
+    payload_byte?: number;
+    cluster_id?: number;
   }>;
   decoded?: Array<{
     media_id: string;
@@ -80,10 +89,16 @@ export interface DecodeResponse {
     content: string;
     file_path?: string;
     verified: boolean;
+    payload_byte?: number;
+    cluster_id?: number;
   }>;
   verification_rate: number;
   all_verified: boolean;
   elapsed_ms: number;
+  payload_mode?: string;
+  ecc_success?: boolean;
+  ecc_errors_fixed?: number[];
+  payload_bytes?: number[];
 }
 
 export interface SearchRequest {
@@ -134,6 +149,7 @@ export async function checkReady(): Promise<{ ready: boolean; initializing: bool
 export async function encodeMessage(request: EncodeRequest): Promise<EncodeResponse> {
   const response = await apiLongTimeout.post('/encode', {
     use_ecc: true,
+    payload_mode: 'exact_vcp',
     ...request,
   });
   return response.data;
@@ -142,6 +158,7 @@ export async function encodeMessage(request: EncodeRequest): Promise<EncodeRespo
 export async function decodeSequence(request: DecodeRequest): Promise<DecodeResponse> {
   const response = await apiLongTimeout.post('/decode', {
     use_ecc: true,
+    payload_mode: 'exact_vcp',
     ...request,
   });
   return response.data;

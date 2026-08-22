@@ -25,6 +25,9 @@ from src.corpus.index.unified_index import (
     extract_semantic_content,
 )
 from src.engine.ecc import RSErrorCorrection
+from src.engine.vcp_payload import VCPPayloadMapper
+
+PayloadMode = Literal["semantic_legacy", "exact_vcp"]
 
 
 @dataclass
@@ -36,6 +39,8 @@ class DecodedItem:
     verified: bool  # Whether item was found in corpus
     metadata: dict = field(default_factory=dict)
     file_path: Optional[str] = None
+    payload_byte: Optional[int] = None
+    cluster_id: Optional[int] = None
     
     def __repr__(self) -> str:
         status = "VERIFIED" if self.verified else "UNVERIFIED"
@@ -50,6 +55,8 @@ class DecodingResult:
     ecc_success: bool = True
     ecc_errors_fixed: list[int] = field(default_factory=list)
     ecc_payload: Optional[str] = None
+    payload_mode: PayloadMode = "semantic_legacy"
+    payload_symbols: list[int] = field(default_factory=list)
     
     @property
     def file_paths(self) -> list[str]:
@@ -158,6 +165,7 @@ class SemanticDecoder:
         self._base_path = base_path
         self._device = device
         self._loaded = False
+        self._payload_mapper: Optional[VCPPayloadMapper] = None
     
     @property
     def index(self) -> UnifiedSemanticIndex:
@@ -187,13 +195,21 @@ class SemanticDecoder:
     def is_loaded(self) -> bool:
         """Check if decoder is ready for use."""
         return self._loaded
+
+    @property
+    def payload_mapper(self) -> VCPPayloadMapper:
+        """Get the exact VCP payload mapper."""
+        if self._payload_mapper is None:
+            self._payload_mapper = VCPPayloadMapper(self.index)
+        return self._payload_mapper
     
     def decode(
         self,
         media_ids: list[str],
         use_ecc: bool = False,
         ecc_parity_bytes: int = 8,
-        raw_codeword: Optional[bytes] = None
+        raw_codeword: Optional[bytes] = None,
+        payload_mode: PayloadMode = "semantic_legacy"
     ) -> DecodingResult:
         """
         Decode a sequence of media IDs into semantic meaning.
@@ -202,7 +218,8 @@ class SemanticDecoder:
             media_ids: List of media IDs to decode
             use_ecc: If True, decodes codeword using Reed-Solomon Error Correction
             ecc_parity_bytes: Number of RS parity bytes (default 8)
-            raw_codeword: Codeword bytes to decode via Berlekamp-Massey
+            raw_codeword: Legacy side-channel codeword bytes to decode via Berlekamp-Massey
+            payload_mode: "exact_vcp" reconstructs bytes from media ID clusters
             
         Returns:
             DecodingResult with decoded items and reconstructed meaning
@@ -211,10 +228,16 @@ class SemanticDecoder:
             raise RuntimeError("Decoder not loaded. Call load() first.")
         
         decoded_items = []
+        id_symbols: dict[str, Optional[int]] = {}
+
+        if payload_mode == "exact_vcp":
+            for media_id in media_ids:
+                id_symbols[media_id] = self.payload_mapper.symbol_for_media_id(media_id)
         
         for media_id in media_ids:
             # Look up item in corpus
             item = self.index.get_by_id(media_id)
+            payload_byte = id_symbols.get(media_id)
             
             if item:
                 # Item found - extract content
@@ -226,7 +249,9 @@ class SemanticDecoder:
                     content=content,
                     verified=True,
                     metadata=item.metadata,
-                    file_path=item.file_path
+                    file_path=item.file_path,
+                    payload_byte=payload_byte,
+                    cluster_id=payload_byte,
                 ))
             else:
                 # Item not found - unverified
@@ -235,23 +260,39 @@ class SemanticDecoder:
                     modality="text",  # Default
                     content=f"[UNVERIFIED: {media_id}]",
                     verified=False,
-                    metadata={}
+                    metadata={},
+                    payload_byte=payload_byte,
+                    cluster_id=payload_byte,
                 ))
         
         ecc_payload = None
         ecc_success = True
         ecc_errors_fixed = []
+        payload_symbols = []
 
-        if use_ecc and raw_codeword:
+        if payload_mode == "exact_vcp":
+            codeword, missing_ids = self.payload_mapper.decode_symbols(media_ids)
+            payload_symbols = list(codeword)
+            if missing_ids:
+                ecc_success = False
+            elif use_ecc:
+                rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
+                ecc_payload, ecc_success, ecc_errors_fixed = rs_ecc.decode(codeword)
+            else:
+                ecc_payload = codeword.decode("utf-8", errors="replace")
+        elif use_ecc and raw_codeword:
             rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
             ecc_payload, ecc_success, ecc_errors_fixed = rs_ecc.decode(raw_codeword)
+            payload_symbols = list(raw_codeword)
         
         return DecodingResult(
             media_ids=media_ids,
             decoded=decoded_items,
             ecc_success=ecc_success,
             ecc_errors_fixed=ecc_errors_fixed,
-            ecc_payload=ecc_payload
+            ecc_payload=ecc_payload,
+            payload_mode=payload_mode,
+            payload_symbols=payload_symbols,
         )
     
     def decode_to_text(self, media_ids: list[str]) -> str:

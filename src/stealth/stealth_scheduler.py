@@ -71,8 +71,16 @@ class StealthScheduler:
             mode_used – str  actual mode that ran (may differ from *mode* on fallback)
         """
         if mode == "gan":
+            if gan_checkpoint is None:
+                default_ckpt = Path("storage/models/gan_generator.pt")
+                if default_ckpt.exists():
+                    gan_checkpoint = default_ckpt
             return self._schedule_gan(media_ids, base_delay, gan_checkpoint)
         elif mode == "rl":
+            if rl_checkpoint is None:
+                default_rl = Path("storage/models/rl_agent.pt")
+                if default_rl.exists():
+                    rl_checkpoint = default_rl
             return self._schedule_rl(media_ids, base_delay, rl_checkpoint)
         else:
             return self._schedule_static(media_ids, base_delay)

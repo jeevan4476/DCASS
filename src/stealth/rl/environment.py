@@ -356,21 +356,46 @@ class StealthEnvironment:
             channels = [r.channel_id for r in recent]
 
             # Convert to tensors
-            delays_tensor = torch.tensor([delays], dtype=torch.float32)
-            channels_tensor = torch.tensor([channels], dtype=torch.long)
+            device = next(self.warden.parameters()).device
+            delays_tensor = torch.tensor([delays], dtype=torch.float32, device=device)
+            channels_tensor = torch.tensor([channels], dtype=torch.long, device=device)
 
             # Get Warden verdict
             with torch.no_grad():
                 verdict = self.warden(delays_tensor, channels_tensor)
-                bot_probability = verdict.bot_probability.item()
+                bot_probability = float(verdict.bot_probability[0].item() if verdict.bot_probability.dim() > 0 else verdict.bot_probability.item())
 
             # Penalty scales with detection probability
             warden_penalty = bot_probability * self.lambda_stealth
 
+        # Path diversity & entropy reward
+        diversity_bonus = 0.0
+        if len(self.transmission_history) >= 2:
+            if self.transmission_history[-1].channel_id != self.transmission_history[-2].channel_id:
+                diversity_bonus += 2.0  # Encourage multi-platform channel hopping
+            
+            # Channel distribution Shannon entropy bonus
+            channel_counts = np.bincount([r.channel_id for r in self.transmission_history], minlength=self.num_channels)
+            probs = channel_counts / len(self.transmission_history)
+            entropy = -np.sum(probs * np.log2(np.clip(probs, 1e-6, 1.0)))
+            max_entropy = np.log2(self.num_channels)
+            normalized_entropy = entropy / max_entropy if max_entropy > 0 else 1.0
+            diversity_bonus += 3.0 * normalized_entropy
+
         # Combined reward
-        reward = throughput - warden_penalty
+        reward = throughput - warden_penalty + diversity_bonus
 
         return reward
+
+    def get_action_mask(self, projected_time: Optional[float] = None) -> np.ndarray:
+        """
+        Get binary mask for available channels (1 = can send, 0 = cooling down).
+        """
+        t = self.current_time if projected_time is None else projected_time
+        mask = np.array([1.0 if ch.can_send(t) else 0.0 for ch in self.channels], dtype=np.float32)
+        if np.sum(mask) == 0:
+            mask = np.ones(self.num_channels, dtype=np.float32)
+        return mask
 
     def get_warden_score(self) -> float:
         """
@@ -382,7 +407,6 @@ class StealthEnvironment:
         if len(self.transmission_history) == 0:
             return 0.0
 
-        # Use full history (or last N items)
         history = self.transmission_history[-self.warden_window_size:]
 
         delays = [r.delay_from_previous for r in history]
@@ -393,12 +417,13 @@ class StealthEnvironment:
             delays.append(0.0)
             channels.append(0)
 
-        delays_tensor = torch.tensor([delays], dtype=torch.float32)
-        channels_tensor = torch.tensor([channels], dtype=torch.long)
+        device = next(self.warden.parameters()).device
+        delays_tensor = torch.tensor([delays], dtype=torch.float32, device=device)
+        channels_tensor = torch.tensor([channels], dtype=torch.long, device=device)
 
         with torch.no_grad():
             verdict = self.warden(delays_tensor, channels_tensor)
-            return verdict.bot_probability.item()
+            return float(verdict.bot_probability[0].item() if verdict.bot_probability.dim() > 0 else verdict.bot_probability.item())
 
     def render(self, mode: str = "human") -> Optional[str]:
         """
