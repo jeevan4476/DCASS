@@ -213,7 +213,7 @@ class StealthScheduler:
         if checkpoint is None or not Path(checkpoint).exists():
             return False
 
-        from src.stealth.rl.agent import PPOAgent, PPOConfig, ActorCritic
+        from src.stealth.rl.agent import PPOAgent, PPOConfig
         from src.stealth.rl.environment import StealthEnvironment
         from src.analysis.adversarial.warden import DeepPacketInspectionWarden
 

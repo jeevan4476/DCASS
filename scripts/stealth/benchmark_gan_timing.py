@@ -20,7 +20,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.stealth.gan.generator import TemporalPatternGenerator
-from src.stealth.stealth_scheduler import StealthScheduler
 
 CHECKPOINT_PATH = PROJECT_ROOT / "storage" / "models" / "gan_generator.pt"
 REAL_DATA_PATH = PROJECT_ROOT / "storage" / "data" / "traffic" / "real_human_traffic.json"
@@ -100,9 +99,9 @@ def run_benchmark():
     acf_real = acf(real_delays, 5)
     acf_gen = acf(gen_delays, 5)
 
-    print(f"Lag Step:    Lag 1    Lag 2    Lag 3    Lag 4    Lag 5")
-    print(f"Real ACF:   " + "   ".join([f"{v:6.3f}" for v in acf_real[1:]]))
-    print(f"Gen  ACF:   " + "   ".join([f"{v:6.3f}" for v in acf_gen[1:]]))
+    print("Lag Step:    Lag 1    Lag 2    Lag 3    Lag 4    Lag 5")
+    print("Real ACF:   " + "   ".join([f"{v:6.3f}" for v in acf_real[1:]]))
+    print("Gen  ACF:   " + "   ".join([f"{v:6.3f}" for v in acf_gen[1:]]))
     print("  ✅ VERDICT: PASS (Natural decaying memory pattern matching human browsing)")
 
     # -------------------------------------------------------------

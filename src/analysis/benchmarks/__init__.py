@@ -6,10 +6,10 @@ Provides tools for evaluating semantic recovery accuracy.
 
 Usage:
     from src.analysis.benchmarks import SemanticBenchmark, run_benchmark
-    
+
     # Quick run
     results = run_benchmark()
-    
+
     # Custom run
     benchmark = SemanticBenchmark()
     results = benchmark.run(modes=["balanced"], verbose=True)

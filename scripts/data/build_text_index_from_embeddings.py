@@ -39,7 +39,7 @@ def main():
                         "content": parts[1],
                         "modality": "text"
                     })
-    
+
     wiki_json = RAW_WIKI_DIR / "sentences.json"
     if wiki_json.exists():
         with open(wiki_json, "r", encoding="utf-8") as f:

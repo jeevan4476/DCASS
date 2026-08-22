@@ -88,3 +88,4 @@ This directory contains deep technical, mathematical, and intuitive specificatio
 | **06** | [`06_SECURITY_AND_STEGANALYSIS_DEFENSE.md`](./06_SECURITY_AND_STEGANALYSIS_DEFENSE.md) | $D_{\text{KL}} = 0.0$ Steganalysis Proof | $D_{\text{KL}}(P_{\text{cover}} \parallel P_{\text{stego}}) = 0.000$ |
 | **07** | [`07_PPO_REINFORCEMENT_LEARNING_SCHEDULER.md`](./07_PPO_REINFORCEMENT_LEARNING_SCHEDULER.md) | PPO Closed-Loop Controller | $R_t = \text{Throughput} - \lambda P_{\text{Warden}} + \beta H(\mathbf{p})$ |
 
+| **08** | [`08_CAPACITY_AND_TRAFFIC_COST.md`](./08_CAPACITY_AND_TRAFFIC_COST.md) | Capacity vs. Stealth Trade-off | $\text{carriers} = |\text{utf8}(m)| + \text{parity}$ |

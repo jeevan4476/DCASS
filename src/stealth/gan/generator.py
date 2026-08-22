@@ -221,7 +221,7 @@ class TemporalPatternGenerator(nn.Module):
         """
         Generate schedule for arbitrary sequence_length >= 1.
         """
-        batch_size = z.size(0)
+        z.size(0)
         time_embed = self.encode_time_of_day(time_of_day)
 
         combined = torch.cat([z, time_embed], dim=1)

@@ -14,7 +14,6 @@ from __future__ import annotations
 import os
 import time
 import json
-import asyncio
 import threading
 from pathlib import Path
 from typing import Optional, Literal
@@ -134,6 +133,8 @@ class EncodeRequest(BaseModel):
     payload_mode: Literal["exact_vcp", "semantic_legacy"] = "exact_vcp"
     modalities: list[str] = Field(default=["image", "text", "audio"])
     use_ecc: bool = True
+    use_dynamic_context: bool = False
+    context_bucket_seconds: int = Field(default=3600, ge=1)
 
 
 class EncodeResponse(BaseModel):
@@ -147,6 +148,7 @@ class EncodeResponse(BaseModel):
     payload_mode: str = "semantic_legacy"
     ecc_parity_bytes: int = 0
     payload_bytes: list[int] = Field(default_factory=list)
+    context_info: dict = Field(default_factory=dict)
 
 
 class DecodeRequest(BaseModel):
@@ -154,6 +156,10 @@ class DecodeRequest(BaseModel):
     payload_mode: Literal["exact_vcp", "semantic_legacy"] = "exact_vcp"
     use_ecc: bool = True
     raw_codeword_hex: Optional[str] = None
+    use_dynamic_context: bool = False
+    context_bucket_seconds: int = Field(default=3600, ge=1)
+    # Epoch id from the encode response; skips candidate search on decode.
+    context_epoch_hint: Optional[str] = None
 
 
 class DecodeResponse(BaseModel):
@@ -167,6 +173,7 @@ class DecodeResponse(BaseModel):
     ecc_success: bool = True
     ecc_errors_fixed: list[int] = Field(default_factory=list)
     payload_bytes: list[int] = Field(default_factory=list)
+    context_epoch_id: Optional[str] = None
 
 
 class SearchRequest(BaseModel):
@@ -198,6 +205,11 @@ def health():
 @app.post("/api/encode", response_model=EncodeResponse)
 def encode(req: EncodeRequest):
     t0 = time.perf_counter()
+    context_manager = None
+    if req.use_dynamic_context:
+        from src.engine.context import ContextKeyManager
+
+        context_manager = ContextKeyManager(bucket_seconds=req.context_bucket_seconds)
     try:
         encoder = _get_encoder()
         result = encoder.encode(
@@ -206,6 +218,7 @@ def encode(req: EncodeRequest):
             diversity_mode=req.mode,
             use_ecc=req.use_ecc,
             payload_mode=req.payload_mode,
+            context_manager=context_manager,
         )
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -254,6 +267,7 @@ def encode(req: EncodeRequest):
         payload_mode=result.payload_mode,
         ecc_parity_bytes=result.ecc_parity_bytes,
         payload_bytes=result.payload_symbols,
+        context_info=result.context_info,
     )
 
 
@@ -269,11 +283,19 @@ def decode(req: DecodeRequest):
         except ValueError:
             pass
 
+    context_manager = None
+    if req.use_dynamic_context:
+        from src.engine.context import ContextKeyManager
+
+        context_manager = ContextKeyManager(bucket_seconds=req.context_bucket_seconds)
+
     result = decoder.decode(
         req.media_ids,
         use_ecc=req.use_ecc,
         raw_codeword=raw_codeword,
         payload_mode=req.payload_mode,
+        context_manager=context_manager,
+        context_epoch_hint=req.context_epoch_hint,
     )
 
     items = []
@@ -308,6 +330,7 @@ def decode(req: DecodeRequest):
         ecc_success=result.ecc_success,
         ecc_errors_fixed=result.ecc_errors_fixed,
         payload_bytes=result.payload_symbols,
+        context_epoch_id=result.context_epoch_id,
     )
 
 
@@ -415,11 +438,7 @@ def ready():
 @app.get("/api/benchmark/latest")
 def benchmark_latest():
     results_dir = (
-        Path(__file__).parent.parent.parent
-        / "storage"
-        / "data"
-        / "benchmarks"
-        / "results"
+        Path(__file__).parent.parent.parent / "storage" / "data" / "benchmarks" / "results"
     )
     if not results_dir.exists():
         return {"available": False}

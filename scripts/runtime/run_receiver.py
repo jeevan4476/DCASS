@@ -12,16 +12,14 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
 import sys
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.engine.decoder import SemanticDecoder
-from src.corpus.index.unified_index import UnifiedSemanticIndex
 
 
 @dataclass
@@ -154,7 +152,7 @@ class ReceiverDaemon:
         self.max_parse_retries = 5
         self.decoded_messages: List[str] = []
 
-        print(f"[Receiver] Initialized")
+        print("[Receiver] Initialized")
         print(f"  Watch directory: {self.watch_directory}")
         print(f"  Silence threshold: {silence_threshold}s")
         print(

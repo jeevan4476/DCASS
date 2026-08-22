@@ -10,14 +10,12 @@ learns to detect steganographic behavior.
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Callable
 import json
-from datetime import datetime
 
 from .generator import TemporalPatternGenerator, sample_latent, compute_generator_loss
 from ...analysis.adversarial.warden import (

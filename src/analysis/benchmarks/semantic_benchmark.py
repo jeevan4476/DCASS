@@ -19,13 +19,12 @@ import json
 import time
 import numpy as np
 from pathlib import Path
-from dataclasses import dataclass, field, asdict
-from typing import Optional, Literal
+from dataclasses import dataclass, asdict
 from datetime import datetime
 
 from src.engine.encoder import SemanticEncoder, DiversityMode
 from src.engine.decoder import SemanticDecoder
-from src.analysis.benchmarks.metrics import CombinedMetrics, MetricResult
+from src.analysis.benchmarks.metrics import CombinedMetrics
 
 
 @dataclass
@@ -317,7 +316,7 @@ class SemanticBenchmark:
 
         if verbose:
             print(f"\n{'=' * 70}")
-            print(f" DCASS Semantic Recovery Benchmark")
+            print(" DCASS Semantic Recovery Benchmark")
             print(f"{'=' * 70}")
             print(f" Messages: {len(all_messages)}")
             print(f" Modes: {modes}")

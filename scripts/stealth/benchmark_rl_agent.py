@@ -12,7 +12,6 @@ sessions to compute:
 """
 
 import sys
-import time
 import torch
 import numpy as np
 from pathlib import Path
@@ -136,7 +135,7 @@ def evaluate_rl_policy():
     print(f"• Mean Warden Bot Probability:     {np.mean(all_warden_scores) * 100.0:.2f}%")
     print(f"• Median Warden Bot Probability:   {np.median(all_warden_scores) * 100.0:.2f}%")
     print(f"• Evasion Success Rate (Score <0.5):{np.mean(all_warden_scores < 0.5) * 100.0:.1f}%")
-    print(f"• Warden Classification Status:    ✅ UNDETECTED (0.4940 <= 0.5000 Equilibrium)")
+    print("• Warden Classification Status:    ✅ UNDETECTED (0.4940 <= 0.5000 Equilibrium)")
 
     print("\n" + "=" * 80)
     print("✅ PPO RL POLICY PERFORMANCE BENCHMARK COMPLETE")

@@ -43,7 +43,7 @@ def test_generator():
 
     schedule = generator(z, sequence_length=20, time_of_day=time_of_day)
 
-    print(f"✓ Generator created")
+    print("✓ Generator created")
     print(f"✓ Parameters: {sum(p.numel() for p in generator.parameters()):,}")
     print(f"✓ Output delays shape: {schedule.delays.shape}")
     print(f"✓ Output channels shape: {schedule.channel_logits.shape}")
@@ -80,7 +80,7 @@ def test_warden(generator):
     real_verdict = warden(real_delays, real_channels)
     fake_verdict = warden(fake_delays, fake_channels)
 
-    print(f"✓ Warden created")
+    print("✓ Warden created")
     print(f"✓ Parameters: {sum(p.numel() for p in warden.parameters()):,}")
     print(f"✓ Real traffic bot probability: {real_verdict.bot_probability.mean():.3f}")
     print(f"✓ Fake traffic bot probability: {fake_verdict.bot_probability.mean():.3f}")
@@ -109,7 +109,7 @@ def test_rl_environment(warden):
     media_sequence = [f"media_{i:03d}" for i in range(20)]
     state = env.reset(media_sequence, start_hour=14)
 
-    print(f"✓ Environment created")
+    print("✓ Environment created")
     print(f"✓ State dimension: {env.state_dim}")
     print(f"✓ Initial state shape: {state.shape}")
 
@@ -153,7 +153,7 @@ def test_ppo_agent(env):
 
     agent = PPOAgent(env, config)
 
-    print(f"✓ Agent created")
+    print("✓ Agent created")
     print(f"✓ Actor-Critic parameters: {sum(p.numel() for p in agent.actor_critic.parameters()):,}")
 
     # Test action selection
@@ -168,7 +168,7 @@ def test_ppo_agent(env):
     print("\n  Training for 5 episodes...")
     rewards = agent.train(num_episodes=5, log_interval=2)
 
-    print(f"✓ Training complete")
+    print("✓ Training complete")
     print(f"✓ Average reward: {np.mean(rewards):.2f}")
     print(f"✓ Final reward: {rewards[-1]:.2f}")
 
@@ -183,7 +183,7 @@ def test_end_to_end():
 
     # 1. Create Generator
     print("\n[1/5] Creating Generator...")
-    generator = TemporalPatternGenerator(num_channels=3)
+    TemporalPatternGenerator(num_channels=3)
 
     # 2. Create Warden
     print("[2/5] Creating Warden...")
@@ -203,7 +203,7 @@ def test_end_to_end():
     media_sequence = [f"media_{i:03d}" for i in range(15)]
     episode_reward = agent.collect_rollout(media_sequence, max_steps=100)
 
-    print(f"\n✓ Episode completed!")
+    print("\n✓ Episode completed!")
     print(f"  Total reward: {episode_reward:.2f}")
     print(f"  Episode length: {agent.episode_lengths[-1]}")
     print(f"  Warden score: {agent.warden_scores[-1]:.3f}")
@@ -212,7 +212,7 @@ def test_end_to_end():
     print("\n  Updating policy...")
     metrics = agent.update()
 
-    print(f"✓ Policy updated!")
+    print("✓ Policy updated!")
     print(f"  Policy loss: {metrics['policy_loss']:.4f}")
     print(f"  Value loss: {metrics['value_loss']:.4f}")
     print(f"  Entropy: {metrics['entropy']:.4f}")
@@ -229,7 +229,7 @@ def main():
         generator = test_generator()
         warden = test_warden(generator)
         env = test_rl_environment(warden)
-        agent = test_ppo_agent(env)
+        test_ppo_agent(env)
 
         # Test full integration
         test_end_to_end()

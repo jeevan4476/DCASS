@@ -72,7 +72,7 @@ def main():
         "config": config
     }
     torch.save(checkpoint_data, CHECKPOINT_PATH)
-    print(f"\n✅ WGAN-GP Training Complete!")
+    print("\n✅ WGAN-GP Training Complete!")
     print(f"   Saved Generator Checkpoint -> {CHECKPOINT_PATH}")
 
 if __name__ == "__main__":

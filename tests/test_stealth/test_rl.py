@@ -2,10 +2,8 @@
 Unit and integration tests for PPO Reinforcement Learning closed-loop controller.
 """
 
-import pytest
 import torch
 import numpy as np
-from pathlib import Path
 
 from src.stealth.rl.environment import StealthEnvironment
 from src.stealth.rl.agent import PPOAgent, PPOConfig, ActorCritic
@@ -16,10 +14,10 @@ from src.stealth.stealth_scheduler import StealthScheduler
 def test_rl_environment_lifecycle():
     warden = DeepPacketInspectionWarden(num_channels=3, hidden_dim=64)
     env = StealthEnvironment(num_channels=3, warden=warden, max_sequence_length=20)
-    
+
     media = [f"item_{i}" for i in range(10)]
     state = env.reset(media, start_hour=14)
-    
+
     assert isinstance(state, np.ndarray)
     assert len(state) == env.state_dim
     assert not env.is_done
@@ -70,7 +68,7 @@ def test_ppo_agent_train_step(tmp_path):
 
     # Collect rollout on 5 items
     items = [f"m_{i}" for i in range(5)]
-    reward = agent.collect_rollout(items)
+    agent.collect_rollout(items)
     assert len(agent.buffer) > 0
 
     # Train step

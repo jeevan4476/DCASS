@@ -57,7 +57,7 @@ def main():
 
     # 2. Fit Voronoi Codebook
     codebook = VoronoiCodebook(num_clusters=256, dim=512, delta_margin=0.05)
-    stats = codebook.fit(corpus_vectors, max_iters=25, device="cuda")
+    codebook.fit(corpus_vectors, max_iters=25, device="cuda")
 
     # 3. Save Codebook
     save_path = INDICES_DIR / "voronoi_codebook.npz"

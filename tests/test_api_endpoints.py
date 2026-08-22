@@ -14,7 +14,6 @@ Comprehensive tests for FastAPI endpoints in src/api/server.py:
 - End-to-end encoding and decoding flow
 """
 
-import pytest
 from fastapi.testclient import TestClient
 from src.api.server import app
 
@@ -59,14 +58,14 @@ def test_api_encode_and_decode_e2e():
     encode_res = client.post("/api/encode", json=encode_payload)
     assert encode_res.status_code == 200
     encode_data = encode_res.json()
-    
+
     assert "media_ids" in encode_data
     assert "chunks" in encode_data
     assert "encoded" in encode_data
     assert "media_sequence" in encode_data
     assert "modality_breakdown" in encode_data
     assert "elapsed_ms" in encode_data
-    
+
     media_ids = encode_data["media_ids"]
     assert len(media_ids) > 0
     assert len(encode_data["encoded"]) == len(media_ids)

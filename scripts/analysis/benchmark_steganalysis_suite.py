@@ -15,7 +15,6 @@ Usage:
 """
 
 import sys
-import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -245,7 +244,7 @@ def run_full_steganalysis_suite():
         h_lsb = np.clip(h_lsb, 1e-8, None)
 
         dkl_dcass = entropy(h_dcass, h_cov)
-        dkl_lsb = entropy(h_lsb, h_cov)
+        entropy(h_lsb, h_cov)
 
         results_table.append({
             "detector": name,
@@ -260,7 +259,7 @@ def run_full_steganalysis_suite():
     p_cov_srm = srm_stat.predict_proba(cover_images)
     p_lsb_srm = srm_stat.predict_proba(lsb_images)
     p_dcass_srm = srm_stat.predict_proba(dcass_images)
-    
+
     acc_lsb_srm = (np.mean(p_lsb_srm > 0.5) + np.mean(p_cov_srm <= 0.5)) / 2.0 * 100.0
     acc_dcass_srm = (np.mean(p_dcass_srm > 0.5) + np.mean(p_cov_srm <= 0.5)) / 2.0 * 100.0
 

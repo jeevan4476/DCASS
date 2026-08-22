@@ -21,13 +21,12 @@ from __future__ import annotations
 import sys
 import argparse
 import json
-from typing import Literal, cast
+from typing import cast
 from pathlib import Path
 
 # -------- Engine --------
 from src.engine.encoder import SemanticEncoder, DiversityMode
 from src.engine.decoder import SemanticDecoder
-from src.engine.chunker import SemanticChunker
 
 # -------- Distribution Layer --------
 from src.distribution.channel_registry import get_available_channels

@@ -162,7 +162,7 @@ Key configuration parameters:
 - `expand_synonyms`: `True` (enables lexical enrichment).
 
 ### 4.2 Encoding Subsystem (`src/engine/encoder.py`)
-The encoding workflow in [`SemanticEncoder.encode()`](file:///home/jeevan/projects/DCASS/src/engine/encoder.py#L233-L372) executes in four sequential stages:
+The encoding workflow in [`SemanticEncoder.encode()`](../src/engine/encoder.py) executes in four sequential stages:
 
 ```python
 # Encoding execution workflow in SemanticEncoder
@@ -208,7 +208,7 @@ The encoder supports three diversity policies:
 3. `balanced`: Dynamically selects the least-utilized modality to ensure equal distribution across egress channels.
 
 ### 4.3 Decoding Subsystem (`src/engine/decoder.py`)
-The decoding engine in [`SemanticDecoder.decode()`](file:///home/jeevan/projects/DCASS/src/engine/decoder.py#L191-L256) processes incoming sequences of media IDs:
+The decoding engine in [`SemanticDecoder.decode()`](../src/engine/decoder.py) processes incoming sequences of media IDs:
 
 ```python
 # Decoding workflow in SemanticDecoder
@@ -263,9 +263,9 @@ flowchart TD
 
 | Parameter | Configuration Value | Location in Codebase |
 | :--- | :---: | :--- |
-| **Hypersphere Dimension** | 512 dimensions ($\mathbb{S}^{511}$) | [`src/corpus/cluster/voronoi_codebook.py`](file:///home/jeevan/projects/DCASS/src/corpus/cluster/voronoi_codebook.py#L27) |
-| **Minimum Chunk Length** | 3 characters | [`src/engine/chunker.py`](file:///home/jeevan/projects/DCASS/src/engine/chunker.py#L163) |
-| **Maximum Chunk Length** | 60 characters | [`src/engine/chunker.py`](file:///home/jeevan/projects/DCASS/src/engine/chunker.py#L164) |
-| **Soft-Margin Threshold ($\delta_{\text{margin}}$)** | 0.05 | [`src/corpus/cluster/voronoi_codebook.py`](file:///home/jeevan/projects/DCASS/src/corpus/cluster/voronoi_codebook.py#L27) |
-| **Default Modalities** | `["image", "text", "audio"]` | [`src/engine/encoder.py`](file:///home/jeevan/projects/DCASS/src/engine/encoder.py#L193) |
-| **Corpus Scale** | 153,281 indexed vectors | [`storage/data/indices/`](file:///home/jeevan/projects/DCASS/storage/data/indices/) |
+| **Hypersphere Dimension** | 512 dimensions ($\mathbb{S}^{511}$) | [`src/corpus/cluster/voronoi_codebook.py`](../src/corpus/cluster/voronoi_codebook.py) |
+| **Minimum Chunk Length** | 3 characters | [`src/engine/chunker.py`](../src/engine/chunker.py) |
+| **Maximum Chunk Length** | 60 characters | [`src/engine/chunker.py`](../src/engine/chunker.py) |
+| **Soft-Margin Threshold ($\delta_{\text{margin}}$)** | 0.05 | [`src/corpus/cluster/voronoi_codebook.py`](../src/corpus/cluster/voronoi_codebook.py) |
+| **Default Modalities** | `["image", "text", "audio"]` | [`src/engine/encoder.py`](../src/engine/encoder.py) |
+| **Corpus Scale** | 153,281 indexed vectors | [`storage/data/indices/`](../storage/data/indices/) |

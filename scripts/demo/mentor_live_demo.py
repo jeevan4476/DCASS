@@ -51,11 +51,11 @@ def main():
     aud_count = faiss.read_index(str(aud_idx_path)).ntotal if aud_idx_path.exists() else 0
     total_vectors = img_count + txt_count + aud_count
 
-    print(f"\n  📊 Multi-Modal FAISS Vector Infrastructure:")
+    print("\n  📊 Multi-Modal FAISS Vector Infrastructure:")
     print(f"     🖼️  Image Channel:  {img_count:,} 512d CLIP vectors (63,566 raw images)")
     print(f"     📝  Text Channel:   {txt_count:,} 512d CLIP text vectors (100,000 sentences)")
     print(f"     🎵  Audio Channel:  {aud_count:,} 512d CLAP audio vectors (13,496 audio clips)")
-    print(f"     ------------------------------------------------------------------")
+    print("     ------------------------------------------------------------------")
     print(f"     📊  TOTAL VOLUME:   {total_vectors:,} Unified 512d Vector Embeddings")
     time.sleep(1.5)
 

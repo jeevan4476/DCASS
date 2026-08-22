@@ -46,7 +46,7 @@ class Dispatcher:
             return self.channels[name]
 
         raise ValueError(f"Unknown dispatch policy: {self.policy}")
-    
+
     def dispatch_one(
         self,
         image_id: str,

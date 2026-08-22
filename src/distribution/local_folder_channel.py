@@ -18,14 +18,14 @@ class LocalFolderChannel(BaseChannel):
 
         filename = f"{log['timestamp'].replace(':', '_')}_{image_id}.txt"
         path = os.path.join(self.output_dir, filename)
-        
+
         print(f"[LOCAL] {log['timestamp']} | {image_id}")
 
 
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"IMAGE_ID={image_id}\n")
             if metadata:
-                for k, v in metadata.items():   
+                for k, v in metadata.items():
                     f.write(f"{k}={v}\n")
 
         return log

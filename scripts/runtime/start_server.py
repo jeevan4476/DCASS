@@ -35,7 +35,7 @@ def main():
     print(f"🔄 Auto-reload: {'Enabled' if args.reload else 'Disabled'}")
     print("=" * 70)
     print()
-    
+
     # Import uvicorn here to avoid issues if not installed
     try:
         import uvicorn

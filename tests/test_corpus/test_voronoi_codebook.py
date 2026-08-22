@@ -56,7 +56,6 @@ def test_voronoi_codebook_global_offset_reconstruction():
     fragile coupling in the system - this test catches drift between a
     refitted codebook and rebuilt indices.
     """
-    import faiss
 
     from src.corpus.index.unified_index import UnifiedSemanticIndex
     from src.engine.vcp_payload import VCPPayloadMapper

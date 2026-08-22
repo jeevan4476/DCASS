@@ -4,16 +4,13 @@ Unit tests for Reed-Solomon Error Correction Code (RS-ECC) in DCASS.
 Verifies 100% bit-exact secret recovery (0% Bit Error Rate) under simulated vector noise.
 """
 
-import pytest
 from src.engine.ecc import RSErrorCorrection
-from src.engine.encoder import SemanticEncoder
-from src.engine.decoder import SemanticDecoder
 
 def test_rs_ecc_basic_encoding_decoding():
     """Test basic RS-ECC encoding and error recovery."""
     ecc = RSErrorCorrection(parity_bytes=8)  # Can fix up to 4 byte errors
     message = "Covert Meeting at 0400 Hours"
-    
+
     # 1. Encode
     codeword = ecc.encode(message)
     assert len(codeword) == len(message.encode("utf-8")) + 8
@@ -35,10 +32,10 @@ def test_rs_ecc_uncorrupted():
     """Test RS-ECC decoding when no errors occur."""
     ecc = RSErrorCorrection(parity_bytes=6)
     message = "Steganography Protocol"
-    
+
     codeword = ecc.encode(message)
     decoded_str, is_success, errors_fixed = ecc.decode(codeword)
-    
+
     assert is_success is True
     assert decoded_str == message
     assert len(errors_fixed) == 0

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, Any
 from collections import deque
 
@@ -474,7 +474,7 @@ class StealthEnvironment:
 
         # Recent transmissions
         if len(self.transmission_history) > 0:
-            lines.append(f"\nRecent Transmissions (last 5):")
+            lines.append("\nRecent Transmissions (last 5):")
             for record in self.transmission_history[-5:]:
                 lines.append(
                     f"  {record.timestamp:.1f}s: {record.media_id} on channel {record.channel_id} "
@@ -531,5 +531,5 @@ if __name__ == "__main__":
     print("\nFinal State:")
     env.render()
 
-    print(f"\n✓ Environment test complete!")
+    print("\n✓ Environment test complete!")
     print(f"✓ Total reward: {total_reward:.2f}")

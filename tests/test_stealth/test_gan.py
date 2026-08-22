@@ -4,12 +4,9 @@ Unit and Integration tests for upgraded DCASS WGAN-GP Temporal Pattern Generator
 Tests arbitrary sequence lengths, causal temporal blocks, streaming generator, and Warden critic.
 """
 
-import pytest
 import torch
-from pathlib import Path
-from src.stealth.gan.generator import TemporalPatternGenerator, sample_latent
+from src.stealth.gan.generator import TemporalPatternGenerator
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden, compute_gradient_penalty
-from src.stealth.stealth_scheduler import StealthScheduler
 
 def test_temporal_pattern_generator_arbitrary_lengths():
     """Verify generator produces valid schedules for various sequence lengths (short, medium, long)."""

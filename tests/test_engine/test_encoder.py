@@ -15,8 +15,7 @@ Some tests use mocking to avoid loading actual indices.
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
-from dataclasses import dataclass
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 from src.engine.encoder import (
@@ -24,7 +23,6 @@ from src.engine.encoder import (
     EncodingResult,
     EncodedChunk,
     encode_message,
-    DiversityMode,
 )
 from src.engine.chunker import SemanticChunk
 from src.corpus.index.unified_index import MediaItem
@@ -132,7 +130,7 @@ class TestEncoderLoading:
             MockIndex.return_value = mock_index
 
             encoder = SemanticEncoder()
-            status = encoder.load()
+            encoder.load()
 
             assert encoder.is_loaded()
 
@@ -229,7 +227,7 @@ class TestEncoderDiversityModes:
                     MediaItem(
                         id=f"{mod}_{hash(query) % 10000:05d}_{i}",
                         modality=mod,
-                        content=f"Content",
+                        content="Content",
                         score=0.8,
                         normalized_score=0.8,
                         metadata={},

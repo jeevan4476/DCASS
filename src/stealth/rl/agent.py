@@ -515,7 +515,7 @@ class PPOAgent:
             media_sequence = media_sequence_generator()
 
             # Collect rollout
-            episode_reward = self.collect_rollout(media_sequence)
+            self.collect_rollout(media_sequence)
 
             # Update policy
             metrics = self.update()
@@ -552,11 +552,11 @@ class PPOAgent:
     def load(self, path: Path | str):
         """Load agent checkpoint into existing instance."""
         checkpoint = torch.load(str(path), map_location=self.device, weights_only=False)
-        
+
         # If config is present in checkpoint, recreate actor_critic if dimensions differ
         if "config" in checkpoint and isinstance(checkpoint["config"], PPOConfig):
             cfg = checkpoint["config"]
-            if (self.config.hidden_dim != cfg.hidden_dim or 
+            if (self.config.hidden_dim != cfg.hidden_dim or
                 self.config.state_dim != cfg.state_dim):
                 self.config = cfg
                 self.actor_critic = ActorCritic(

@@ -156,24 +156,12 @@ class MediaItem:
 
                 filename = p.name
                 cand30k = (
-                    project_root
-                    / "storage"
-                    / "data"
-                    / "raw"
-                    / "flickr30k"
-                    / "images"
-                    / filename
+                    project_root / "storage" / "data" / "raw" / "flickr30k" / "images" / filename
                 )
                 if cand30k.exists():
                     return str(cand30k.resolve())
                 cand8k = (
-                    project_root
-                    / "storage"
-                    / "data"
-                    / "raw"
-                    / "flickr8k"
-                    / "images"
-                    / filename
+                    project_root / "storage" / "data" / "raw" / "flickr8k" / "images" / filename
                 )
                 if cand8k.exists():
                     return str(cand8k.resolve())
@@ -191,13 +179,7 @@ class MediaItem:
             if cand30k.exists():
                 return str(cand30k.resolve())
             cand8k = (
-                project_root
-                / "storage"
-                / "data"
-                / "raw"
-                / "flickr8k"
-                / "images"
-                / f"{self.id}.jpg"
+                project_root / "storage" / "data" / "raw" / "flickr8k" / "images" / f"{self.id}.jpg"
             )
             if cand8k.exists():
                 return str(cand8k.resolve())
@@ -221,9 +203,7 @@ class MediaItem:
                 rel_p = (project_root / p).resolve()
                 if rel_p.exists():
                     return str(rel_p)
-                cand_aud = (
-                    project_root / "storage" / "data" / "audio" / "cache" / p.name
-                )
+                cand_aud = project_root / "storage" / "data" / "audio" / "cache" / p.name
                 if cand_aud.exists():
                     return str(cand_aud.resolve())
                 return str(rel_p)
@@ -251,30 +231,10 @@ class MediaItem:
                     return str(rel_p)
 
             candidates = [
-                project_root
-                / "storage"
-                / "data"
-                / "text"
-                / "wikipedia"
-                / "sentences.json",
-                project_root
-                / "storage"
-                / "data"
-                / "raw"
-                / "wikipedia"
-                / "sentences.json",
-                project_root
-                / "storage"
-                / "data"
-                / "text"
-                / "wikipedia"
-                / "sentences.txt",
-                project_root
-                / "storage"
-                / "data"
-                / "raw"
-                / "wikipedia"
-                / "sentences.txt",
+                project_root / "storage" / "data" / "text" / "wikipedia" / "sentences.json",
+                project_root / "storage" / "data" / "raw" / "wikipedia" / "sentences.json",
+                project_root / "storage" / "data" / "text" / "wikipedia" / "sentences.txt",
+                project_root / "storage" / "data" / "raw" / "wikipedia" / "sentences.txt",
                 project_root / "storage" / "data" / "indices" / "text_metadata.json",
             ]
             for cand in candidates:
@@ -283,9 +243,7 @@ class MediaItem:
             return None
 
     def __repr__(self) -> str:
-        return (
-            f"MediaItem({self.modality}:{self.id}, score={self.normalized_score:.3f})"
-        )
+        return f"MediaItem({self.modality}:{self.id}, score={self.normalized_score:.3f})"
 
 
 class ScoreNormalizer:
@@ -304,22 +262,61 @@ class ScoreNormalizer:
     a comparable 0-1 range.
     """
 
-    # Default calibration values based on empirical measurement (20 queries x 5 results)
-    # Format: {modality: (mean, std)}
-    # Updated: 2026-02-17 based on test_encoding.py calibration measurement
+    # Fallback calibration values (used when no measured calibration file
+    # exists). Format: {modality: (mean, std)}
     DEFAULT_CALIBRATION = {
         "image": (0.271, 0.028),  # CLIP text-to-image measured range
         "text": (0.885, 0.053),  # CLIP text-to-text measured range
         "audio": (0.100, 0.021),  # CLAP text-to-audio measured range
     }
 
-    def __init__(self, calibration: dict[str, tuple[float, float]] = None):
+    #: Where scripts/analysis/calibrate_scores.py writes measurements.
+    CALIBRATION_FILENAME = "score_calibration.json"
+
+    def __init__(
+        self,
+        calibration: dict[str, tuple[float, float]] = None,
+        load_measured: bool = True,
+    ):
         """
         Args:
             calibration: Dict mapping modality to (mean, std) tuple.
                         Uses DEFAULT_CALIBRATION if not provided.
+            load_measured: If True and no explicit calibration given, try to
+                        load a measured calibration file produced by
+                        scripts/analysis/calibrate_scores.py. Falls back to
+                        DEFAULT_CALIBRATION when the file is absent/corrupt.
         """
-        self.calibration = calibration or self.DEFAULT_CALIBRATION.copy()
+        self.calibration = dict(calibration) if calibration else self.DEFAULT_CALIBRATION.copy()
+        self.calibration_source = "default"
+        if calibration is None and load_measured:
+            measured = self._load_measured_calibration()
+            if measured:
+                self.calibration.update(measured)
+                self.calibration_source = "measured"
+
+    @classmethod
+    def _calibration_file(cls):
+        return resolve_indices_base_path() / cls.CALIBRATION_FILENAME
+
+    @classmethod
+    def _load_measured_calibration(cls) -> dict[str, tuple[float, float]]:
+        path = cls._calibration_file()
+        if not path.exists():
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            out = {
+                modality: (float(vals["mean"]), float(vals["std"]))
+                for modality, vals in raw.get("modalities", {}).items()
+                if isinstance(vals, dict) and "mean" in vals and "std" in vals
+            }
+            print(f"[ScoreNormalizer] loaded measured calibration from {path}")
+            return out
+        except Exception as e:
+            print(f"[ScoreNormalizer] ignoring unreadable calibration file {path}: {e}")
+            return {}
 
     def normalize(self, score: float, modality: Modality) -> float:
         """
@@ -423,9 +420,7 @@ class UnifiedSemanticIndex:
         """Lazy load CLIP model."""
         if self._clip_model is None:
             print(f"Loading CLIP model (ViT-B/32) on {self.device}...")
-            self._clip_model, self._clip_preprocess = clip.load(
-                "ViT-B/32", device=self.device
-            )
+            self._clip_model, self._clip_preprocess = clip.load("ViT-B/32", device=self.device)
             self._clip_model.eval()
         return self._clip_model
 
@@ -523,9 +518,7 @@ class UnifiedSemanticIndex:
             try:
                 print(f"Loading CLAP model ({_CLAP_MODEL_ID}) on {self.device}...")
                 self._clap_processor = ClapProcessor.from_pretrained(_CLAP_MODEL_ID)
-                self._clap_model = ClapModel.from_pretrained(_CLAP_MODEL_ID).to(
-                    self.device
-                )
+                self._clap_model = ClapModel.from_pretrained(_CLAP_MODEL_ID).to(self.device)
                 self._clap_model.eval()
             except Exception as e:
                 self._clap_failed = True
@@ -542,9 +535,7 @@ class UnifiedSemanticIndex:
                 return self._encode_text(text)
 
         with torch.no_grad():
-            inputs = self._clap_processor(
-                text=[text], return_tensors="pt", padding=True
-            )
+            inputs = self._clap_processor(text=[text], return_tensors="pt", padding=True)
             inputs = {
                 k: v.to(self.device)
                 for k, v in inputs.items()
@@ -643,9 +634,7 @@ class UnifiedSemanticIndex:
         all_results.sort(key=lambda x: x.normalized_score, reverse=True)
         return all_results[:k]
 
-    def search_modality(
-        self, query: str, modality: Modality, k: int = 5
-    ) -> list[MediaItem]:
+    def search_modality(self, query: str, modality: Modality, k: int = 5) -> list[MediaItem]:
         """
         Search a single modality.
 
@@ -700,9 +689,7 @@ class UnifiedSemanticIndex:
             "modalities": {
                 modality: {
                     "loaded": modality in self.indices,
-                    "count": self.indices[modality].ntotal
-                    if modality in self.indices
-                    else 0,
+                    "count": self.indices[modality].ntotal if modality in self.indices else 0,
                 }
                 for modality in self.enabled_modalities
             },

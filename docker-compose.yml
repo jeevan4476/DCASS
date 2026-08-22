@@ -144,7 +144,7 @@ services:
     volumes:
       - ./storage/data:/app/data:rw
     command: >
-      python -u scripts/training/generate_traffic_data.py
+      python -u scripts/stealth/generate_traffic_dataset.py
         --num-sessions ${TRAFFIC_SESSIONS:-2000}
         --num-channels ${NUM_CHANNELS:-3}
         --output /app/data/behavioral/human_traffic.json
@@ -171,7 +171,7 @@ services:
       - ./storage/models:/app/models:rw
       - ./storage/logs/train-gan:/app/logs:rw
     command: >
-      python -u scripts/training/train_gan.py
+      python -u scripts/stealth/train_gan.py
         --data /app/data/behavioral/human_traffic.json
         --epochs ${GAN_EPOCHS:-50}
         --batch-size ${GAN_BATCH_SIZE:-32}
@@ -202,7 +202,7 @@ services:
       - ./storage/models:/app/models:rw
       - ./storage/logs/train-rl:/app/logs:rw
     command: >
-      python -u scripts/training/train_rl.py
+      python -u scripts/stealth/train_rl.py
         --episodes ${RL_EPISODES:-1000}
         --num-channels ${NUM_CHANNELS:-3}
         --checkpoint-dir /app/models/rl

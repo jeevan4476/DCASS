@@ -26,32 +26,32 @@ def main():
         split="train",
         cache_dir=str(CACHE_DIR)
     )
-    
+
     # Cast audio column (for duration calculation)
     dataset = dataset.cast_column("audio", Audio(sampling_rate=SAMPLE_RATE))
-    
+
     print(f"Dataset features: {dataset.features}")
     print(f"Sample example keys: {list(dataset[0].keys())}")
     print(f"Sample transcription: {dataset[0].get('transcription_normalised', 'N/A')[:100]}")
-    
+
     print(f"\nRebuilding metadata for {len(dataset)} items...")
-    
+
     metadata = []
     for i, example in enumerate(tqdm(dataset, desc="Building metadata")):
         # Get transcription (prefer normalised version)
         text = (
-            example.get("transcription_normalised", "") or 
-            example.get("transcription", "") or 
+            example.get("transcription_normalised", "") or
+            example.get("transcription", "") or
             ""
         )
-        
+
         # Calculate duration
         audio_data = example.get("audio", {})
         if isinstance(audio_data, dict) and "array" in audio_data:
             duration = len(audio_data["array"]) / SAMPLE_RATE
         else:
             duration = 0.0
-        
+
         metadata.append({
             "id": f"audio_{i:06d}",
             "text": text,
@@ -60,18 +60,18 @@ def main():
             "modality": "audio",
             "duration": duration
         })
-    
+
     # Save metadata
     print(f"\nSaving to {METADATA_PATH}...")
     with open(METADATA_PATH, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
-    
+
     # Show samples
     print("\nSample entries:")
     for m in metadata[:3]:
         text_preview = m['text'][:60] + "..." if len(m['text']) > 60 else m['text']
         print(f"  {m['id']}: \"{text_preview}\"")
-    
+
     # Count non-empty
     non_empty = sum(1 for m in metadata if m['text'])
     print(f"\nItems with transcriptions: {non_empty}/{len(metadata)}")

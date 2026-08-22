@@ -314,7 +314,7 @@ Consider a compact example demonstrating $GF(2^8)$ encoding and decoding:
 
 ## 6. Codebase Implementation Architecture
 
-The RS-ECC module is implemented in [`src/engine/ecc.py`](file:///home/jeevan/projects/DCASS/src/engine/ecc.py) via the `RSErrorCorrection` class.
+The RS-ECC module is implemented in [`src/engine/ecc.py`](../src/engine/ecc.py) via the `RSErrorCorrection` class.
 
 ### Class Structure and Method Signatures
 
@@ -374,10 +374,10 @@ class RSErrorCorrection:
 
 ### Integration Across the System
 
-1. **Encoder Integration ([`src/engine/encoder.py`](file:///home/jeevan/projects/DCASS/src/engine/encoder.py))**:
+1. **Encoder Integration ([`src/engine/encoder.py`](../src/engine/encoder.py))**:
    Before vector retrieval, the secret message is encoded into a codeword $C(x)$. The resulting byte symbols $\{c_0, c_1, \dots, c_{n-1}\}$ serve as cluster query keys during carrier selection.
 
-2. **Decoder Integration ([`src/engine/decoder.py`](file:///home/jeevan/projects/DCASS/src/engine/decoder.py))**:
+2. **Decoder Integration ([`src/engine/decoder.py`](../src/engine/decoder.py))**:
    The receiver extracts byte symbols from received carrier media and reconstructs $R(x)$. `RSErrorCorrection.decode()` processes $R(x)$, corrects any drifted symbols, and returns the verified string along with the exact indices of corrected errors.
 
 ---
@@ -386,7 +386,7 @@ class RSErrorCorrection:
 
 ### 7.1 Unit Test Verification
 
-The unit test suite in [`tests/test_engine/test_ecc.py`](file:///home/jeevan/projects/DCASS/tests/test_engine/test_ecc.py) validates exact recovery under multi-byte corruption:
+The unit test suite in [`tests/test_engine/test_ecc.py`](../tests/test_engine/test_ecc.py) validates exact recovery under multi-byte corruption:
 
 ```python
 def test_rs_ecc_basic_encoding_decoding():

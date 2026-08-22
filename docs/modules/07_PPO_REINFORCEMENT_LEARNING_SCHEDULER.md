@@ -2,10 +2,10 @@
 
 **Module**: 07  
 **Name**: Proximal Policy Optimization (PPO) Closed-Loop Stealth Scheduler  
-**Implementation**: [`src/stealth/rl/agent.py`](file:///home/jeevan/projects/DCASS/src/stealth/rl/agent.py) (`PPOAgent`, `ActorCritic`, `PPOConfig`), [`src/stealth/rl/environment.py`](file:///home/jeevan/projects/DCASS/src/stealth/rl/environment.py) (`StealthEnvironment`)  
-**Training Script**: [`scripts/stealth/train_rl.py`](file:///home/jeevan/projects/DCASS/scripts/stealth/train_rl.py)  
-**Evaluation Script**: [`scripts/stealth/benchmark_rl_agent.py`](file:///home/jeevan/projects/DCASS/scripts/stealth/benchmark_rl_agent.py)  
-**Test Suite**: [`tests/test_stealth/test_rl.py`](file:///home/jeevan/projects/DCASS/tests/test_stealth/test_rl.py)  
+**Implementation**: [`src/stealth/rl/agent.py`](../src/stealth/rl/agent.py) (`PPOAgent`, `ActorCritic`, `PPOConfig`), [`src/stealth/rl/environment.py`](../src/stealth/rl/environment.py) (`StealthEnvironment`)  
+**Training Script**: [`scripts/stealth/train_rl.py`](../scripts/stealth/train_rl.py)  
+**Evaluation Script**: [`scripts/stealth/benchmark_rl_agent.py`](../scripts/stealth/benchmark_rl_agent.py)  
+**Test Suite**: [`tests/test_stealth/test_rl.py`](../tests/test_stealth/test_rl.py)  
 **Status**: Production Verified (1.57 / 1.58 Bits Channel Path Entropy, 49.39% Warden Evasion)
 
 ---
@@ -169,6 +169,6 @@ Where:
 
 ## 5. Verification & Codebase Integration
 
-- **Unit Tests**: [`tests/test_stealth/test_rl.py`](file:///home/jeevan/projects/DCASS/tests/test_stealth/test_rl.py) (4 passed).
-- **Scheduler Integration**: `StealthScheduler.schedule(mode="rl", rl_checkpoint="storage/models/rl_agent.pt")` in [`src/stealth/stealth_scheduler.py`](file:///home/jeevan/projects/DCASS/src/stealth/stealth_scheduler.py).
+- **Unit Tests**: [`tests/test_stealth/test_rl.py`](../tests/test_stealth/test_rl.py) (4 passed).
+- **Scheduler Integration**: `StealthScheduler.schedule(mode="rl", rl_checkpoint="storage/models/rl_agent.pt")` in [`src/stealth/stealth_scheduler.py`](../src/stealth/stealth_scheduler.py).
 - **Backend API**: `/api/wire/transmit` and `/api/status` endpoints load and serve the RL agent.

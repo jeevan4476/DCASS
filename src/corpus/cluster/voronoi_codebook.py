@@ -76,7 +76,7 @@ class VoronoiCodebook:
         # Convert to PyTorch tensor & normalize to unit length
         torch.manual_seed(seed)
         np.random.seed(seed)
-        
+
         X = torch.from_numpy(embeddings).float().to(device)
         X = X / torch.norm(X, dim=1, keepdim=True).clamp(min=1e-12)
 
@@ -133,7 +133,7 @@ class VoronoiCodebook:
         min_density = min(len(v) for v in self.cluster_to_indices.values())
         max_density = max(len(v) for v in self.cluster_to_indices.values())
 
-        print(f"✅ Voronoi Codebook Fitted Successfully!")
+        print("✅ Voronoi Codebook Fitted Successfully!")
         print(f"   Centroids: {self.num_clusters} (||c||_2 = 1.0)")
         print(f"   Cluster Density: Min={min_density}, Max={max_density}, Mean={mean_density:.1f} vectors/cluster")
 
@@ -194,7 +194,7 @@ class VoronoiCodebook:
 
         # Compute similarities to all centroids
         similarities = np.dot(normalized_sub, self.centroids.T) # (K_cand, 256)
-        
+
         robust_indices = []
         for i, idx in enumerate(candidate_indices):
             sims = similarities[i]
@@ -217,7 +217,7 @@ class VoronoiCodebook:
 
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         np.savez_compressed(
             output_path,
             centroids=self.centroids,

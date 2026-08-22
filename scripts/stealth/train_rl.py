@@ -11,7 +11,6 @@ Usage:
 """
 
 import sys
-import os
 import argparse
 import time
 import torch

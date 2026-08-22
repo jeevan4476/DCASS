@@ -19,16 +19,16 @@ from .vcp_payload import VCPPayloadMapper, PayloadCarrier
 __all__ = [
     # Encoder
     "SemanticEncoder",
-    "EncodingResult", 
+    "EncodingResult",
     "EncodedChunk",
     "encode_message",
-    
+
     # Decoder
     "SemanticDecoder",
     "DecodingResult",
     "DecodedItem",
     "decode_media_sequence",
-    
+
     # Chunker
     "SemanticChunker",
     "SemanticChunk",

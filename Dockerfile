@@ -91,7 +91,6 @@ RUN mkdir -p /app/storage/data /app/storage/models /app/storage/checkpoints /app
 # Use .dockerignore to exclude unnecessary files
 COPY src/ /app/src/
 COPY scripts/ /app/scripts/
-COPY config/ /app/config/
 COPY requirements.txt /app/
 
 # Create non-root user for security (optional but recommended)

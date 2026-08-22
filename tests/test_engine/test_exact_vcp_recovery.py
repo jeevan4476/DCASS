@@ -11,7 +11,7 @@ exactly. Uses a fake index/codebook so it runs without artifacts.
 import numpy as np
 import pytest
 
-from src.corpus.index.unified_index import MediaItem, UnifiedSemanticIndex
+from src.corpus.index.unified_index import UnifiedSemanticIndex
 from src.corpus.cluster.voronoi_codebook import VoronoiCodebook
 from src.engine.decoder import SemanticDecoder
 from src.engine.encoder import SemanticEncoder
@@ -64,7 +64,7 @@ class FakeIndex(UnifiedSemanticIndex):
                 )
         assignments = []
         for v in vectors:
-            sims = np.dot(np.array(vectors), np.array(v))
+            np.dot(np.array(vectors), np.array(v))
             assignments.append(
                 int(
                     np.argmax(

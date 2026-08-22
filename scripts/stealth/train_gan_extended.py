@@ -77,7 +77,7 @@ def main():
         "training_time_seconds": total_time
     }
     torch.save(checkpoint_data, CHECKPOINT_PATH)
-    print(f"\n" + "=" * 80)
+    print("\n" + "=" * 80)
     print(f"✅ Extended WGAN-GP Training Complete in {total_time/60:.2f} minutes!")
     print(f"   Model Checkpoint -> {CHECKPOINT_PATH}")
     print("=" * 80)

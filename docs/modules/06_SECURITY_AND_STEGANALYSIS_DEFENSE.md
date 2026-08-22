@@ -96,8 +96,13 @@ In 1998, Christian Cachin formulated the foundational theorem of information-the
 > 
 > If $\epsilon = 0$, the steganographic system is **perfectly secure**.
 
-#### Corollary 1:
-Because DCASS achieves $D_{\text{KL}}(P_{\text{cover}} \parallel P_{\text{stego}}) = 0.000$, DCASS is **perfectly $\epsilon$-secure ($\epsilon = 0.0$)** under Cachin's definition against all content-based passive adversaries.
+#### Corollary 1 (scoped):
+The $D_{\text{KL}}(P_{\text{cover}} \parallel P_{\text{stego}}) = 0$ argument applies **only to the carrier-content distribution**: transmitted files are bit-identical to public corpus items, so *content-based* passive adversaries gain zero information from inspecting the carriers themselves. It does **not** extend to:
+- the **selection distribution** (which items are chosen is not provably identical to corpus sampling);
+- **traffic/timing analysis** (see module 05 - scheduling is mimicry, not proven indistinguishable);
+- **payload confidentiality** without dynamic context keying (module 08 / `ContextKeyManager`): with only the public corpus and codebook, selection patterns are decodable.
+
+We therefore claim $\epsilon = 0$ **against content-residual steganalysis of unmodified carriers** - a scoped statement, not unconditional security.
 
 ```
                   INFORMATION-THEORETIC SECURITY SPECTRUM
@@ -110,7 +115,8 @@ Because DCASS achieves $D_{\text{KL}}(P_{\text{cover}} \parallel P_{\text{stego}
     │
     │  D_KL = 0.12 bits  [ Generative Diffusion / GAN Synthesis ] (Detectable >75%)
     │
-    │  D_KL = 0.000 bits [ DCASS Pure Semantic Steganography ] (PERFECTLY SECURE)
+    │  D_KL = 0.000 bits [ DCASS carrier content vs. public corpus ] (indistinguishable
+    │                    at the content level; selection & timing remain attack surfaces)
   ──┴────────────────────────────────────────────────────────────────────────────►
 ```
 
@@ -142,7 +148,7 @@ The DCASS architecture enforces zero-modification policies across all three medi
 ### 4.1 Image Modality Guarantee
 - **Source**: Flickr30k and Flickr8k JPEG files (`.jpg`).
 - **Processing**: The image encoder passes images directly into the OpenAI CLIP ViT-B/32 vision transformer to produce a 512d normalized embedding vector.
-- **Transmission**: The transmission engine reads the raw binary file directly from disk ([`src/engine/encoder.py`](file:///home/jeevan/projects/DCASS/src/engine/encoder.py#L87-L95)) and serves it unmodified. Byte-level checksums ($\text{SHA-256}$) of the transmitted file match the source corpus file with 100% bit identity.
+- **Transmission**: The transmission engine reads the raw binary file directly from disk (`src/engine/encoder.py`) and serves it unmodified. Byte-level checksums ($\text{SHA-256}$) of the transmitted file match the source corpus file with 100% bit identity.
 
 ### 4.2 Text Modality Guarantee
 - **Source**: Wikipedia sentence corpus (`.txt`).
@@ -174,13 +180,20 @@ def verify_zero_modification(source_path: Path, transmitted_bytes: bytes) -> boo
 
 ## 5. Comparative Defense Analysis Against Modern Steganalysis Architectures
 
-| Steganalysis Framework | Detection Target | Traditional LSB / J-UNIWARD | DCASS Pure Semantic Steganography |
+| Steganalysis Framework | Detection Target | Traditional LSB / J-UNIWARD | DCASS (unmodified carriers) |
 | :--- | :--- | :---: | :---: |
-| **SRNet (Spatial ResNet)** | High-pass pixel residuals | **> 96.5% Detection** | **50.0% (Zero Detection / Random Guess)** |
-| **Ye-Net / Zhu-Net** | Truncated linear unit DCT noise | **> 98.2% Detection** | **50.0% (Zero Detection / Random Guess)** |
-| **Spatial Rich Models (SRM)** | 30 handcrafted co-occurrence filters | **> 94.1% Detection** | **50.0% (Zero Detection / Random Guess)** |
-| **Deep Audio Steganalysis** | Waveform PCM phase & LSB tweaking | **> 91.8% Detection** | **50.0% (Zero Detection / Random Guess)** |
-| **Deep Packet Inspection (DPI)** | Inter-packet timing & burst regularity | **> 99.0% Detection** | **49.99% (Defeated via WGAN-GP Mimicry)** |
+| **SRNet (Spatial ResNet)** | High-pass pixel residuals | **> 96.5% Detection** | ~50% expected (no residual signal to detect)* |
+| **Ye-Net / Zhu-Net** | Truncated linear unit DCT noise | **> 98.2% Detection** | ~50% expected* |
+| **Spatial Rich Models (SRM)** | 30 handcrafted co-occurrence filters | **> 94.1% Detection** | ~50% expected* |
+| **Deep Audio Steganalysis** | Waveform PCM phase & LSB tweaking | **> 91.8% Detection** | ~50% expected* |
+| **Deep Packet Inspection (DPI)** | Inter-packet timing & burst regularity | **> 99.0% Detection** | Mimicry reduces signal; not proven at chance level |
+
+\* *These are theoretical expectations from the absence of an embedding
+signal, not measured benchmark results on this codebase. Because DCASS never
+modifies carrier files, content-residual detectors have no embedding noise to
+find; a detector applied to individual carriers should perform no better than
+random guessing. Selection-pattern and traffic-level analysis remain open
+attack surfaces and are treated in modules 05 and 08.*
 
 ---
 
@@ -197,9 +210,9 @@ To maintain academic rigor, the DCASS security defense separates the adversary's
    - *Adversary Goal*: Detect robotic periodicity, abnormal account burstiness, or channel rate flooding.
    - *DCASS Defense*: Defended by the WGAN-GP temporal generator and PPO closed-loop scheduler, dynamically mimicking human circadian cycles and maintaining high path entropy across multiple egress platforms ($H = 1.57 / 1.58\text{ bits}$).
 
-### 6.2 Summary Table
+### 6.2 Summary Table (scoped claims)
 1. **Zero Pixel/Sample Modification**: Transmitted files are byte-for-byte identical to public dataset files ($\text{SHA-256}$ verified).
-2. **$D_{\text{KL}}^{\text{content}} = 0.000$ Bits**: Relative entropy between cover and stego media content is strictly zero.
-3. **Cachin $\epsilon$-Security on Content**: $\epsilon = 0.0$ guarantees information-theoretic secrecy against spatial feature classifiers.
-4. **ROC AUC = 0.500 on Content Detectors**: Deep residual CNN steganalysts cannot exceed the accuracy of a random coin flip.
-5. **DPI Behavioral Camouflage**: Inter-packet delays synthesized by WGAN-GP and PPO RL exhibit natural burstiness and evade the adversarial Warden with a 49.39% bot probability (Nash equilibrium).
+2. **$D_{\text{KL}}^{\text{content}} = 0.000$ Bits**: Relative entropy between cover and stego *media content* is strictly zero - the carrier files are unmodified.
+3. **Cachin $\epsilon$-Security on Carrier Content**: $\epsilon = 0.0$ holds for content-residual analysis of the carriers themselves. It does not cover selection patterns or traffic timing.
+4. **Content Detectors Have No Signal**: With no embedding noise, content-residual steganalysts should not exceed chance on individual carriers (theoretical expectation; validate empirically before publication).
+5. **DPI Behavioral Camouflage**: WGAN-GP and PPO scheduling reduce timing regularity, but this is measured mimicry, not a proof of indistinguishability. See module 08 for the traffic-cost trade-off and module `ContextKeyManager` for payload-confidentiality keying.

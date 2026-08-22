@@ -10,7 +10,6 @@ Demonstrates:
 """
 
 import sys
-import time
 import torch
 import numpy as np
 from pathlib import Path
@@ -108,7 +107,7 @@ def main():
     print(f"• Transmitted Sequence Length:     {len(items)} media items")
     print(f"• Warden Detection Assessment:     {bot_prob * 100:.2f}% Bot Probability")
     print(f"• Classification Decision:          {'⚠️ SUSPICIOUS' if bot_prob > 0.5 else '✅ PASS (Classified as Genuine Human Activity)'}")
-    print(f"• Security Status:                  Warden AUC = 0.500 (Complete Adversarial Camouflage)")
+    print("• Security Status:                  Warden AUC = 0.500 (Complete Adversarial Camouflage)")
 
     print("\n" + "=" * 80)
     print("✅ WGAN-GP STEALTH TIMING DEMO READY FOR MENTOR REVIEW")

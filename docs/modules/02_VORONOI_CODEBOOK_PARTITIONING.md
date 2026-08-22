@@ -186,7 +186,7 @@ If strict filtering eliminates all candidates for a rare cluster, the filter fal
 
 ## 5. Codebase Implementation Architecture
 
-The VCP subsystem is implemented in [`src/corpus/cluster/voronoi_codebook.py`](file:///home/jeevan/projects/DCASS/src/corpus/cluster/voronoi_codebook.py).
+The VCP subsystem is implemented in [`src/corpus/cluster/voronoi_codebook.py`](../src/corpus/cluster/voronoi_codebook.py).
 
 ### Class Interface: `VoronoiCodebook`
 

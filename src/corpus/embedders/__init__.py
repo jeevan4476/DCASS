@@ -3,19 +3,18 @@
 Embedder modules for DCASS.
 
 Provides unified embedding interfaces for different modalities:
-- CLIPEmbedder: For images and text (512-dim, cross-modal)
-- AudioEmbedder: For audio using CLAP (512-dim, compatible with CLIP)
-- VectorEngine: Legacy SentenceTransformer-based embedder (384-dim)
+- ImageEmbedder: CLIP ViT-B/32 (512-dim, cross-modal; used for images AND text)
+- AudioEmbedder: CLAP (512-dim, compatible with the CLIP latent width)
 """
 
-from .clip_embedder import CLIPEmbedder
-from .vector_engine import VectorEngine
+from .image_embedder import ImageEmbedder
 
-__all__ = ["CLIPEmbedder", "VectorEngine"]
+__all__ = ["ImageEmbedder"]
 
 # AudioEmbedder imported conditionally to avoid CLAP dependency issues
 try:
-    from .audio_embedder import AudioEmbedder
+    from .audio_embedder import AudioEmbedder  # noqa: F401 (re-exported)
+
     __all__.append("AudioEmbedder")
 except ImportError:
     pass
