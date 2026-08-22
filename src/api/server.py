@@ -18,8 +18,9 @@ import threading
 from pathlib import Path
 from typing import Optional, Literal
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from src.corpus.index.unified_index import resolve_indices_base_path
@@ -28,7 +29,11 @@ from src.corpus.index.unified_index import resolve_indices_base_path
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
-_DEFAULT_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
+_DEFAULT_ORIGINS = (
+    "http://localhost:3000,http://127.0.0.1:3000,"
+    "http://localhost:3001,http://127.0.0.1:3001,"
+    "http://localhost:8000,http://127.0.0.1:8000"
+)
 app = FastAPI(
     title="DCASS API",
     description="Dynamic Context-Aware Semantic Steganography",
@@ -37,17 +42,91 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    # Wildcard origins combined with credentials is invalid per the CORS spec;
-    # restrict to known frontend origins (override via DCASS_CORS_ORIGINS).
+    # Allow known frontend origins, and regex-match any localhost/127.0.0.1 dev port
     allow_origins=[
         o.strip()
         for o in os.environ.get("DCASS_CORS_ORIGINS", _DEFAULT_ORIGINS).split(",")
         if o.strip()
     ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Auth (Bearer token when DCASS_API_TOKEN is set)
+# ---------------------------------------------------------------------------
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def require_api_token(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> None:
+    """
+    Gate sensitive routes when DCASS_API_TOKEN is configured.
+
+    When the env var is unset, auth is skipped (local/dev). Production
+    deployments must set DCASS_API_TOKEN.
+    """
+    expected = os.environ.get("DCASS_API_TOKEN")
+    if not expected:
+        return
+    if (
+        credentials is None
+        or credentials.scheme.lower() != "bearer"
+        or credentials.credentials != expected
+    ):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _context_secret_from_env() -> Optional[bytes]:
+    raw = os.environ.get("DCASS_CONTEXT_SECRET")
+    if not raw:
+        return None
+    return raw.encode("utf-8")
+
+
+def _build_context_manager(bucket_seconds: int):
+    """Wire API dynamic context to optional DCASS_CONTEXT_SECRET."""
+    from src.engine.context import ContextKeyManager
+
+    secret = _context_secret_from_env()
+    return ContextKeyManager(bucket_seconds=bucket_seconds, secret=secret)
+
+
+def sanitize_packet_filename(shared_dir: Path, media_id: str, channel: int, idx: int) -> Path:
+    """
+    Build a packet path under *shared_dir*, rejecting path traversal.
+
+    Raises ValueError when media_id contains separators, `..`, or would
+    resolve outside shared_dir.
+    """
+    if not media_id or not isinstance(media_id, str):
+        raise ValueError("media_id must be a non-empty string")
+    if media_id in (".", "..") or ".." in media_id:
+        raise ValueError(f"invalid media_id: {media_id!r}")
+    if "/" in media_id or "\\" in media_id or media_id != Path(media_id).name:
+        raise ValueError(f"invalid media_id (path characters): {media_id!r}")
+
+    shared_resolved = shared_dir.resolve()
+    filename = f"{media_id}_{channel}_{idx:04d}.json"
+    path = (shared_dir / filename).resolve()
+    if not path.is_relative_to(shared_resolved):
+        raise ValueError(f"packet path escapes shared_channel: {media_id!r}")
+    return path
+
+
+def validate_transmit_media_ids(media_ids: list[str]) -> None:
+    """Reject unsafe media_ids before scheduling transmission."""
+    for mid in media_ids:
+        if not mid or not isinstance(mid, str):
+            raise ValueError("media_ids entries must be non-empty strings")
+        if mid in (".", "..") or ".." in mid:
+            raise ValueError(f"invalid media_id: {mid!r}")
+        if "/" in mid or "\\" in mid or mid != Path(mid).name:
+            raise ValueError(f"invalid media_id (path characters): {mid!r}")
+
 
 # ---------------------------------------------------------------------------
 # Lazy engine singletons
@@ -205,13 +284,11 @@ def health():
 
 
 @app.post("/api/encode", response_model=EncodeResponse)
-def encode(req: EncodeRequest):
+def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
     t0 = time.perf_counter()
     context_manager = None
     if req.use_dynamic_context:
-        from src.engine.context import ContextKeyManager
-
-        context_manager = ContextKeyManager(bucket_seconds=req.context_bucket_seconds)
+        context_manager = _build_context_manager(req.context_bucket_seconds)
     try:
         encoder = _get_encoder()
         result = encoder.encode(
@@ -256,13 +333,11 @@ def encode(req: EncodeRequest):
             }
         )
 
-    # Debug-only side channel (P2-12): the payload must live in the media
-    # sequence, not in a response field. Returned only for semantic_legacy.
-    raw_codeword_hex = (
-        result.ecc_codeword.hex()
-        if result.ecc_codeword and result.payload_mode == "semantic_legacy"
-        else None
-    )
+    context_info = dict(result.context_info)
+    if req.use_dynamic_context and "context_mode" not in context_info:
+        context_info["context_mode"] = (
+            "keyed" if _context_secret_from_env() else "obfuscation"
+        )
 
     return EncodeResponse(
         media_ids=result.media_ids,
@@ -271,16 +346,15 @@ def encode(req: EncodeRequest):
         media_sequence=media_seq_items,
         modality_breakdown=result.modality_breakdown,
         elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
-        raw_codeword_hex=raw_codeword_hex,
         payload_mode=result.payload_mode,
         ecc_parity_bytes=result.ecc_parity_bytes,
         payload_bytes=result.payload_symbols,
-        context_info=result.context_info,
+        context_info=context_info,
     )
 
 
 @app.post("/api/decode", response_model=DecodeResponse)
-def decode(req: DecodeRequest):
+def decode(req: DecodeRequest, _: None = Depends(require_api_token)):
     t0 = time.perf_counter()
     decoder = _get_decoder()
 
@@ -293,18 +367,19 @@ def decode(req: DecodeRequest):
 
     context_manager = None
     if req.use_dynamic_context:
-        from src.engine.context import ContextKeyManager
+        context_manager = _build_context_manager(req.context_bucket_seconds)
 
-        context_manager = ContextKeyManager(bucket_seconds=req.context_bucket_seconds)
-
-    result = decoder.decode(
-        req.media_ids,
-        use_ecc=req.use_ecc,
-        raw_codeword=raw_codeword,
-        payload_mode=req.payload_mode,
-        context_manager=context_manager,
-        context_epoch_hint=req.context_epoch_hint,
-    )
+    try:
+        result = decoder.decode(
+            req.media_ids,
+            use_ecc=req.use_ecc,
+            raw_codeword=raw_codeword,
+            payload_mode=req.payload_mode,
+            context_manager=context_manager,
+            context_epoch_hint=req.context_epoch_hint,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     items = []
     decoded_items = []
@@ -366,12 +441,13 @@ def search(req: SearchRequest):
 
 
 @app.get("/api/doctor")
-def doctor():
+def doctor(_: None = Depends(require_api_token)):
     """Full runtime diagnostics (same as `dcass doctor` CLI)."""
     from src.diagnostics import run_doctor
 
     report = run_doctor()
-    return report.to_dict()
+    project_root = Path(__file__).resolve().parent.parent.parent
+    return report.to_public_dict(project_root)
 
 
 @app.get("/api/status", response_model=StatusResponse)
@@ -504,7 +580,7 @@ def get_wire_packets():
 
 
 @app.delete("/api/wire/packets")
-def clear_wire_packets():
+def clear_wire_packets(_: None = Depends(require_api_token)):
     """Clear all packets from shared_channel directory."""
     shared_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
     shared_dir.mkdir(parents=True, exist_ok=True)
@@ -586,7 +662,7 @@ def _transmit_packets_sync(
                     time.sleep(actual_delay)
                 continue
 
-            # Write packet
+            # Write packet (media_id sanitized against path traversal)
             packet = {
                 "media_id": media_id,
                 "channel_id": channel,
@@ -596,8 +672,11 @@ def _transmit_packets_sync(
                 "mode_used": mode_used,
             }
 
-            filename = f"{media_id}_{channel}_{idx:04d}.json"
-            with open(shared_dir / filename, "w") as f:
+            try:
+                path = sanitize_packet_filename(shared_dir, media_id, channel, idx)
+            except ValueError as e:
+                raise RuntimeError(f"refusing unsafe packet write: {e}") from e
+            with open(path, "w") as f:
                 json.dump(packet, f, indent=2)
 
             packet_count += 1
@@ -634,7 +713,11 @@ def _transmit_packets_sync(
 
 
 @app.post("/api/transmit")
-def transmit_sequence(req: TransmitRequest, background_tasks: BackgroundTasks):
+def transmit_sequence(
+    req: TransmitRequest,
+    background_tasks: BackgroundTasks,
+    _: None = Depends(require_api_token),
+):
     """
     Start transmitting a media sequence through the shared channel.
 
@@ -642,6 +725,11 @@ def transmit_sequence(req: TransmitRequest, background_tasks: BackgroundTasks):
     simulating realistic transmission timing.
     """
     global _transmission_active, _transmission_progress
+
+    try:
+        validate_transmit_media_ids(req.media_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Atomically claim the transmitter so concurrent requests cannot double-start
     with _transmission_lock:
@@ -713,7 +801,7 @@ def get_transmission_status():
 
 
 @app.post("/api/transmit/stop")
-def stop_transmission():
+def stop_transmission(_: None = Depends(require_api_token)):
     """Stop the current transmission (best effort)."""
     global _transmission_active, _transmission_progress, _transmission_stop_requested
 

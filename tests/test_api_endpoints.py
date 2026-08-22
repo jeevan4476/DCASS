@@ -160,3 +160,23 @@ def test_api_wire_packets_flow():
     st_res = client.get("/api/transmit/status")
     assert st_res.status_code == 200
     assert "active" in st_res.json()
+
+
+def test_api_cors_preflight_and_headers():
+    for origin in ("http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001"):
+        # Preflight OPTIONS check
+        opt_res = client.options(
+            "/api/ready",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        assert opt_res.status_code == 200
+        assert opt_res.headers.get("access-control-allow-origin") == origin
+
+        # Actual GET request with Origin
+        get_res = client.get("/api/ready", headers={"Origin": origin})
+        assert get_res.status_code == 200
+        assert get_res.headers.get("access-control-allow-origin") == origin
