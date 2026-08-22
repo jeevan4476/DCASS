@@ -47,9 +47,9 @@ def section(title):
 
 print()
 header("DCASS  GAN  STEALTH  DEMO")
-print(f"  System  : Deep Covert Adaptive Steganography")
-print(f"  Mode    : GAN Temporal Pattern Generator")
-print(f"  Device  : CPU")
+print("  System  : Deep Covert Adaptive Steganography")
+print("  Mode    : GAN Temporal Pattern Generator")
+print("  Device  : CPU")
 print(f"  Started : {ts()}")
 line()
 
@@ -141,8 +141,8 @@ print(f"  [{ts()}] Image sequence received: {semantic_payload}")
 print(f"  [{ts()}] Running CLIP caption retrieval...")
 time.sleep(0.5)
 print(f"  [{ts()}] Captions mapped:")
-print(f"           img_4521.jpg  →  'dog playing in water'")
-print(f"           img_982.jpg   →  'man riding bicycle'")
+print("           img_4521.jpg  →  'dog playing in water'")
+print("           img_982.jpg   →  'man riding bicycle'")
 
 print()
 line("═")

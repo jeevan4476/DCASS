@@ -254,7 +254,11 @@ def run_doctor(base_path: Optional[Path] = None) -> DoctorReport:
             if meta_sidecar.exists():
                 try:
                     sidecar = json.loads(meta_sidecar.read_text())
-                    expected = sidecar.get("index_fingerprints", {})
+                    expected_raw = sidecar.get("index_fingerprints", {})
+                    expected = {
+                        m: (v.get("fingerprint") if isinstance(v, dict) else v)
+                        for m, v in expected_raw.items()
+                    }
                     match = expected == fingerprints
                     report.checks.append(
                         CheckResult(
