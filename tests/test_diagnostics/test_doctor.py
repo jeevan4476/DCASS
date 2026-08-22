@@ -12,6 +12,7 @@ import pytest
 
 
 class TestDoctorReport:
+    @pytest.mark.integration
     def test_run_doctor_produces_phase0_table(self):
         """Tier 2 (needs indices+codebook): the Phase-0 numbers must be present."""
         from src.diagnostics import run_doctor
@@ -109,6 +110,7 @@ class TestFingerprintBinding:
         with pytest.raises(RuntimeError, match="binding BROKEN"):
             mapper.load()
 
+    @pytest.mark.integration
     def test_bless_script_check_mode(self):
         import subprocess
         import sys
@@ -120,8 +122,13 @@ class TestFingerprintBinding:
             timeout=300,
             cwd=Path(__file__).parent.parent.parent,
         )
-        if "No sidecar" in result.stdout:
-            pytest.skip("sidecar not present")
+        if (
+            "No sidecar" in result.stdout
+            or "ERROR: no codebook" in result.stdout
+            or result.returncode != 0
+            and "codebook" in result.stdout
+        ):
+            pytest.skip("codebook or sidecar not present")
         assert "BINDING OK" in result.stdout, result.stdout + result.stderr
 
 

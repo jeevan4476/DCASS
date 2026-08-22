@@ -507,9 +507,7 @@ def get_wire_packets():
 def clear_wire_packets():
     """Clear all packets from shared_channel directory."""
     shared_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
-
-    if not shared_dir.exists():
-        return {"success": False, "error": "shared_channel directory not found"}
+    shared_dir.mkdir(parents=True, exist_ok=True)
 
     deleted_count = 0
     try:

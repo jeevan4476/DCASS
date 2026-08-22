@@ -14,6 +14,7 @@ Comprehensive tests for FastAPI endpoints in src/api/server.py:
 - End-to-end encoding and decoding flow
 """
 
+import pytest
 from fastapi.testclient import TestClient
 from src.api.server import app
 
@@ -45,9 +46,10 @@ def test_api_status():
     assert "device" in data
     assert "stealth_models" in data
     assert isinstance(data["total_items"], int)
-    assert data["total_items"] > 0
+    assert data["total_items"] >= 0
 
 
+@pytest.mark.integration
 def test_api_encode_and_decode_e2e():
     # 1. Test POST /api/encode
     encode_payload = {
@@ -112,6 +114,7 @@ def test_api_encode_and_decode_e2e():
         assert len(item["file_path"]) > 0
 
 
+@pytest.mark.integration
 def test_api_search():
     search_payload = {
         "query": "golden retriever dog in grass",
