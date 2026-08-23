@@ -527,7 +527,7 @@ def build_flickr30k_index(
     print("=" * 70)
     print("NEXT STEPS:")
     print("  1. Restart the backend server to load the new index")
-    print("  2. Check status at http://localhost:3000/status")
+    print("  2. Check status at http://localhost:3001/status")
     print("  3. Test encoding with the expanded corpus")
     print("=" * 70)
 

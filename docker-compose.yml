@@ -295,7 +295,7 @@ services:
     container_name: dcass-frontend
     hostname: frontend
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${FRONTEND_PORT:-3001}:3001"
     environment:
       # NEXT_PUBLIC_* is baked into the browser bundle, so this must be a URL
       # the USER'S BROWSER can resolve, not a container-internal hostname.

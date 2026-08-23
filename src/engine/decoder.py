@@ -251,17 +251,12 @@ class SemanticDecoder:
         context_used_epoch: Optional[str] = None
         if context_manager is not None and payload_mode == "exact_vcp":
             if context_epoch_hint:
-                from src.engine.context.key_manager import ContextEpoch
-
-                parts = context_epoch_hint.split("|")
-                epoch = ContextEpoch(
-                    bucket_start=int(parts[0]),
-                    bucket_seconds=int(parts[1]),
-                    sources=tuple(parts[2].split(",")) if len(parts) > 2 else ("time",),
-                )
-                candidates = [epoch]
+                # Validated parse + re-fetch external source materials.
+                # Raises ValueError on malformed hints (API maps to 400).
+                candidates = [context_manager.resolve_epoch_hint(context_epoch_hint)]
             else:
                 candidates = context_manager.candidate_epochs(time.time())
+            frame_secret = context_manager.secret
             codeword, missing_ids = self.payload_mapper.decode_symbols(media_ids)
             if not missing_ids:
                 rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes) if use_ecc else None
@@ -271,13 +266,12 @@ class SemanticDecoder:
                     if rs_ecc is not None:
                         data, ok, fixed = rs_ecc.decode_bytes(recovered)
                         if ok:
-                            # Decision 4: RS success alone has a small
-                            # false-accept rate; require the frame CRC to
-                            # verify before accepting this epoch.
+                            # Decision 4: require frame integrity/auth
+                            # (CRC or HMAC) before accepting this epoch.
                             try:
-                                text, _ = unframe_payload(data)
+                                text, _ = unframe_payload(data, secret=frame_secret)
                             except FrameError:
-                                continue  # CRC failed -> wrong epoch
+                                continue  # integrity failed -> wrong epoch
                             context_used_epoch = epoch.epoch_id
                             return self._build_result(
                                 media_ids=media_ids,
@@ -371,7 +365,7 @@ class SemanticDecoder:
             elif use_ecc:
                 data, ecc_success, ecc_errors_fixed = rs_ecc.decode_bytes(codeword)
                 try:
-                    # Framed transport (current encoder default). A CRC
+                    # Framed transport (current encoder default). Integrity
                     # failure here means corruption beyond RS capacity.
                     ecc_payload, _framed = unframe_payload(data)
                 except FrameError:

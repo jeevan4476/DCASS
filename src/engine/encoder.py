@@ -506,9 +506,13 @@ class SemanticEncoder:
         if not message:
             raise ValueError("Message produced no valid chunks")
 
-        # Frame first (Decision 4): version + length + CRC-16 header.
+        # Frame first (Decision 4): CRC integrity frame, or HMAC when a
+        # context secret is present (keyed authenticity).
+        frame_secret = (
+            context_manager.secret if context_manager is not None else None
+        )
         try:
-            framed = frame_payload(message)
+            framed = frame_payload(message, secret=frame_secret)
         except ValueError as e:
             raise ValueError(f"payload framing failed: {e}")
         if use_ecc:
@@ -541,6 +545,7 @@ class SemanticEncoder:
                 "bucket_start": epoch.bucket_start,
                 "bucket_seconds": epoch.bucket_seconds,
                 "sources": list(epoch.sources),
+                "context_mode": "keyed" if context_manager.secret else "obfuscation",
             }
 
         # Cover-story ranking query (Decision 5): never derive it from the

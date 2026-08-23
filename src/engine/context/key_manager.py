@@ -181,6 +181,62 @@ class ContextKeyManager:
                 unique.append(e)
         return unique
 
+    def resolve_epoch_hint(self, hint: str) -> ContextEpoch:
+        """
+        Parse an encode-side epoch_id and rebuild a ContextEpoch.
+
+        External sources listed in the hint are re-fetched (not left empty),
+        so keyed material matches a live encode for the same wall-clock window.
+        Raises ValueError on malformed hints or unknown sources.
+        """
+        if not hint or not isinstance(hint, str):
+            raise ValueError("context_epoch_hint must be a non-empty string")
+        parts = hint.split("|")
+        if len(parts) < 2:
+            raise ValueError(
+                "context_epoch_hint must be 'bucket_start|bucket_seconds' "
+                "or 'bucket_start|bucket_seconds|sources'"
+            )
+        try:
+            bucket_start = int(parts[0])
+            bucket_seconds = int(parts[1])
+        except ValueError as e:
+            raise ValueError("context_epoch_hint bucket fields must be integers") from e
+        if bucket_seconds <= 0:
+            raise ValueError("context_epoch_hint bucket_seconds must be positive")
+
+        if len(parts) > 2 and parts[2].strip():
+            sources = tuple(s for s in parts[2].split(",") if s)
+        else:
+            sources = ("time",)
+        if "time" not in sources:
+            sources = ("time",) + sources
+
+        unknown = [s for s in sources if s != "time" and s not in self._source_fetchers]
+        if unknown:
+            raise ValueError(f"Unknown context sources in hint: {unknown}")
+
+        materials: dict[str, str] = {"time": str(bucket_start)}
+        for name in sources:
+            if name == "time":
+                continue
+            fetcher = self._source_fetchers.get(name)
+            if fetcher is None:
+                raise ValueError(f"No fetcher for context source '{name}'")
+            try:
+                materials[name] = fetcher(self.fetch_timeout)
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to refresh context source '{name}' for epoch hint: {e}"
+                ) from e
+
+        return ContextEpoch(
+            bucket_start=bucket_start,
+            bucket_seconds=bucket_seconds,
+            sources=sources,
+            source_materials=materials,
+        )
+
     # ------------------------------------------------------------------
     # Permutation derivation
     # ------------------------------------------------------------------
@@ -189,10 +245,17 @@ class ContextKeyManager:
         """
         Deterministic permutation P for *epoch* where sending byte b uses
         cluster P[b].
+
+        Uses the full SHA-256 digest as a NumPy SeedSequence (256 bits of
+        entropy), not a truncated 64-bit integer seed.
         """
         seed_bytes = epoch.canonical_material(self.secret)
-        seed = int.from_bytes(hashlib.sha256(seed_bytes).digest()[:8], "big")
-        rng = np.random.default_rng(seed)
+        digest = hashlib.sha256(seed_bytes).digest()
+        # SeedSequence consumes a sequence of uint32; use all 32 digest bytes.
+        seed_seq = np.random.SeedSequence(
+            [int.from_bytes(digest[i : i + 4], "big") for i in range(0, 32, 4)]
+        )
+        rng = np.random.default_rng(seed_seq)
         perm = rng.permutation(self.NUM_SYMBOLS)
         return perm.astype(np.int64)
 

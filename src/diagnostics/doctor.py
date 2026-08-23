@@ -56,6 +56,36 @@ class DoctorReport:
             "phase0": self.phase0,
         }
 
+    def to_public_dict(self, project_root: Optional[Path] = None) -> dict:
+        """
+        API-safe report: scrub absolute host paths from check details.
+
+        CLI `render()` keeps absolute paths for local debugging; remote
+        callers get relative-to-project (or basename) strings only.
+        """
+        root = (project_root or Path(__file__).resolve().parent.parent.parent).resolve()
+        root_s = str(root)
+
+        def _scrub(text: str) -> str:
+            if not text:
+                return text
+            if root_s in text:
+                return text.replace(root_s, ".")
+            # Also collapse any other absolute path segments to their basename
+            # when the detail is a lone path.
+            p = Path(text)
+            if p.is_absolute():
+                try:
+                    return str(p.relative_to(root))
+                except ValueError:
+                    return p.name
+            return text
+
+        data = self.to_dict()
+        for check in data["checks"]:
+            check["detail"] = _scrub(check.get("detail", ""))
+        return data
+
     def render(self) -> str:
         lines = ["DCASS DOCTOR", "=" * 60]
         for c in self.checks:
