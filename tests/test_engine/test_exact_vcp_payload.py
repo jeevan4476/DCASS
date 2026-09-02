@@ -85,26 +85,11 @@ def fake_index():
     return index
 
 
-def test_legacy_ecc_does_not_recover_payload_from_media_ids_alone(fake_index):
+def test_legacy_mode_rejected(fake_index):
     encoder = SemanticEncoder(index=fake_index)
     encoder._loaded = True
-    decoder = SemanticDecoder(index=fake_index)
-    decoder._loaded = True
-
-    result = encoder.encode(
-        "alpha bravo",
-        use_ecc=True,
-        payload_mode="semantic_legacy",
-    )
-    decoded = decoder.decode(
-        result.media_ids,
-        use_ecc=True,
-        payload_mode="semantic_legacy",
-    )
-
-    assert result.ecc_codeword is not None
-    assert decoded.ecc_payload is None
-    assert decoded.reconstructed_meaning != "alpha bravo"
+    with pytest.raises((ValueError, TypeError)):
+        encoder.encode("alpha bravo", payload_mode="semantic_legacy")
 
 
 def test_exact_vcp_round_trip_recovers_payload_without_raw_codeword(fake_index):
@@ -120,13 +105,11 @@ def test_exact_vcp_round_trip_recovers_payload_without_raw_codeword(fake_index):
         "alpha bravo",
         use_ecc=True,
         ecc_parity_bytes=4,
-        payload_mode="exact_vcp",
     )
     decoded = decoder.decode(
         result.media_ids,
         use_ecc=True,
         ecc_parity_bytes=4,
-        payload_mode="exact_vcp",
     )
 
     assert decoded.ecc_success is True
@@ -148,7 +131,6 @@ def test_exact_vcp_reports_failure_when_rs_capacity_is_exceeded(fake_index):
         "alpha bravo",
         use_ecc=True,
         ecc_parity_bytes=4,
-        payload_mode="exact_vcp",
     )
 
     corrupted_ids = list(result.media_ids)
@@ -160,7 +142,6 @@ def test_exact_vcp_reports_failure_when_rs_capacity_is_exceeded(fake_index):
         corrupted_ids,
         use_ecc=True,
         ecc_parity_bytes=4,
-        payload_mode="exact_vcp",
     )
 
     assert decoded.ecc_success is False

@@ -26,6 +26,39 @@ from src.engine.encoder import (
 )
 from src.engine.chunker import SemanticChunk
 from src.corpus.index.unified_index import MediaItem
+from src.engine.vcp_payload import PayloadCarrier
+
+
+class FakePayloadMapper:
+    def __init__(self):
+        self.id_to_symbol: dict[str, int] = {}
+        self.counter = 0
+
+    def select_carrier(
+        self,
+        symbol: int,
+        query: str = "",
+        modalities: list[str] | None = None,
+        used_ids: set[str] | None = None,
+        avoid_duplicates: bool = True,
+    ) -> PayloadCarrier:
+        modality = (modalities or ["text"])[0]
+        media_id = f"{modality}_{symbol:02x}_{self.counter}"
+        if avoid_duplicates and media_id in (used_ids or set()):
+            raise RuntimeError(f"Duplicate carrier for {symbol}")
+        self.counter += 1
+        self.id_to_symbol[media_id] = int(symbol)
+        media = MediaItem(
+            id=media_id,
+            modality=modality,
+            content=f"carrier for 0x{symbol:02x}",
+            score=0.8,
+            normalized_score=0.8,
+            _file_path=f"/fake/path/{media_id}.jpg",
+            _file_path_resolved=True,
+            metadata={"text": f"carrier for 0x{symbol:02x}"},
+        )
+        return PayloadCarrier(media, int(symbol), self.counter - 1, self.counter - 1, 0.8)
 
 
 # ============================================================
@@ -52,6 +85,8 @@ def mock_index():
                     content=f"Content for {query}",
                     score=0.8 - i * 0.1,
                     normalized_score=0.8 - i * 0.1,
+                    _file_path=f"/fake/path/{modality}_{i:05d}.jpg",
+                    _file_path_resolved=True,
                     metadata={"text": f"Content for {query}"},
                 )
             )
@@ -63,9 +98,10 @@ def mock_index():
 
 @pytest.fixture
 def mock_encoder(mock_index):
-    """Create an encoder with mock index."""
+    """Create an encoder with mock index and fake payload mapper."""
     encoder = SemanticEncoder(index=mock_index)
     encoder._loaded = True
+    encoder._payload_mapper = FakePayloadMapper()
     return encoder
 
 
@@ -114,6 +150,24 @@ class TestEncoderInit:
         encoder = SemanticEncoder(index=mock_index)
 
         assert encoder.index is mock_index
+
+    def test_semantic_legacy_mode_raises(self):
+        """semantic_legacy is removed; passing it must raise immediately."""
+        enc = SemanticEncoder()
+        enc._loaded = True
+        with pytest.raises((ValueError, TypeError)):
+            enc.encode("hello", payload_mode="semantic_legacy")
+
+    def test_default_payload_mode_is_exact_vcp(self):
+        """encode() default must route to exact_vcp, not legacy."""
+        import inspect
+
+        sig = inspect.signature(SemanticEncoder.encode)
+        params = sig.parameters
+        if "payload_mode" in params:
+            assert params["payload_mode"].default == "exact_vcp"
+        else:
+            assert "payload_mode" not in params
 
 
 # ============================================================
@@ -344,45 +398,52 @@ class TestEncoderEdgeCases:
             pass
 
     def test_no_search_results_raises(self, mock_encoder):
-        """Test that no search results raises RuntimeError."""
-        mock_encoder.index.search.side_effect = lambda **kwargs: []
+        """Test that failure to find carriers raises RuntimeError."""
+        mock_encoder._payload_mapper.select_carrier = Mock(
+            side_effect=RuntimeError("Cannot encode byte")
+        )
 
-        with pytest.raises(RuntimeError, match="No media found"):
+        with pytest.raises(RuntimeError, match="Cannot encode byte"):
             mock_encoder.encode("Test message with no results")
 
     def test_avoid_duplicates(self, mock_encoder):
         """Test that duplicates are avoided when requested."""
-        # Return same ID multiple times
-        mock_encoder.index.search.side_effect = lambda **kwargs: (
-            [
-                MediaItem(
-                    id="same_id",
-                    modality="text",
-                    content="Content",
-                    score=0.8,
-                    normalized_score=0.8,
-                    metadata={},
-                )
-            ]
-            * 10
-        )
-
-        # Should raise because all IDs are duplicates after first
-        with pytest.raises(RuntimeError, match="already used"):
-            mock_encoder.encode("First, second, third", avoid_duplicates=True)
-
-    def test_allow_duplicates(self, mock_encoder):
-        """Test that duplicates are allowed when flag is False."""
-        mock_encoder.index.search.side_effect = lambda **kwargs: [
-            MediaItem(
+        def duplicate_select(symbol, query="", modalities=None, used_ids=None, avoid_duplicates=True):
+            if avoid_duplicates and used_ids and "same_id" in used_ids:
+                raise RuntimeError("already used")
+            media = MediaItem(
                 id="same_id",
                 modality="text",
                 content="Content",
                 score=0.8,
                 normalized_score=0.8,
+                _file_path="/fake/path/same_id.txt",
+                _file_path_resolved=True,
                 metadata={},
             )
-        ]
+            return PayloadCarrier(media, int(symbol), 0, 0, 0.8)
+
+        mock_encoder._payload_mapper.select_carrier = Mock(side_effect=duplicate_select)
+
+        with pytest.raises(RuntimeError, match="already used"):
+            mock_encoder.encode("First, second, third", avoid_duplicates=True)
+
+    def test_allow_duplicates(self, mock_encoder):
+        """Test that duplicates are allowed when flag is False."""
+        def duplicate_select(symbol, query="", modalities=None, used_ids=None, avoid_duplicates=True):
+            media = MediaItem(
+                id="same_id",
+                modality="text",
+                content="Content",
+                score=0.8,
+                normalized_score=0.8,
+                _file_path="/fake/path/same_id.txt",
+                _file_path_resolved=True,
+                metadata={},
+            )
+            return PayloadCarrier(media, int(symbol), 0, 0, 0.8)
+
+        mock_encoder._payload_mapper.select_carrier = Mock(side_effect=duplicate_select)
 
         result = mock_encoder.encode("First, second, third", avoid_duplicates=False)
 
@@ -454,18 +515,37 @@ class TestEncoderIntegration:
 
     @pytest.fixture(autouse=True)
     def check_indices(self):
-        """Skip if indices don't exist."""
+        """Skip if indices don't exist or codebook fingerprint is stale."""
+        import json
+        import hashlib
+        import numpy as np
+        import faiss
         from pathlib import Path
 
-        index_path = (
-            Path(__file__).parent.parent.parent
-            / "storage"
-            / "data"
-            / "indices"
-            / "text.index"
-        )
+        base = Path(__file__).parent.parent.parent / "storage" / "data" / "indices"
+        index_path = base / "text.index"
         if not index_path.exists():
             pytest.skip("Indices not built")
+
+        # Skip if the VCP codebook fingerprint doesn't match the live image index.
+        # Exact-VCP mode now always runs the binding check — when the sidecar is
+        # stale the test would fail with a RuntimeError, not a test assertion failure.
+        sidecar = base / "voronoi_codebook.meta.json"
+        img_index = base / "image.index"
+        if sidecar.exists() and img_index.exists():
+            try:
+                meta = json.loads(sidecar.read_text())
+                exp = meta.get("index_fingerprints", {}).get("image", {}).get("fingerprint")
+                if exp:
+                    idx = faiss.read_index(str(img_index))
+                    ntotal = int(idx.ntotal)
+                    v0 = np.asarray(idx.reconstruct(0), dtype=np.float32).tobytes()
+                    vn = np.asarray(idx.reconstruct(ntotal - 1), dtype=np.float32).tobytes() if ntotal > 1 else b""
+                    live_fp = hashlib.sha256(v0 + vn + str(ntotal).encode()).hexdigest()[:16]
+                    if live_fp != exp:
+                        pytest.skip("VCP codebook fingerprint stale — re-bless before running integration tests")
+            except Exception:
+                pass  # If the check itself fails, let the test run and fail naturally
 
     def test_real_encode(self, loaded_encoder):
         """Test encoding with real indices."""
@@ -514,22 +594,38 @@ class TestEncoderIntegration:
 
 @pytest.mark.integration
 class TestEncodeMessageFunction:
-    """Test the encode_message convenience function."""
+    """Tests for encode_message convenience function."""
 
     @pytest.fixture(autouse=True)
     def check_indices(self):
-        """Skip if indices don't exist."""
+        """Skip if indices don't exist or codebook fingerprint is stale."""
+        import json
+        import hashlib
+        import numpy as np
+        import faiss
         from pathlib import Path
 
-        index_path = (
-            Path(__file__).parent.parent.parent
-            / "storage"
-            / "data"
-            / "indices"
-            / "text.index"
-        )
+        base = Path(__file__).parent.parent.parent / "storage" / "data" / "indices"
+        index_path = base / "text.index"
         if not index_path.exists():
             pytest.skip("Indices not built")
+
+        sidecar = base / "voronoi_codebook.meta.json"
+        img_index = base / "image.index"
+        if sidecar.exists() and img_index.exists():
+            try:
+                meta = json.loads(sidecar.read_text())
+                exp = meta.get("index_fingerprints", {}).get("image", {}).get("fingerprint")
+                if exp:
+                    idx = faiss.read_index(str(img_index))
+                    ntotal = int(idx.ntotal)
+                    v0 = np.asarray(idx.reconstruct(0), dtype=np.float32).tobytes()
+                    vn = np.asarray(idx.reconstruct(ntotal - 1), dtype=np.float32).tobytes() if ntotal > 1 else b""
+                    live_fp = hashlib.sha256(v0 + vn + str(ntotal).encode()).hexdigest()[:16]
+                    if live_fp != exp:
+                        pytest.skip("VCP codebook fingerprint stale — re-bless before running integration tests")
+            except Exception:
+                pass  # If the check itself fails, let the test run and fail naturally
 
     def test_encode_message_basic(self):
         """Test basic encode_message usage."""

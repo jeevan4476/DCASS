@@ -96,12 +96,11 @@ class TestContextualCodecRoundtrip:
         mgr = self._mgr()
         msg = "Keyed channel works"
 
-        result = encoder.encode(msg, payload_mode="exact_vcp", use_ecc=True, context_manager=mgr)
+        result = encoder.encode(msg, use_ecc=True, context_manager=mgr)
         assert result.context_info.get("epoch_id")
 
         decoded = decoder.decode(
             result.media_ids,
-            payload_mode="exact_vcp",
             use_ecc=True,
             context_manager=mgr,
             context_epoch_hint=result.context_info["epoch_id"],
@@ -117,13 +116,12 @@ class TestContextualCodecRoundtrip:
         msg = "Classified rendezvous"
 
         result = encoder.encode(
-            msg, payload_mode="exact_vcp", use_ecc=True, context_manager=sender_mgr
+            msg, use_ecc=True, context_manager=sender_mgr
         )
 
         wrong_mgr = self._mgr(secret=b"wrong-secret")
         decoded = decoder.decode(
             result.media_ids,
-            payload_mode="exact_vcp",
             use_ecc=True,
             context_manager=wrong_mgr,
         )
@@ -138,11 +136,10 @@ class TestContextualCodecRoundtrip:
         mgr = self._mgr(secret=b"k")
         result = encoder.encode(
             "Hidden in plain sight",
-            payload_mode="exact_vcp",
             use_ecc=True,
             context_manager=mgr,
         )
-        decoded = decoder.decode(result.media_ids, payload_mode="exact_vcp", use_ecc=True)
+        decoded = decoder.decode(result.media_ids, use_ecc=True)
         assert not (
             decoded.ecc_success and decoded.reconstructed_meaning == "Hidden in plain sight"
         )
@@ -151,11 +148,10 @@ class TestContextualCodecRoundtrip:
         encoder, decoder = codec
         mgr = self._mgr()
         result = encoder.encode(
-            "hint path", payload_mode="exact_vcp", use_ecc=True, context_manager=mgr
+            "hint path", use_ecc=True, context_manager=mgr
         )
         decoded = decoder.decode(
             result.media_ids,
-            payload_mode="exact_vcp",
             use_ecc=True,
             context_manager=mgr,
             context_epoch_hint=result.context_info["epoch_id"],

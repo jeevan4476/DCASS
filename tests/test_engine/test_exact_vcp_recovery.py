@@ -151,8 +151,8 @@ def setup():
 def test_clean_roundtrip_through_vcp(setup):
     encoder, decoder, _ = setup
     msg = "Meet at noon"
-    result = encoder.encode(msg, payload_mode="exact_vcp", use_ecc=True)
-    decoded = decoder.decode(result.media_ids, payload_mode="exact_vcp", use_ecc=True)
+    result = encoder.encode(msg, use_ecc=True)
+    decoded = decoder.decode(result.media_ids, use_ecc=True)
     assert decoded.ecc_success
     assert decoded.reconstructed_meaning == msg
 
@@ -161,7 +161,7 @@ def test_rs_recovery_through_corrupted_carriers(setup):
     """Swap up to t=4 carriers with wrong-cluster IDs; RS must recover."""
     encoder, decoder, mapper = setup
     msg = "Attack at dawn"
-    result = encoder.encode(msg, payload_mode="exact_vcp", use_ecc=True)
+    result = encoder.encode(msg, use_ecc=True)
     ids = list(result.media_ids)
 
     # Build a lookup of substitute carriers from a DIFFERENT cluster.
@@ -186,7 +186,7 @@ def test_rs_recovery_through_corrupted_carriers(setup):
         used.add(replacement)
         corrupted[pos] = replacement
 
-    decoded = decoder.decode(corrupted, payload_mode="exact_vcp", use_ecc=True)
+    decoded = decoder.decode(corrupted, use_ecc=True)
     assert decoded.ecc_success, "RS-ECC should correct 4 corrupted carriers"
     assert decoded.reconstructed_meaning == msg
 
@@ -195,7 +195,7 @@ def test_beyond_capacity_reports_failure(setup):
     """More than t corruptions must NOT silently pass as success."""
     encoder, decoder, mapper = setup
     msg = "A longer message that gives us room to corrupt many bytes safely."
-    result = encoder.encode(msg, payload_mode="exact_vcp", use_ecc=True)
+    result = encoder.encode(msg, use_ecc=True)
     ids = list(result.media_ids)
 
     by_symbol = {}
@@ -219,7 +219,7 @@ def test_beyond_capacity_reports_failure(setup):
         used.add(replacement)
         corrupted[pos] = replacement
 
-    decoded = decoder.decode(corrupted, payload_mode="exact_vcp", use_ecc=True)
+    decoded = decoder.decode(corrupted, use_ecc=True)
     # Beyond-capacity corruption must be detected (no silent wrong output).
     assert not decoded.ecc_success or decoded.reconstructed_meaning == msg, (
         "Decoder claimed success on a beyond-capacity corruption"

@@ -180,3 +180,68 @@ def test_api_cors_preflight_and_headers():
         get_res = client.get("/api/ready", headers={"Origin": origin})
         assert get_res.status_code == 200
         assert get_res.headers.get("access-control-allow-origin") == origin
+
+
+@pytest.mark.integration
+def test_api_encode_dssc_mode():
+    """DSSC mode returns fewer carriers and echoes mode='dssc'."""
+    import os
+    session_key_hex = os.urandom(32).hex()
+    resp = client.post("/api/encode", json={
+        "message": "Attack at dawn",
+        "mode": "dssc",
+        "session_key_hex": session_key_hex,
+        "use_ecc": True,
+    })
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["mode"] == "dssc"
+    assert data["carrier_count"] <= 15
+    assert data["carrier_count"] < 26  # Less than exact_vcp (which needs 26 carriers)
+    assert "session_key_hex" not in data   # key must NOT be echoed
+
+
+@pytest.mark.integration
+def test_api_decode_dssc_roundtrip():
+    """Encode then decode in DSSC mode recovers the original message."""
+    import os
+    session_key_hex = os.urandom(32).hex()
+    message = "Attack at dawn"
+
+    enc = client.post("/api/encode", json={
+        "message": message,
+        "mode": "dssc",
+        "session_key_hex": session_key_hex,
+        "use_ecc": True,
+    }).json()
+
+    dec = client.post("/api/decode", json={
+        "media_ids": enc["media_ids"],
+        "mode": "dssc",
+        "session_key_hex": session_key_hex,
+        "use_ecc": True,
+    }).json()
+
+    assert dec["ecc_success"] is True
+    assert dec["reconstructed_meaning"] == message
+
+
+def test_api_dssc_missing_session_key():
+    """DSSC encode without session_key_hex returns HTTP 400."""
+    resp = client.post("/api/encode", json={
+        "message": "hello",
+        "mode": "dssc",
+    })
+    assert resp.status_code == 400
+    assert "session_key" in resp.json()["detail"].lower()
+
+
+def test_api_dssc_invalid_hex_key():
+    """DSSC encode with non-hex session_key_hex returns HTTP 400."""
+    resp = client.post("/api/encode", json={
+        "message": "hello",
+        "mode": "dssc",
+        "session_key_hex": "not-valid-hex!!!",
+    })
+    assert resp.status_code == 400
+

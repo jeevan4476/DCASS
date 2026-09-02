@@ -79,11 +79,34 @@ def mock_index():
     return index
 
 
+class FakeDecoderPayloadMapper:
+    """Mock payload mapper for unit tests."""
+
+    def __init__(self, mapping: dict[str, int] | None = None):
+        self.mapping = mapping or {}
+
+    def symbol_for_media_id(self, media_id: str):
+        return self.mapping.get(media_id)
+
+    def decode_symbols(self, media_ids: list[str]):
+        symbols = bytearray()
+        missing = []
+        for media_id in media_ids:
+            sym = self.mapping.get(media_id)
+            if sym is None:
+                missing.append(media_id)
+                symbols.append(0)
+            else:
+                symbols.append(sym)
+        return bytes(symbols), missing
+
+
 @pytest.fixture
 def mock_decoder(mock_index):
-    """Create a decoder with mock index."""
+    """Create a decoder with mock index and fake payload mapper."""
     decoder = SemanticDecoder(index=mock_index)
     decoder._loaded = True
+    decoder._payload_mapper = FakeDecoderPayloadMapper()
     return decoder
 
 
@@ -98,6 +121,40 @@ def loaded_decoder():
     decoder = SemanticDecoder()
     decoder.load()
     return decoder
+
+
+# ============================================================
+# Legacy Mode Removal Tests
+# ============================================================
+
+
+class TestLegacyModeRemoved:
+    """Test that semantic_legacy mode and raw_codeword parameter are removed."""
+
+    def test_legacy_mode_raises(self):
+        """semantic_legacy is removed; passing it must raise immediately."""
+        dec = SemanticDecoder()
+        dec._loaded = True
+        with pytest.raises((ValueError, TypeError)):
+            dec.decode(["any_id"], payload_mode="semantic_legacy")
+
+    def test_raw_codeword_param_removed(self):
+        """raw_codeword side-channel param should no longer exist."""
+        import inspect
+
+        sig = inspect.signature(SemanticDecoder.decode)
+        assert "raw_codeword" not in sig.parameters
+
+    def test_default_payload_mode_is_exact_vcp(self):
+        """decode() default signature must not use semantic_legacy."""
+        import inspect
+
+        sig = inspect.signature(SemanticDecoder.decode)
+        params = sig.parameters
+        if "payload_mode" in params:
+            assert params["payload_mode"].default == "exact_vcp"
+        else:
+            assert "payload_mode" not in params
 
 
 # ============================================================
@@ -189,6 +246,111 @@ class TestDecoderBasicDecoding:
 
         assert isinstance(text, str)
         assert "|" in text  # Separator between items
+
+
+# ============================================================
+# Exact VCP Decoding Tests
+# ============================================================
+
+class TestExactVCPDecoding:
+    """Test exact VCP decoding paths (unkeyed framed, RS-ECC, keyed)."""
+
+    def test_decode_framed_payload_unkeyed(self, mock_index):
+        """Test decoding an unkeyed framed payload."""
+        from src.engine.payload_framing import frame_payload
+
+        secret_text = "Secret DCASS message"
+        framed_bytes = frame_payload(secret_text)
+
+        # Map media IDs to the framed bytes
+        mapping = {}
+        media_ids = []
+        for i, b in enumerate(framed_bytes):
+            mid = f"text_{i:05d}"
+            media_ids.append(mid)
+            mapping[mid] = b
+
+        decoder = SemanticDecoder(index=mock_index)
+        decoder._loaded = True
+        decoder._payload_mapper = FakeDecoderPayloadMapper(mapping)
+
+        result = decoder.decode(media_ids)
+        assert result.ecc_success
+        assert result.ecc_payload == secret_text
+        assert result.reconstructed_meaning == secret_text
+        assert result.payload_mode == "exact_vcp"
+
+    def test_decode_rs_ecc_payload(self, mock_index):
+        """Test decoding a payload protected by Reed-Solomon ECC with corruption."""
+        from src.engine.ecc import RSErrorCorrection
+        from src.engine.payload_framing import frame_payload
+
+        secret_text = "ECC protected"
+        framed_bytes = frame_payload(secret_text)
+        rs = RSErrorCorrection(parity_bytes=8)
+        codeword = rs.encode(framed_bytes)
+
+        # Corrupt 2 bytes
+        corrupted = bytearray(codeword)
+        corrupted[0] ^= 0xFF
+        corrupted[1] ^= 0xFF
+
+        mapping = {}
+        media_ids = []
+        for i, b in enumerate(corrupted):
+            mid = f"text_{i:05d}"
+            media_ids.append(mid)
+            mapping[mid] = b
+
+        decoder = SemanticDecoder(index=mock_index)
+        decoder._loaded = True
+        decoder._payload_mapper = FakeDecoderPayloadMapper(mapping)
+
+        result = decoder.decode(media_ids, use_ecc=True, ecc_parity_bytes=8)
+        assert result.ecc_success
+        assert len(result.ecc_errors_fixed) == 2
+        assert result.reconstructed_meaning == secret_text
+
+    def test_decode_keyed_with_context_manager(self, mock_index):
+        """Test decoding with dynamic context keying."""
+        from src.engine.ecc import RSErrorCorrection
+        from src.engine.payload_framing import frame_payload
+
+        secret_text = "Keyed secret"
+        mock_ctx = Mock()
+        mock_ctx.secret = b"ctx_secret_32b_length_exactly_32"
+
+        epoch = Mock()
+        epoch.epoch_id = "2026-09-02T08:00:00Z"
+        mock_ctx.candidate_epochs.return_value = [epoch]
+
+        framed = frame_payload(secret_text, secret=mock_ctx.secret)
+        rs = RSErrorCorrection(parity_bytes=8)
+        codeword = rs.encode(framed)
+
+        # Permutation: cycle shifts bytes by 1
+        perm = [(b + 1) % 256 for b in range(256)]
+        inv_perm = {perm[i]: i for i in range(256)}
+        mock_ctx.derive_inverse_permutation.return_value = inv_perm
+
+        # Permute the framed bytes for transmission
+        permuted_bytes = bytes(perm[b] for b in codeword)
+
+        mapping = {}
+        media_ids = []
+        for i, b in enumerate(permuted_bytes):
+            mid = f"text_{i:05d}"
+            media_ids.append(mid)
+            mapping[mid] = b
+
+        decoder = SemanticDecoder(index=mock_index)
+        decoder._loaded = True
+        decoder._payload_mapper = FakeDecoderPayloadMapper(mapping)
+
+        result = decoder.decode(media_ids, use_ecc=True, ecc_parity_bytes=8, context_manager=mock_ctx)
+        assert result.ecc_success
+        assert result.context_epoch_id == "2026-09-02T08:00:00Z"
+        assert result.reconstructed_meaning == secret_text
 
 
 # ============================================================
@@ -409,11 +571,37 @@ class TestDecoderIntegration:
 
     @pytest.fixture(autouse=True)
     def check_indices(self):
-        """Skip if indices don't exist."""
+        """Skip if indices don't exist or codebook fingerprint is stale."""
+        import json
+        import hashlib
+        import numpy as np
+        import faiss
         from pathlib import Path
-        index_path = Path(__file__).parent.parent.parent / "storage" / "data" / "indices" / "text.index"
+
+        base = Path(__file__).parent.parent.parent / "storage" / "data" / "indices"
+        index_path = base / "text.index"
         if not index_path.exists():
             pytest.skip("Indices not built")
+
+        # Skip if the VCP codebook fingerprint doesn't match the live image index.
+        # Exact-VCP mode now always runs the binding check — when the sidecar is
+        # stale the test would fail with a RuntimeError, not a test assertion failure.
+        sidecar = base / "voronoi_codebook.meta.json"
+        img_index = base / "image.index"
+        if sidecar.exists() and img_index.exists():
+            try:
+                meta = json.loads(sidecar.read_text())
+                exp = meta.get("index_fingerprints", {}).get("image", {}).get("fingerprint")
+                if exp:
+                    idx = faiss.read_index(str(img_index))
+                    ntotal = int(idx.ntotal)
+                    v0 = np.asarray(idx.reconstruct(0), dtype=np.float32).tobytes()
+                    vn = np.asarray(idx.reconstruct(ntotal - 1), dtype=np.float32).tobytes() if ntotal > 1 else b""
+                    live_fp = hashlib.sha256(v0 + vn + str(ntotal).encode()).hexdigest()[:16]
+                    if live_fp != exp:
+                        pytest.skip("VCP codebook fingerprint stale — re-bless before running integration tests")
+            except Exception:
+                pass  # If the check itself fails, let the test run and fail naturally
 
     def test_real_decode(self, loaded_decoder):
         """Test decoding with real indices."""
@@ -435,11 +623,34 @@ class TestDecodeMediaSequenceFunction:
 
     @pytest.fixture(autouse=True)
     def check_indices(self):
-        """Skip if indices don't exist."""
+        """Skip if indices don't exist or codebook fingerprint is stale."""
+        import json
+        import hashlib
+        import numpy as np
+        import faiss
         from pathlib import Path
-        index_path = Path(__file__).parent.parent.parent / "storage" / "data" / "indices" / "text.index"
+
+        base = Path(__file__).parent.parent.parent / "storage" / "data" / "indices"
+        index_path = base / "text.index"
         if not index_path.exists():
             pytest.skip("Indices not built")
+
+        sidecar = base / "voronoi_codebook.meta.json"
+        img_index = base / "image.index"
+        if sidecar.exists() and img_index.exists():
+            try:
+                meta = json.loads(sidecar.read_text())
+                exp = meta.get("index_fingerprints", {}).get("image", {}).get("fingerprint")
+                if exp:
+                    idx = faiss.read_index(str(img_index))
+                    ntotal = int(idx.ntotal)
+                    v0 = np.asarray(idx.reconstruct(0), dtype=np.float32).tobytes()
+                    vn = np.asarray(idx.reconstruct(ntotal - 1), dtype=np.float32).tobytes() if ntotal > 1 else b""
+                    live_fp = hashlib.sha256(v0 + vn + str(ntotal).encode()).hexdigest()[:16]
+                    if live_fp != exp:
+                        pytest.skip("VCP codebook fingerprint stale — re-bless before running integration tests")
+            except Exception:
+                pass  # If the check itself fails, let the test run and fail naturally
 
     def test_decode_media_sequence_basic(self):
         """Test basic decode_media_sequence usage."""
