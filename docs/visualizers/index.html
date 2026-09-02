@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DCASS — Architecture Visualizer Suite</title>
+    <style>
+        :root {
+            --bg: #070a13;
+            --card-bg: #0f172a;
+            --border: #1e293b;
+            --primary: #3b82f6;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            padding: 30px 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 35px;
+        }
+        header h1 {
+            font-size: 2.2rem;
+            color: #93c5fd;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        header p {
+            color: var(--text-muted);
+            font-size: 1rem;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .evolution-banner {
+            background: #0d1527;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .evo-step {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .evo-step .tag {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .evo-step .val {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        .evo-arrow { color: #64748b; font-size: 1.2rem; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+            gap: 20px;
+        }
+        .portal-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            text-decoration: none;
+            color: var(--text-main);
+            transition: all 0.25s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .portal-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--primary);
+            box-shadow: 0 12px 30px rgba(59, 130, 246, 0.25);
+        }
+        .card-num {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: #60a5fa;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 10px;
+        }
+        .card-desc {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+        .btn-launch {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #60a5fa;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>DCASS Architecture and Physics Visualizer Suite</h1>
+    <p>Interactive demonstration suite for spherical hypersphere clustering, algebraic Reed-Solomon coding, and dynamic state-space carrier compaction.</p>
+</header>
+
+<div class="evolution-banner">
+    <div class="evo-step">
+        <span class="tag" style="color: #f87171;">Gen 1: semantic_legacy</span>
+        <span class="val" style="color: #fca5a5;">Fuzzy approx (~80% cosine) • Topic Leaked</span>
+    </div>
+    <div class="evo-arrow">→</div>
+    <div class="evo-step">
+        <span class="tag" style="color: #60a5fa;">Gen 2: exact_vcp</span>
+        <span class="val" style="color: #93c5fd;">100% Bit-Exact • 1 Byte/Carrier (28 items)</span>
+    </div>
+    <div class="evo-arrow">→</div>
+    <div class="evo-step">
+        <span class="tag" style="color: #c084fc;">Gen 3: DSSC Mode</span>
+        <span class="val" style="color: #d8b4fe;">100% Bit-Exact • ~15 bits/Carrier (14 items)</span>
+    </div>
+</div>
+
+<div class="grid">
+    <a href="1_voronoi_hypersphere.html" class="portal-card">
+        <div>
+            <div class="card-num">Module 01</div>
+            <div class="card-title">Voronoi Constellation Hypersphere</div>
+            <div class="card-desc">
+                Interactive 3D projection of the 512-D neural embedding hypersphere with 256 Voronoi centroids and dynamic message trajectory mapping.
+            </div>
+        </div>
+        <div class="btn-launch">Launch 3D Visualizer →</div>
+    </a>
+
+    <a href="2_reed_solomon_ecc.html" class="portal-card">
+        <div>
+            <div class="card-num">Module 02</div>
+            <div class="card-title">Reed-Solomon Syndrome Repair</div>
+            <div class="card-desc">
+                Interactive damaged QR code analogy and live Galois Field GF(2^8) Berlekamp-Massey syndrome solver demonstrating 100% bit-exact error recovery.
+            </div>
+        </div>
+        <div class="btn-launch">Launch RS-ECC Visualizer →</div>
+    </a>
+
+    <a href="3_dssc_compaction.html" class="portal-card">
+        <div>
+            <div class="card-num">Module 03</div>
+            <div class="card-title">DSSC Carrier Compaction</div>
+            <div class="card-desc">
+                Three-generation architectural evolution simulator showing how multi-bit symbols (~15 bits/carrier) cut network traffic by over 50%.
+            </div>
+        </div>
+        <div class="btn-launch">Launch DSSC Visualizer →</div>
+    </a>
+
+    <a href="4_cover_story_security.html" class="portal-card">
+        <div>
+            <div class="card-num">Module 04</div>
+            <div class="card-title">Decoy Cover-Story Security</div>
+            <div class="card-desc">
+                Demonstration of zero mutual information I(S; M) = 0 and elimination of secret topic leakage via independent decoy queries.
+            </div>
+        </div>
+        <div class="btn-launch">Launch Security Visualizer →</div>
+    </a>
+</div>
+
+</body>
+</html>

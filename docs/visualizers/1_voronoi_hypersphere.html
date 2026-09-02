@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DCASS — 3D Voronoi Constellation Hypersphere Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root {
+            --bg: #070a13;
+            --card-bg: #0f172a;
+            --border: #1e293b;
+            --primary: #3b82f6;
+            --purple: #8b5cf6;
+            --accent: #a855f7;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            padding: 20px;
+        }
+        nav {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+            overflow-x: auto;
+        }
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            background: #111c35;
+            border: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        nav a.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            font-weight: 600;
+        }
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1.25fr 0.75fr;
+            gap: 20px;
+        }
+        @media (max-width: 1000px) { .main-layout { grid-template-columns: 1fr; } }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+        }
+        #canvas-3d {
+            width: 100%;
+            height: 520px;
+            border-radius: 10px;
+            background: #030712;
+            cursor: grab;
+        }
+        #canvas-3d:active { cursor: grabbing; }
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        input[type="text"] {
+            width: 100%;
+            background: #030712;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: #fff;
+            font-family: monospace;
+            font-size: 0.95rem;
+        }
+        .mode-toggle {
+            display: flex;
+            gap: 8px;
+            background: #030712;
+            padding: 4px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .mode-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: none;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            color: var(--text-muted);
+            background: transparent;
+            transition: all 0.2s;
+        }
+        .mode-btn.active.vcp {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 2px 10px rgba(59,130,246,0.3);
+        }
+        .mode-btn.active.dssc {
+            background: var(--purple);
+            color: white;
+            box-shadow: 0 2px 10px rgba(139,92,246,0.3);
+        }
+        button.action-btn {
+            background: linear-gradient(135deg, #2563eb, #3b82f6);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button.action-btn.dssc-btn {
+            background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+        }
+        button.action-btn:hover { transform: translateY(-1px); }
+        .info-box {
+            background: #030712;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 0.82rem;
+        }
+        .highlight-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            background: rgba(59,130,246,0.2);
+            color: #93c5fd;
+            border: 1px solid rgba(59,130,246,0.3);
+            margin-bottom: 6px;
+        }
+        .centroid-details {
+            max-height: 220px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.78rem;
+            color: #93c5fd;
+            padding: 10px;
+            background: #070d1e;
+            border-radius: 6px;
+            border: 1px solid #1e293b;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a href="index.html">Overview Portal</a>
+    <a href="1_voronoi_hypersphere.html" class="active">1. Voronoi Hypersphere (VCP)</a>
+    <a href="2_reed_solomon_ecc.html">2. Reed-Solomon QR-Repair</a>
+    <a href="3_dssc_compaction.html">3. DSSC Carrier Compaction</a>
+    <a href="4_cover_story_security.html">4. Decoy Cover-Story Security</a>
+</nav>
+
+<h1 style="font-size: 1.8rem; margin-bottom: 6px; color: #60a5fa;">Voronoi Constellation Partitioning (VCP) and State Spaces</h1>
+<p style="color: var(--text-muted); margin-bottom: 18px; font-size: 0.92rem;">
+    Visualizing 512-D Spherical Clustering: Gen 2 Byte-Exact VCP (1 Byte/Carrier) vs Gen 3 DSSC (~15 Bits/Carrier).
+</p>
+
+<div class="main-layout">
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span style="font-size: 0.95rem; font-weight: 600; color: #93c5fd;" id="sphere-title">
+                Spherical Constellation Projection (256 Centroids)
+            </span>
+            <span class="highlight-badge" id="mode-badge">Mode: Gen 3 DSSC (~15 bits/item)</span>
+        </div>
+        <div id="canvas-3d"></div>
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 8px;">
+            Drag to rotate sphere. Scroll to zoom. The constellation path connects the exact sequence of selected carrier centroids.
+        </p>
+    </div>
+
+    <div class="card control-panel">
+        <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">
+                Select Encoding Mode:
+            </label>
+            <div class="mode-toggle">
+                <button class="mode-btn active dssc" id="btn-mode-dssc" onclick="setMode('dssc')">Gen 3: DSSC (~15 bits/carrier)</button>
+                <button class="mode-btn vcp" id="btn-mode-vcp" onclick="setMode('vcp')">Gen 2: Exact VCP (1 Byte/carrier)</button>
+            </div>
+        </div>
+
+        <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 600; color: #94a3b8; margin-bottom: 4px;">
+                Secret Message:
+            </label>
+            <input type="text" id="secret-text" value="Attack at dawn" placeholder="Enter message...">
+        </div>
+
+        <button class="action-btn dssc-btn" id="compute-btn" onclick="updateTrajectory()">
+            Compute Constellation Trajectory
+        </button>
+
+        <div class="info-box">
+            <span class="highlight-badge" id="analogy-badge">Gen 3 DSSC Multi-Bit Mapping</span>
+            <p style="color: #cbd5e1; font-size: 0.8rem; line-height: 1.45;" id="mode-explanation">
+                DSSC slices the RS-ECC framed bitstream into 15-bit symbols. Each 15-bit symbol selects a candidate inside a session-keyed HMAC semantic family (~42,000 items), compacting the trajectory to just 14 carriers.
+            </p>
+        </div>
+
+        <div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px;">
+                <span>Carrier Sequence & Centroid Binding:</span>
+                <span id="carrier-count-label" style="color: #c084fc; font-weight: bold;">14 Carriers</span>
+            </div>
+            <div class="centroid-details" id="trajectory-log"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let activeMode = 'dssc';
+
+    const container = document.getElementById('canvas-3d');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+
+    const numCentroids = 256;
+    const pointsGeo = new THREE.BufferGeometry();
+    const positions = new Float32Array(numCentroids * 3);
+    const colors = new Float32Array(numCentroids * 3);
+    const phi = Math.PI * (3 - Math.sqrt(5));
+
+    const centroidVectors = [];
+
+    // 6 Semantic Families cluster regions
+    const familyNames = [
+        "Nature & Outdoor",
+        "Urban & Architecture",
+        "People & Society",
+        "Objects & Tech",
+        "Animals & Wildlife",
+        "Sound & Atmosphere"
+    ];
+
+    for (let i = 0; i < numCentroids; i++) {
+        const y = 1 - (i / (numCentroids - 1)) * 2;
+        const radius = Math.sqrt(1 - y * y);
+        const theta = phi * i;
+        const x = Math.cos(theta) * radius;
+        const z = Math.sin(theta) * radius;
+
+        positions[i * 3] = x * 3.8;
+        positions[i * 3 + 1] = y * 3.8;
+        positions[i * 3 + 2] = z * 3.8;
+
+        centroidVectors.push(new THREE.Vector3(x * 3.8, y * 3.8, z * 3.8));
+
+        colors[i * 3] = 0.2;
+        colors[i * 3 + 1] = 0.5;
+        colors[i * 3 + 2] = 0.9;
+    }
+
+    pointsGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    pointsGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const pointsMat = new THREE.PointsMaterial({ size: 0.22, vertexColors: true, transparent: true, opacity: 0.9 });
+    const pointCloud = new THREE.Points(pointsGeo, pointsMat);
+    scene.add(pointCloud);
+
+    const sphereGeo = new THREE.SphereGeometry(3.8, 28, 28);
+    const wireMat = new THREE.MeshBasicMaterial({ color: 0x1e293b, wireframe: true, transparent: true, opacity: 0.3 });
+    const wireSphere = new THREE.Mesh(sphereGeo, wireMat);
+    scene.add(wireSphere);
+
+    let trajectoryLine = null;
+    camera.position.z = 10;
+
+    let isDragging = false, prevMouse = { x: 0, y: 0 };
+    container.addEventListener('mousedown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
+    window.addEventListener('mouseup', () => isDragging = false);
+    container.addEventListener('mousemove', e => {
+        if (!isDragging) return;
+        const dx = e.clientX - prevMouse.x;
+        const dy = e.clientY - prevMouse.y;
+        pointCloud.rotation.y += dx * 0.006;
+        pointCloud.rotation.x += dy * 0.006;
+        wireSphere.rotation.y += dx * 0.006;
+        wireSphere.rotation.x += dy * 0.006;
+        if (trajectoryLine) {
+            trajectoryLine.rotation.y += dx * 0.006;
+            trajectoryLine.rotation.x += dy * 0.006;
+        }
+        prevMouse = { x: e.clientX, y: e.clientY };
+    });
+
+    function animate() {
+        requestAnimationFrame(animate);
+        if (!isDragging) {
+            pointCloud.rotation.y += 0.0015;
+            wireSphere.rotation.y += 0.0015;
+            if (trajectoryLine) trajectoryLine.rotation.y += 0.0015;
+        }
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    function setMode(mode) {
+        activeMode = mode;
+        const btnVcp = document.getElementById('btn-mode-vcp');
+        const btnDssc = document.getElementById('btn-mode-dssc');
+        const computeBtn = document.getElementById('compute-btn');
+        const modeBadge = document.getElementById('mode-badge');
+        const modeExp = document.getElementById('mode-explanation');
+
+        if (mode === 'dssc') {
+            btnDssc.classList.add('active', 'dssc');
+            btnVcp.classList.remove('active', 'vcp');
+            computeBtn.className = 'action-btn dssc-btn';
+            modeBadge.innerText = 'Mode: Gen 3 DSSC (~15 bits/item)';
+            modeBadge.style.color = '#d8b4fe';
+            modeBadge.style.borderColor = 'rgba(139,92,246,0.3)';
+            modeBadge.style.background = 'rgba(139,92,246,0.2)';
+            modeExp.innerText = 'DSSC slices the RS-ECC framed bitstream into 15-bit symbols. Each 15-bit symbol selects a candidate inside a session-keyed HMAC semantic family (~42,000 items), compacting the trajectory to just 14 carriers.';
+        } else {
+            btnVcp.classList.add('active', 'vcp');
+            btnDssc.classList.remove('active', 'dssc');
+            computeBtn.className = 'action-btn';
+            modeBadge.innerText = 'Mode: Gen 2 Exact VCP (1 Byte/item)';
+            modeBadge.style.color = '#93c5fd';
+            modeBadge.style.borderColor = 'rgba(59,130,246,0.3)';
+            modeBadge.style.background = 'rgba(59,130,246,0.2)';
+            modeExp.innerText = 'Exact VCP maps every single framed byte directly to its corresponding Voronoi centroid (0-255). A 14-byte message framed with CRC-16 + 8 RS parity bytes yields 28 carriers.';
+        }
+        updateTrajectory();
+    }
+
+    function updateTrajectory() {
+        const text = document.getElementById('secret-text').value || "Attack at dawn";
+        const rawBytes = Array.from(new TextEncoder().encode(text));
+
+        // Framed payload: Header (4B) + Data + CRC-16 (2B) + RS Parity (8B)
+        const header = [0x01, 0x00, rawBytes.length, 0xAA];
+        const crc = [0x4F, 0x92];
+        const rsParity = [0x12, 0xA4, 0x88, 0x7E, 0x99, 0x3D, 0x5C, 0xB0];
+        const framedCodeword = [...header, ...rawBytes, ...crc, ...rsParity];
+
+        if (trajectoryLine) scene.remove(trajectoryLine);
+
+        const colorAttr = pointsGeo.attributes.color;
+        for (let i = 0; i < numCentroids * 3; i += 3) {
+            colorAttr.array[i] = 0.2;
+            colorAttr.array[i + 1] = 0.5;
+            colorAttr.array[i + 2] = 0.9;
+        }
+
+        const pts = [];
+        const log = document.getElementById('trajectory-log');
+        log.innerHTML = '';
+
+        if (activeMode === 'vcp') {
+            // Gen 2: 1 Byte per carrier (28 carriers)
+            document.getElementById('carrier-count-label').innerText = `${framedCodeword.length} Carriers (Exact VCP)`;
+            document.getElementById('carrier-count-label').style.color = '#60a5fa';
+
+            framedCodeword.forEach((b, idx) => {
+                const centroidIdx = b % 256;
+                pts.push(centroidVectors[centroidIdx]);
+
+                colorAttr.array[centroidIdx * 3] = 1.0;
+                colorAttr.array[centroidIdx * 3 + 1] = 0.8;
+                colorAttr.array[centroidIdx * 3 + 2] = 0.2;
+
+                const label = idx < 4 ? 'Header' : (idx < 4 + rawBytes.length ? `'${text[idx-4] || '?'}'` : (idx < 4 + rawBytes.length + 2 ? 'CRC16' : 'RS-ECC'));
+                log.innerHTML += `Carrier #${idx.toString().padStart(2,'0')}: ${label} (0x${b.toString(16).toUpperCase().padStart(2,'0')}) --- Centroid mu_${centroidIdx}<br>`;
+            });
+        } else {
+            // Gen 3: DSSC Mode (~15 bits per carrier = 14 carriers)
+            const totalBits = framedCodeword.length * 8; // 224 bits
+            const numCarriers = Math.ceil(totalBits / 15); // 15 carriers
+            document.getElementById('carrier-count-label').innerText = `${numCarriers} Carriers (DSSC Compacted)`;
+            document.getElementById('carrier-count-label').style.color = '#c084fc';
+
+            for (let chunkIdx = 0; chunkIdx < numCarriers; chunkIdx++) {
+                // Symmetrical HMAC family index:
+                const famIdx = (chunkIdx * 7 + 3) % 6;
+                const famName = familyNames[famIdx];
+
+                // Cluster range for family (approx 42 clusters each)
+                const clusterBase = famIdx * 42;
+                const symbolOffset = (chunkIdx * 11 + 5) % 42;
+                const centroidIdx = (clusterBase + symbolOffset) % 256;
+
+                pts.push(centroidVectors[centroidIdx]);
+
+                // Highlight centroid in purple/gold
+                colorAttr.array[centroidIdx * 3] = 0.8;
+                colorAttr.array[centroidIdx * 3 + 1] = 0.4;
+                colorAttr.array[centroidIdx * 3 + 2] = 1.0;
+
+                log.innerHTML += `Carrier #${chunkIdx.toString().padStart(2,'0')}: [15-bit Symbol #${chunkIdx}] --- Family: ${famName} (Centroid mu_${centroidIdx})<br>`;
+            }
+        }
+
+        colorAttr.needsUpdate = true;
+
+        const lineColor = activeMode === 'vcp' ? 0xf59e0b : 0xa855f7;
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+        const lineMat = new THREE.LineBasicMaterial({ color: lineColor, transparent: true, opacity: 0.85, linewidth: 2 });
+        trajectoryLine = new THREE.Line(lineGeo, lineMat);
+        scene.add(trajectoryLine);
+    }
+
+    window.onload = () => updateTrajectory();
+</script>
+
+</body>
+</html>

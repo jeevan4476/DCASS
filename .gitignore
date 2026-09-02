@@ -139,3 +139,18 @@ Desktop.ini
 .vscode/
 *.sublime-*
 *.code-workspace
+
+# Presentations & Binary Slides
+docs/slides/
+*.pptx
+
+# Internal Planning Specs
+docs/superpowers/
+.superpowers/
+
+# Scratch & Temporary Scripts
+scripts/scratch/
+scratch/
+tmp/
+
+

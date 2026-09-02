@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DCASS — Decoy Cover-Story Security & Zero Topic Leakage</title>
+    <style>
+        :root {
+            --bg: #070a13;
+            --card-bg: #0f172a;
+            --border: #1e293b;
+            --primary: #3b82f6;
+            --danger: #ef4444;
+            --success: #10b981;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            padding: 20px;
+        }
+        nav {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+            overflow-x: auto;
+        }
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            background: #111c35;
+            border: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        nav a.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            font-weight: 600;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+        }
+        h2 { font-size: 1.25rem; color: #93c5fd; margin-bottom: 15px; }
+
+        .leak-box {
+            background: #1c1117;
+            border: 1px solid #7f1d1d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .secure-box {
+            background: #09201a;
+            border: 1px solid #065f46;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .carrier-stream {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .stream-item {
+            background: #030712;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 0.75rem;
+            text-align: center;
+        }
+        .stream-item.leaked { border-color: #ef4444; color: #fca5a5; }
+        .stream-item.cloaked { border-color: #10b981; color: #6ee7b7; }
+
+        .callout {
+            background: rgba(59, 130, 246, 0.1);
+            border-left: 4px solid var(--primary);
+            padding: 12px 16px;
+            border-radius: 0 8px 8px 0;
+            margin-top: 15px;
+            font-size: 0.85rem;
+            color: #bfdbfe;
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a href="index.html">Overview Portal</a>
+    <a href="1_voronoi_hypersphere.html">1. Voronoi Hypersphere (VCP)</a>
+    <a href="2_reed_solomon_ecc.html">2. Reed-Solomon QR-Repair</a>
+    <a href="3_dssc_compaction.html">3. DSSC Carrier Compaction</a>
+    <a href="4_cover_story_security.html" class="active">4. Decoy Cover-Story Security</a>
+</nav>
+
+<h1 style="font-size: 1.8rem; margin-bottom: 8px; color: #60a5fa;">Decoy Cover-Story Ranking & Zero Topic Leakage</h1>
+<p style="color: var(--text-muted); margin-bottom: 20px;">
+    Eliminating Secret Message Topic Correlation (I(S; M) = 0) via Independent Decoy Contexts.
+</p>
+
+<div class="grid">
+    <div class="card">
+        <h2 style="color: #f87171;">Flawed Legacy Steganography (Topic Leaked)</h2>
+        <div class="leak-box">
+            <div style="font-size: 0.85rem; font-weight: bold; color: #f87171; margin-bottom: 4px;">Secret Message: "Attack at dawn with tanks"</div>
+            <p style="font-size: 0.8rem; color: var(--text-muted);">
+                Naive retrieval uses the secret text to rank images within the centroid.
+            </p>
+            <div class="carrier-stream">
+                <div class="stream-item leaked">Tank in desert</div>
+                <div class="stream-item leaked">Missile launcher</div>
+                <div class="stream-item leaked">Soldiers marching</div>
+                <div class="stream-item leaked">Military convoy</div>
+            </div>
+            <p style="color: #fca5a5; font-size: 0.75rem; margin-top: 8px;">
+                <strong>Warden Interception:</strong> Eavesdropper monitors carrier sequence and immediately deduces a military strike topic.
+            </p>
+        </div>
+
+        <div class="callout" style="border-left-color: #ef4444; background: rgba(239, 68, 68, 0.1); color: #fca5a5;">
+            <strong>The Vulnerability:</strong> High mutual information I(S; M) &gt; 0 between secret message semantics S and carrier metadata M.
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="color: #6ee7b7;">DCASS Cover-Story Ranking (Cloaked)</h2>
+        <div class="secure-box">
+            <div style="font-size: 0.85rem; font-weight: bold; color: #6ee7b7; margin-bottom: 4px;">Decoy Cover Story: "National Geographic Nature Photos"</div>
+            <p style="font-size: 0.8rem; color: var(--text-muted);">
+                DCASS ranks candidates within Voronoi cell against innocent decoy query.
+            </p>
+            <div class="carrier-stream">
+                <div class="stream-item cloaked">Mountain peak</div>
+                <div class="stream-item cloaked">Sunset over lake</div>
+                <div class="stream-item cloaked">Deer in meadow</div>
+                <div class="stream-item cloaked">Forest waterfall</div>
+            </div>
+            <p style="color: #a7f3d0; font-size: 0.75rem; margin-top: 8px;">
+                <strong>Warden Interception:</strong> Eavesdropper sees beautiful nature photos with zero statistical or topical correlation to "Attack at dawn".
+            </p>
+        </div>
+
+        <div class="callout" style="border-left-color: #10b981; background: rgba(16, 185, 129, 0.1); color: #a7f3d0;">
+            <strong>Zero Mutual Information Proof:</strong> I(S; M) = 0. The carrier media selection is completely independent of secret text topic.
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

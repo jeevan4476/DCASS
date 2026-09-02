@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DCASS — DSSC Dynamic State-Space Carrier Compaction</title>
+    <style>
+        :root {
+            --bg: #070a13;
+            --card-bg: #0f172a;
+            --border: #1e293b;
+            --primary: #8b5cf6;
+            --blue: #3b82f6;
+            --danger: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            padding: 20px;
+        }
+        nav {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+            overflow-x: auto;
+        }
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            background: #111c35;
+            border: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        nav a.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+            font-weight: 600;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+        }
+        h2 { font-size: 1.25rem; color: #c084fc; margin-bottom: 15px; }
+
+        .meter-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .meter-bar {
+            background: #030712;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 15px;
+        }
+        .bar-fill {
+            height: 24px;
+            border-radius: 6px;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            padding-left: 10px;
+            font-weight: bold;
+            font-size: 0.85rem;
+            color: white;
+            margin-top: 8px;
+        }
+        .legacy-bar { background: linear-gradient(90deg, #b91c1c, #ef4444); }
+        .vcp-bar { background: linear-gradient(90deg, #2563eb, #60a5fa); }
+        .dssc-bar { background: linear-gradient(90deg, #7c3aed, #c084fc); }
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 15px 0;
+        }
+        input[type="range"] {
+            flex: 1;
+            accent-color: var(--primary);
+        }
+
+        .permutation-wheel {
+            background: #030712;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #d8b4fe;
+            line-height: 1.6;
+        }
+
+        .callout {
+            background: rgba(139, 92, 246, 0.1);
+            border-left: 4px solid var(--primary);
+            padding: 12px 16px;
+            border-radius: 0 8px 8px 0;
+            margin-top: 15px;
+            font-size: 0.85rem;
+            color: #e9d5ff;
+        }
+
+        .evolution-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+            margin-top: 15px;
+        }
+        .evolution-table th, .evolution-table td {
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+        .evolution-table th { background: #030712; color: #93c5fd; }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a href="index.html">Overview Portal</a>
+    <a href="1_voronoi_hypersphere.html">1. Voronoi Hypersphere (VCP)</a>
+    <a href="2_reed_solomon_ecc.html">2. Reed-Solomon QR-Repair</a>
+    <a href="3_dssc_compaction.html" class="active">3. DSSC Carrier Compaction</a>
+    <a href="4_cover_story_security.html">4. Decoy Cover-Story Security</a>
+</nav>
+
+<h1 style="font-size: 1.8rem; margin-bottom: 8px; color: #c084fc;">Dynamic Semantic State-Space Coding (DSSC)</h1>
+<p style="color: var(--text-muted); margin-bottom: 20px;">
+    Evolution from semantic_legacy to exact_vcp and DSSC Multi-Bit Carrier Compaction (~15 bits/carrier).
+</p>
+
+<div class="grid">
+    <div class="card">
+        <h2>Three-Generation Carrier Efficiency Comparison</h2>
+        
+        <div class="slider-row">
+            <label style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1;">Secret Message Length (Bytes):</label>
+            <input type="range" id="len-slider" min="8" max="128" value="14" oninput="updateComparison()">
+            <span id="len-display" style="font-family: monospace; font-weight: bold; color: #60a5fa;">14 Bytes</span>
+        </div>
+
+        <div class="meter-container">
+            <div class="meter-bar">
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                    <span style="color: #fca5a5;">Generation 1: semantic_legacy (Fuzzy / Leaked)</span>
+                    <span id="legacy-carriers" style="color: #f87171; font-weight: bold;">~15 Carriers (Approximate Text)</span>
+                </div>
+                <div class="bar-fill legacy-bar" id="legacy-fill" style="width: 55%;">Fuzzy Match (~80% cosine)</div>
+            </div>
+
+            <div class="meter-bar">
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                    <span style="color: #93c5fd;">Generation 2: exact_vcp (1 Byte / Carrier)</span>
+                    <span id="vcp-carriers" style="color: #60a5fa; font-weight: bold;">28 Carriers (100% Exact)</span>
+                </div>
+                <div class="bar-fill vcp-bar" id="vcp-fill" style="width: 100%;">28 Items</div>
+            </div>
+
+            <div class="meter-bar">
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                    <span style="color: #d8b4fe;">Generation 3: DSSC (~15 Bits / Carrier)</span>
+                    <span id="dssc-carriers" style="color: #c084fc; font-weight: bold;">14 Carriers (50.0% Reduction)</span>
+                </div>
+                <div class="bar-fill dssc-bar" id="dssc-fill" style="width: 50%;">14 Items</div>
+            </div>
+        </div>
+
+        <div class="callout">
+            <strong>The Mathematical Reason:</strong> A semantic family contains N approx 42,000 images/audio/text. The symbol capacity is floor(log2(42000)) = 15 bits per carrier. Instead of sending 8 bits per item, DSSC sends nearly two bytes in a single item.
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Session-Keyed Cryptographic Permutation Engine</h2>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">
+            Deterministic Fisher-Yates shuffle ensures only holders of the 256-bit session key can invert carrier IDs.
+        </p>
+
+        <div class="permutation-wheel">
+            <div><strong>Family Routing Formula:</strong></div>
+            <div style="color: #60a5fa; margin: 4px 0 10px 0;">
+                family_idx = HMAC(session_key, "family:chunk_idx") % 6
+            </div>
+
+            <div><strong>Fisher-Yates State-Space Mapping:</strong></div>
+            <div style="color: #a7f3d0; margin: 4px 0 10px 0;">
+                Carrier_ID = Candidate_Pool[ pi_session_key( symbol_15bit ) ]
+            </div>
+
+            <div style="border-top: 1px solid var(--border); padding-top: 8px; font-size: 0.75rem; color: var(--text-muted);">
+                Zero topical trail: Message text is never used to select candidate sets.
+            </div>
+        </div>
+
+        <table class="evolution-table">
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Gen 1 (Legacy)</th>
+                    <th>Gen 2 (VCP)</th>
+                    <th>Gen 3 (DSSC)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Recovery</td>
+                    <td style="color:#ef4444">Fuzzy (~80%)</td>
+                    <td style="color:#10b981">100% Exact</td>
+                    <td style="color:#10b981">100% Exact</td>
+                </tr>
+                <tr>
+                    <td>Density</td>
+                    <td>~0.20 BLEU</td>
+                    <td>8 bits/item</td>
+                    <td style="color:#c084fc;font-weight:bold">~15 bits/item</td>
+                </tr>
+                <tr>
+                    <td>Security</td>
+                    <td style="color:#ef4444">Leaked</td>
+                    <td>Cover Decoy</td>
+                    <td style="color:#10b981">HMAC Keyed</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    function updateComparison() {
+        const rawBytes = parseInt(document.getElementById('len-slider').value);
+        document.getElementById('len-display').innerText = `${rawBytes} Bytes`;
+
+        const framedBytes = rawBytes + 4 + 2 + 8;
+        const totalBits = framedBytes * 8;
+
+        const vcpCount = framedBytes;
+        const dsscCount = Math.ceil(totalBits / 15);
+        const legacyCount = Math.max(1, Math.round(rawBytes * 1.1));
+
+        const reduction = ((1 - (dsscCount / vcpCount)) * 100).toFixed(1);
+
+        document.getElementById('vcp-carriers').innerText = `${vcpCount} Carriers (100% Exact)`;
+        document.getElementById('dssc-carriers').innerText = `${dsscCount} Carriers (-${reduction}%)`;
+        document.getElementById('legacy-carriers').innerText = `~${legacyCount} Carriers (Fuzzy Approx)`;
+
+        document.getElementById('vcp-fill').innerText = `${vcpCount} Items`;
+        document.getElementById('dssc-fill').innerText = `${dsscCount} Items`;
+
+        const maxWidth = Math.max(vcpCount, 1);
+        document.getElementById('vcp-fill').style.width = `100%`;
+        document.getElementById('dssc-fill').style.width = `${(dsscCount / maxWidth) * 100}%`;
+    }
+
+    window.onload = updateComparison;
+</script>
+
+</body>
+</html>
