@@ -15,16 +15,13 @@ import hashlib
 import hmac
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Optional
 
-from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem, Modality
-from src.engine.chunker import SemanticChunker
+from src.corpus.index.unified_index import UnifiedSemanticIndex, Modality
 from src.engine.dssc_state_space import (
     DSSCStateSpace,
     SemanticFamilyManager,
-    DEFAULT_SEMANTIC_FAMILIES,
     derive_session_permutation,
-    family_for_cluster,
 )
 from src.engine.vcp_payload import VCPPayloadMapper
 from src.engine.ecc import RSErrorCorrection

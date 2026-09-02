@@ -307,7 +307,6 @@ class SemanticDecoder:
             )
 
         codeword, missing_ids = self.payload_mapper.decode_symbols(media_ids)
-        payload_symbols = list(codeword)
         rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
         ecc_success = True
         ecc_errors_fixed = []
