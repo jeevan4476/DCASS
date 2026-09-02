@@ -3,10 +3,9 @@
 
 import inspect
 import pytest
-from unittest.mock import MagicMock, patch
 
 from src.corpus.index.unified_index import MediaItem
-from src.engine.encoder import SemanticEncoder, EncodingResult
+from src.engine.encoder import SemanticEncoder
 from src.engine.vcp_payload import PayloadCarrier
 
 

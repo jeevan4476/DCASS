@@ -1,7 +1,6 @@
 # tests/engine/test_encoder_decoder_roundtrip.py
 """Integration smoke test — no index loaded; checks wiring only."""
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 
 def make_mock_index():

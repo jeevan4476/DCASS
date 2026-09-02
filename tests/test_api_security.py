@@ -12,7 +12,6 @@ Regression tests for API/security hardening:
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np

@@ -1,6 +1,4 @@
-import pytest
 from unittest.mock import MagicMock, patch
-import numpy as np
 
 
 def _make_vcp_mapper(cluster_map: dict[str, int]):
@@ -99,7 +97,7 @@ def test_decoder_fallback_on_sparse_family():
     dec = DSSCDecoder(index=index, vcp_mapper=vcp_mapper, family_manager=family_manager)
 
     with patch("src.engine.dssc_decoder.derive_session_permutation", wraps=derive_session_permutation) as mock_perm:
-        result = dec.decode(
+        dec.decode(
             carrier_ids=["nature_item_0"],
             session_key=b"testkey12345678!",
         )

@@ -1,6 +1,5 @@
 """Tests for SemanticEngine unified facade."""
 import pytest
-from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------

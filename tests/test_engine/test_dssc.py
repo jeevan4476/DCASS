@@ -9,17 +9,16 @@ Verifies:
 5. Session-key security (different key prevents decoding)
 """
 
-import pytest
-import numpy as np
+from unittest.mock import MagicMock
 from src.engine.dssc_state_space import (
     DSSCStateSpace,
     derive_session_permutation,
-    SemanticFamilyManager,
     DEFAULT_SEMANTIC_FAMILIES,
 )
 from src.engine.dssc_encoder import DSSCEncoder, BitStreamReader
 from src.engine.dssc_decoder import DSSCDecoder, BitStreamWriter
-from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem
+from src.engine.vcp_payload import VCPPayloadMapper
+from src.corpus.index.unified_index import MediaItem
 
 
 def test_bitstream_roundtrip():
@@ -65,10 +64,6 @@ def test_dssc_state_space_mapping():
         # Invert
         inv_sym = state_space.media_id_to_symbol(cid)
         assert inv_sym == sym
-
-
-from unittest.mock import MagicMock
-from src.engine.vcp_payload import VCPPayloadMapper
 
 
 def _make_mock_index_and_mapper(n_per_family: int = 50):

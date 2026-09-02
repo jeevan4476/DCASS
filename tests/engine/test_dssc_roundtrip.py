@@ -3,8 +3,6 @@ End-to-end DSSC roundtrip with a minimal synthetic corpus.
 Verifies that fixed encoder and decoder agree on family, produce same
 permutation, and recover the exact original message.
 """
-import pytest
-import numpy as np
 from unittest.mock import MagicMock
 
 
