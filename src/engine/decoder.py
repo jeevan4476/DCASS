@@ -28,7 +28,7 @@ from src.engine.ecc import RSErrorCorrection
 from src.engine.payload_framing import FrameError, unframe_payload
 from src.engine.vcp_payload import VCPPayloadMapper
 
-PayloadMode = Literal["semantic_legacy", "exact_vcp"]
+PayloadMode = Literal["exact_vcp"]
 
 
 @dataclass
@@ -58,7 +58,7 @@ class DecodingResult:
     ecc_success: bool = True
     ecc_errors_fixed: list[int] = field(default_factory=list)
     ecc_payload: Optional[str] = None
-    payload_mode: PayloadMode = "semantic_legacy"
+    payload_mode: PayloadMode = "exact_vcp"
     payload_symbols: list[int] = field(default_factory=list)
     # Set when dynamic context keying was used and an epoch was confirmed.
     context_epoch_id: Optional[str] = None
@@ -211,8 +211,6 @@ class SemanticDecoder:
         media_ids: list[str],
         use_ecc: bool = False,
         ecc_parity_bytes: int = 8,
-        raw_codeword: Optional[bytes] = None,
-        payload_mode: PayloadMode = "semantic_legacy",
         context_manager=None,
         context_epoch_hint: Optional[str] = None,
     ) -> DecodingResult:
@@ -223,8 +221,6 @@ class SemanticDecoder:
             media_ids: List of media IDs to decode
             use_ecc: If True, decodes codeword using Reed-Solomon Error Correction
             ecc_parity_bytes: Number of RS parity bytes (default 8)
-            raw_codeword: Legacy side-channel codeword bytes to decode via Berlekamp-Massey
-            payload_mode: "exact_vcp" reconstructs bytes from media ID clusters
             context_manager: Optional ContextKeyManager. When the sender used
                 dynamic context keying, the receiver must derive the same
                 per-epoch permutation.
@@ -237,19 +233,14 @@ class SemanticDecoder:
         if not self._loaded:
             raise RuntimeError("Decoder not loaded. Call load() first.")
 
-        decoded_items = []
         id_symbols: dict[str, Optional[int]] = {}
-
-        # Resolve carrier clusters once (exact_vcp only); with keying these
-        # are PERMUTED cluster ids, not payload bytes.
-        if payload_mode == "exact_vcp":
-            for media_id in media_ids:
-                id_symbols[media_id] = self.payload_mapper.symbol_for_media_id(media_id)
+        for media_id in media_ids:
+            id_symbols[media_id] = self.payload_mapper.symbol_for_media_id(media_id)
 
         # Dynamic context keying: try candidate epochs until RS verifies
         # (or, without ECC, until a hint-confirmed epoch is used).
         context_used_epoch: Optional[str] = None
-        if context_manager is not None and payload_mode == "exact_vcp":
+        if context_manager is not None:
             if context_epoch_hint:
                 # Validated parse + re-fetch external source materials.
                 # Raises ValueError on malformed hints (API maps to 400).
@@ -315,82 +306,44 @@ class SemanticDecoder:
                 missing_ids=missing_ids,
             )
 
-        for media_id in media_ids:
-            # Look up item in corpus
-            item = self.index.get_by_id(media_id)
-            payload_byte = id_symbols.get(media_id)
-
-            if item:
-                # Item found - extract content
-                content = extract_semantic_content(item.metadata, item.modality)
-
-                decoded_items.append(
-                    DecodedItem(
-                        media_id=media_id,
-                        modality=item.modality,
-                        content=content,
-                        verified=True,
-                        metadata=item.metadata,
-                        file_path=item.file_path,
-                        payload_byte=payload_byte,
-                        cluster_id=payload_byte,
-                    )
-                )
-            else:
-                # Item not found - unverified
-                decoded_items.append(
-                    DecodedItem(
-                        media_id=media_id,
-                        modality="text",  # Default
-                        content=f"[UNVERIFIED: {media_id}]",
-                        verified=False,
-                        metadata={},
-                        payload_byte=payload_byte,
-                        cluster_id=payload_byte,
-                    )
-                )
-
-        ecc_payload = None
+        codeword, missing_ids = self.payload_mapper.decode_symbols(media_ids)
+        payload_symbols = list(codeword)
+        rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
         ecc_success = True
         ecc_errors_fixed = []
-        payload_symbols = []
+        ecc_payload = None
 
-        if payload_mode == "exact_vcp":
-            codeword, missing_ids = self.payload_mapper.decode_symbols(media_ids)
-            payload_symbols = list(codeword)
-            rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
-            if missing_ids:
+        if missing_ids:
+            ecc_success = False
+            ecc_payload = codeword.decode("utf-8", errors="replace")
+        elif use_ecc:
+            data, ecc_success, ecc_errors_fixed = rs_ecc.decode_bytes(codeword)
+            try:
+                # Framed transport (current encoder default). Integrity
+                # failure here means corruption beyond RS capacity.
+                ecc_payload, _framed = unframe_payload(data)
+            except FrameError:
+                ecc_success = False
+                ecc_payload = data.decode("utf-8", errors="replace")
+        else:
+            # Legacy raw or framed-without-ECC: sniff the version byte.
+            try:
+                ecc_payload, _framed = unframe_payload(bytes(codeword))
+            except FrameError:
                 ecc_success = False
                 ecc_payload = codeword.decode("utf-8", errors="replace")
-            elif use_ecc:
-                data, ecc_success, ecc_errors_fixed = rs_ecc.decode_bytes(codeword)
-                try:
-                    # Framed transport (current encoder default). Integrity
-                    # failure here means corruption beyond RS capacity.
-                    ecc_payload, _framed = unframe_payload(data)
-                except FrameError:
-                    ecc_success = False
-                    ecc_payload = data.decode("utf-8", errors="replace")
-            else:
-                # Legacy raw or framed-without-ECC: sniff the version byte.
-                try:
-                    ecc_payload, _framed = unframe_payload(bytes(codeword))
-                except FrameError:
-                    ecc_success = False
-                    ecc_payload = codeword.decode("utf-8", errors="replace")
-        elif use_ecc and raw_codeword:
-            rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
-            ecc_payload, ecc_success, ecc_errors_fixed = rs_ecc.decode(raw_codeword)
-            payload_symbols = list(raw_codeword)
 
-        return DecodingResult(
+        return self._build_result(
             media_ids=media_ids,
-            decoded=decoded_items,
+            id_symbols=id_symbols,
+            codeword=bytes(codeword),
+            inverse_permutation=None,
+            text=ecc_payload,
             ecc_success=ecc_success,
             ecc_errors_fixed=ecc_errors_fixed,
-            ecc_payload=ecc_payload,
-            payload_mode=payload_mode,
-            payload_symbols=payload_symbols,
+            parity_bytes=ecc_parity_bytes,
+            context_epoch=None,
+            missing_ids=missing_ids,
         )
 
     def _build_result(
@@ -406,7 +359,7 @@ class SemanticDecoder:
         context_epoch: Optional[str],
         missing_ids=None,
     ) -> DecodingResult:
-        """Assemble a DecodingResult for a keyed exact_vcp decode."""
+        """Assemble a DecodingResult for an exact_vcp decode."""
         decoded_items = []
         for media_id in media_ids:
             item = self.index.get_by_id(media_id)
@@ -443,11 +396,6 @@ class SemanticDecoder:
                     )
                 )
 
-        verification_rate = (
-            sum(1 for d in decoded_items if d.verified) / len(decoded_items)
-            if decoded_items
-            else 0.0
-        )
         reconstructed = text if text is not None else " | ".join(d.content for d in decoded_items)
         return DecodingResult(
             media_ids=media_ids,
@@ -455,19 +403,6 @@ class SemanticDecoder:
             ecc_success=ecc_success and not missing_ids,
             ecc_errors_fixed=ecc_errors_fixed,
             ecc_payload=reconstructed,
-            payload_mode="exact_vcp",
-            payload_symbols=list(codeword),
-            context_epoch_id=context_epoch,
-        )
-        reconstructed = text if text is not None else " | ".join(d.content for d in decoded_items)
-        return DecodingResult(
-            media_ids=media_ids,
-            decoded=decoded_items,
-            ecc_success=ecc_success and not missing_ids,
-            ecc_errors_fixed=ecc_errors_fixed,
-            ecc_payload=reconstructed,
-            all_verified=bool(decoded_items) and all(d.verified for d in decoded_items),
-            verification_rate=verification_rate,
             payload_mode="exact_vcp",
             payload_symbols=list(codeword),
             context_epoch_id=context_epoch,

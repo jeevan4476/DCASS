@@ -298,8 +298,7 @@ class ReceiverDaemon:
         try:
             result = self.decoder.decode(
                 media_ids,
-                payload_mode=self._payload_mode,
-                use_ecc=(self._payload_mode == "exact_vcp"),
+                use_ecc=True,
             )
         except Exception as e:
             print(f"[Receiver] Decoding error: {e}")

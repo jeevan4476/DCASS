@@ -217,15 +217,29 @@ class VCPPayloadMapper:
                 meta=meta,
                 query=query,
             )
-            score = self._score_candidate(query, media, local_index)
-            candidates.append(PayloadCarrier(media, int(symbol), global_index, local_index, score))
+        if not candidates and modalities:
+            # Graceful fallback: if the requested modality has no carriers in this cluster,
+            # fall back to any available modality in the cluster rather than failing.
+            for global_index in self._symbol_to_globals.get(int(symbol), []):
+                modality, local_index, meta = self._global_to_entry[global_index]
+                media_id = meta.get("id", f"{modality}_{local_index}")
+                if avoid_duplicates and media_id in used_ids:
+                    continue
+                media = self._make_media_item(
+                    modality=modality,
+                    local_index=local_index,
+                    meta=meta,
+                    query=query,
+                )
+                score = self._score_candidate(query, media, local_index)
+                candidates.append(PayloadCarrier(media, int(symbol), global_index, local_index, score))
 
         if not candidates:
             available = len(self._symbol_to_globals.get(int(symbol), []))
             if available == 0:
                 raise RuntimeError(
                     f"Cannot encode byte 0x{int(symbol):02x}: its VCP cluster has "
-                    f"NO carriers in the corpus (modalities {sorted(allowed_modalities)}). "
+                    f"NO carriers in the corpus. "
                     f"Re-fit the codebook or rebuild indices so every byte symbol "
                     f"is populated."
                 )

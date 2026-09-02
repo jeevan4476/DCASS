@@ -138,7 +138,6 @@ def main():
         enc_result.media_ids,
         use_ecc=True,
         ecc_parity_bytes=8,
-        raw_codeword=enc_result.ecc_codeword
     )
     dec_time = (time.time() - start_dec) * 1000
 

@@ -412,7 +412,6 @@ def main():
         log.info("Encoding message into media sequence (exact_vcp + RS-ECC)...")
         encode_result = encoder.encode(
             args.message,
-            payload_mode="exact_vcp",
             use_ecc=True,
         )
         media_ids = encode_result.media_ids

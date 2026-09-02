@@ -17,7 +17,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Literal
-import re
 
 from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem, Modality
 from src.engine.chunker import SemanticChunker, SemanticChunk
@@ -56,73 +55,7 @@ def _decoy_topic(context_manager, context_info: dict) -> str:
 
 # Diversity mode type
 DiversityMode = Literal["best", "round_robin", "balanced"]
-PayloadMode = Literal["semantic_legacy", "exact_vcp"]
-
-STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "before",
-    "but",
-    "by",
-    "for",
-    "from",
-    "if",
-    "in",
-    "inside",
-    "into",
-    "is",
-    "it",
-    "let",
-    "me",
-    "near",
-    "of",
-    "on",
-    "or",
-    "outside",
-    "the",
-    "their",
-    "them",
-    "then",
-    "there",
-    "they",
-    "to",
-    "up",
-    "us",
-    "we",
-    "when",
-    "with",
-    "you",
-    "your",
-}
-
-
-def _keywords(text: str) -> list[str]:
-    return [token for token in re.findall(r"[a-zA-Z']+", text.lower()) if token not in STOPWORDS]
-
-
-def _candidate_text_score(chunk_text: str, media: MediaItem) -> float:
-    """
-    Add a lightweight lexical bias toward candidates whose decoded text
-    preserves chunk keywords rather than only being embedding-near.
-    """
-    chunk_keywords = _keywords(chunk_text)
-    if not chunk_keywords:
-        return media.normalized_score
-
-    content = (media.content or "").lower()
-    overlap = sum(1 for token in chunk_keywords if token in content)
-    overlap_ratio = overlap / len(chunk_keywords)
-
-    exact_phrase_bonus = 0.08 if chunk_text.lower() in content else 0.0
-    modality_bonus = 0.04 if media.modality == "text" else 0.0
-    semantic_bonus = overlap_ratio * 0.35
-
-    return media.normalized_score + semantic_bonus + exact_phrase_bonus + modality_bonus
+PayloadMode = Literal["exact_vcp"]
 
 
 @dataclass
@@ -153,7 +86,7 @@ class EncodingResult:
     encoded: list[EncodedChunk]
     ecc_codeword: Optional[bytes] = None
     ecc_parity_bytes: int = 0
-    payload_mode: PayloadMode = "semantic_legacy"
+    payload_mode: PayloadMode = "exact_vcp"
     payload_symbols: list[int] = field(default_factory=list)
     # Dynamic context keying (exact_vcp only). Empty when disabled.
     context_info: dict = field(default_factory=dict)
@@ -328,150 +261,22 @@ class SemanticEncoder:
         diversity_mode: DiversityMode = "best",
         use_ecc: bool = False,
         ecc_parity_bytes: int = 8,
-        payload_mode: PayloadMode = "semantic_legacy",
         context_manager=None,
         cover_story: Optional[str] = None,
     ) -> EncodingResult:
-        """
-        Encode a message into a media sequence.
-
-        Args:
-            message: Secret message to encode
-            modalities: Modalities to search (uses default if None)
-            k_per_chunk: Number of media items per chunk (usually 1)
-            keep_alternatives: How many alternatives to store
-            min_score: Minimum normalized score threshold
-            avoid_duplicates: If True, each chunk gets a unique media item
-            diversity_mode: How to select modalities for each chunk
-            use_ecc: If True, protects payload with Reed-Solomon Error Correction Code
-            ecc_parity_bytes: Number of RS parity bytes (default 8)
-            payload_mode: "exact_vcp" maps RS/data bytes into VCP byte clusters;
-                          "semantic_legacy" preserves semantic chunk selection
-            context_manager: Optional ContextKeyManager. When set with
-                payload_mode="exact_vcp", the cluster->byte mapping is
-                permuted per derivation epoch (dynamic context keying).
-
-        Returns:
-            EncodingResult with encoded chunks and media sequence
-        """
+        """Encode a message into a media sequence using exact_vcp mode."""
         if not self._loaded:
             raise RuntimeError("Encoder not loaded. Call load() first.")
-
         modalities = modalities or self.default_modalities
-
-        if payload_mode == "exact_vcp":
-            return self._encode_exact_vcp(
-                message=message,
-                modalities=modalities,
-                avoid_duplicates=avoid_duplicates,
-                diversity_mode=diversity_mode,
-                use_ecc=use_ecc,
-                ecc_parity_bytes=ecc_parity_bytes,
-                context_manager=context_manager,
-                cover_story=cover_story,
-            )
-
-        ecc_codeword = None
-        if use_ecc:
-            rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
-            ecc_codeword = rs_ecc.encode(message)
-
-        # Step 1: Chunk the message
-        chunks = self.chunker.chunk(message)
-
-        if not chunks:
-            raise ValueError("Message produced no valid chunks")
-
-        # Step 2: Encode each chunk
-        encoded_chunks = []
-        used_ids: set[str] = set()  # Track used media IDs to avoid duplicates
-        modality_counts: dict[str, int] = {m: 0 for m in modalities}  # For balanced mode
-
-        for chunk_idx, chunk in enumerate(chunks):
-            # Determine which modality to search based on diversity mode
-            if diversity_mode == "round_robin":
-                # Cycle through modalities
-                target_modality = modalities[chunk_idx % len(modalities)]
-                search_modalities = [target_modality]
-            elif diversity_mode == "balanced":
-                # Prefer underrepresented modalities
-                # Sort modalities by count (ascending) and use the least common
-                sorted_modalities = sorted(modalities, key=lambda m: modality_counts.get(m, 0))
-                search_modalities = sorted_modalities  # Search all but prefer least common
-            else:
-                # "best" mode - search all modalities
-                search_modalities = modalities
-
-            # Search for matching media (request more to account for filtering)
-            search_k = (
-                (k_per_chunk + keep_alternatives) * 3
-                if avoid_duplicates
-                else k_per_chunk + keep_alternatives
-            )
-
-            results = self.index.search(
-                query=chunk.text, k=search_k, modalities=search_modalities, min_score=min_score
-            )
-
-            if not results:
-                # Fallback: try with original text (without synonym expansion)
-                results = self.index.search(
-                    query=chunk.original, k=search_k, modalities=search_modalities
-                )
-
-            # For round_robin: if no results in target modality, fall back to all modalities
-            if not results and diversity_mode == "round_robin":
-                results = self.index.search(
-                    query=chunk.text, k=search_k, modalities=modalities, min_score=min_score
-                )
-
-            if not results:
-                raise RuntimeError(f"No media found for chunk: '{chunk.original}'")
-
-            # Filter out already-used IDs if avoiding duplicates
-            if avoid_duplicates:
-                results = [r for r in results if r.id not in used_ids]
-
-            if not results:
-                raise RuntimeError(
-                    f"No unique media found for chunk: '{chunk.original}' (all candidates already used)"
-                )
-
-            # For balanced mode: re-sort results to prefer underrepresented modalities
-            if diversity_mode == "balanced":
-                # Sort by: (modality_count, -normalized_score) to prefer rare modalities with good scores
-                results = sorted(
-                    results, key=lambda r: (modality_counts.get(r.modality, 0), -r.normalized_score)
-                )
-            else:
-                # Prefer candidates whose decoded text preserves chunk keywords.
-                results = sorted(
-                    results,
-                    key=lambda r: _candidate_text_score(chunk.original, r),
-                    reverse=True,
-                )
-
-            # Select best match(es)
-            selected = results[:k_per_chunk]
-            alternatives = results[k_per_chunk : k_per_chunk + keep_alternatives]
-
-            for media in selected:
-                encoded_chunks.append(
-                    EncodedChunk(chunk=chunk, media=media, alternatives=alternatives)
-                )
-                # Mark this ID as used
-                used_ids.add(media.id)
-                # Update modality count for balanced mode
-                modality_counts[media.modality] = modality_counts.get(media.modality, 0) + 1
-
-        return EncodingResult(
-            original_message=message,
-            chunks=chunks,
-            encoded=encoded_chunks,
-            ecc_codeword=ecc_codeword,
-            ecc_parity_bytes=ecc_parity_bytes if use_ecc else 0,
-            payload_mode=payload_mode,
-            payload_symbols=list(ecc_codeword) if ecc_codeword else [],
+        return self._encode_exact_vcp(
+            message=message,
+            modalities=modalities,
+            avoid_duplicates=avoid_duplicates,
+            diversity_mode=diversity_mode,
+            use_ecc=use_ecc,
+            ecc_parity_bytes=ecc_parity_bytes,
+            context_manager=context_manager,
+            cover_story=cover_story,
         )
 
     def _encode_exact_vcp(
