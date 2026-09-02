@@ -9,20 +9,24 @@ import { decodeSequence, DecodeResponse } from '@/lib/api';
 function DecodeContent() {
   const searchParams = useSearchParams();
   const [idsInput, setIdsInput] = useState('');
-  const [rawHexInput, setRawHexInput] = useState('');
+  const [mode, setMode] = useState<'exact_vcp' | 'dssc'>('exact_vcp');
+  const [sessionKeyHex, setSessionKeyHex] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<DecodeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const idsParam = searchParams.get('ids');
-    const rawHexParam = searchParams.get('raw_hex');
-
     if (idsParam) {
       setIdsInput(decodeURIComponent(idsParam));
     }
-    if (rawHexParam) {
-      setRawHexInput(decodeURIComponent(rawHexParam));
+    const modeParam = searchParams.get('mode');
+    if (modeParam === 'exact_vcp' || modeParam === 'dssc') {
+      setMode(modeParam);
+    }
+    const keyParam = searchParams.get('key');
+    if (keyParam) {
+      setSessionKeyHex(decodeURIComponent(keyParam));
     }
   }, [searchParams]);
 
@@ -39,6 +43,11 @@ function DecodeContent() {
       return;
     }
 
+    if (mode === 'dssc' && !sessionKeyHex.trim()) {
+      setError('Session key is required for DSSC mode');
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -46,8 +55,9 @@ function DecodeContent() {
 
       const response = await decodeSequence({
         media_ids,
+        mode,
+        session_key_hex: mode === 'dssc' ? sessionKeyHex.trim() : undefined,
         use_ecc: true,
-        raw_codeword_hex: rawHexInput || undefined,
       });
       setResult(response);
     } catch (err: any) {
@@ -77,7 +87,49 @@ function DecodeContent() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Input Panel */}
           <div className="space-y-6">
-            <Card title="Media IDs & Payload Hex">
+            <Card title="Decoding Settings & Media IDs">
+              {/* Mode Selector */}
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">
+                  Decoding Mode
+                </label>
+                <div className="flex gap-2">
+                  {(['exact_vcp', 'dssc'] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMode(m)}
+                      className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                        mode === m
+                          ? 'bg-primary text-white shadow-lg shadow-primary/30 border border-primary'
+                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
+                      }`}
+                    >
+                      {m === 'exact_vcp' ? '🔐 Byte-Exact (VCP)' : '🗜️ Compact Semantic (DSSC)'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* DSSC Session Key Input */}
+              {mode === 'dssc' && (
+                <div className="mb-4">
+                  <label className="block text-xs font-semibold text-gray-400 mb-1">
+                    Session Key (Hex) — shared by sender
+                  </label>
+                  <input
+                    type="text"
+                    value={sessionKeyHex}
+                    onChange={(e) => setSessionKeyHex(e.target.value)}
+                    placeholder="Paste 64-character hex session key..."
+                    className="w-full bg-gray-900 border border-gray-700 rounded p-2.5 text-xs text-purple-300 font-mono focus:outline-none focus:border-primary"
+                  />
+                </div>
+              )}
+
+              <label className="block text-xs font-semibold text-gray-400 mb-1">
+                Media Carrier IDs
+              </label>
               <textarea
                 value={idsInput}
                 onChange={(e) => setIdsInput(e.target.value)}
@@ -87,20 +139,6 @@ function DecodeContent() {
               <div className="mt-2 text-sm text-gray-400">
                 {parseIds(idsInput).length} IDs detected
               </div>
-
-              {rawHexInput && (
-                <div className="mt-4 pt-4 border-t border-gray-800">
-                  <label className="block text-xs font-semibold text-gray-400 mb-1">
-                    RS-ECC Parity Hex Payload
-                  </label>
-                  <input
-                    type="text"
-                    value={rawHexInput}
-                    onChange={(e) => setRawHexInput(e.target.value)}
-                    className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-xs text-purple-300 font-mono"
-                  />
-                </div>
-              )}
             </Card>
 
             <button
@@ -142,8 +180,14 @@ function DecodeContent() {
                 <Card title="Verification & Recovery">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
+                      <span className="text-gray-400">Decoding Mode:</span>
+                      <Badge variant="info">{result.mode.toUpperCase()}</Badge>
+                    </div>
+                    <div className="flex items-center justify-between">
                       <span className="text-gray-400">Error Recovery Status:</span>
-                      <Badge variant="success">0% BER (100% RECOVERED)</Badge>
+                      <Badge variant={result.ecc_success ? "success" : "error"}>
+                        {result.ecc_success ? "0% BER (100% RECOVERED)" : "DECODING FAILED"}
+                      </Badge>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-400">Verification Rate:</span>

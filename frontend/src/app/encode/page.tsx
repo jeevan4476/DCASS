@@ -9,13 +9,29 @@ import { encodeMessage, EncodeResponse, checkReady } from '@/lib/api';
 export default function EncodePage() {
   const router = useRouter();
   const [message, setMessage] = useState('');
-  const [mode, setMode] = useState<'best' | 'round_robin' | 'balanced'>('best');
+  const [mode, setMode] = useState<'exact_vcp' | 'dssc'>('exact_vcp');
+  const [sessionKeyHex, setSessionKeyHex] = useState('');
+  const [diversityMode, setDiversityMode] = useState<'best' | 'round_robin' | 'balanced'>('best');
   const [modalities, setModalities] = useState(['image', 'text', 'audio']);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<EncodeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [serverReady, setServerReady] = useState<boolean | null>(null);
   const [serverInitializing, setServerInitializing] = useState(false);
+
+  // Generate a random 32-byte session key
+  const generateSessionKey = () => {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const handleModeChange = (newMode: 'exact_vcp' | 'dssc') => {
+    setMode(newMode);
+    if (newMode === 'dssc' && !sessionKeyHex) {
+      setSessionKeyHex(generateSessionKey());
+    }
+  };
 
   useEffect(() => {
     const checkServerStatus = async () => {
@@ -44,6 +60,8 @@ export default function EncodePage() {
       const response = await encodeMessage({
         message: message.trim(),
         mode,
+        session_key_hex: mode === 'dssc' ? sessionKeyHex : undefined,
+        diversity_mode: diversityMode,
         modalities,
         use_ecc: true,
       });
@@ -70,8 +88,11 @@ export default function EncodePage() {
   const handleOpenDecode = () => {
     if (!result) return;
     const ids = encodeURIComponent(result.media_ids.join(','));
-    const rawHex = result.raw_codeword_hex ? encodeURIComponent(result.raw_codeword_hex) : '';
-    router.push(`/decode?ids=${ids}&raw_hex=${rawHex}`);
+    let url = `/decode?ids=${ids}&mode=${mode}`;
+    if (mode === 'dssc' && sessionKeyHex) {
+      url += `&key=${encodeURIComponent(sessionKeyHex)}`;
+    }
+    router.push(url);
   };
 
   const getModalityColor = (modality: string) => {
@@ -110,26 +131,81 @@ export default function EncodePage() {
 
               <Card title="Encoding Settings">
                 <div className="space-y-4">
-                  {/* Diversity Mode */}
+                  {/* Mode Selector */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Diversity Mode
+                    <label className="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">
+                      Steganography Mode
                     </label>
-                    <select
-                      value={mode}
-                      onChange={(e) => setMode(e.target.value as any)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:border-primary"
-                    >
-                      <option value="best">Best Match (Highest accuracy)</option>
-                      <option value="round_robin">Round Robin (Balanced modalities)</option>
-                      <option value="balanced">Balanced (Mix of both)</option>
-                    </select>
+                    <div className="flex gap-2">
+                      {(['exact_vcp', 'dssc'] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => handleModeChange(m)}
+                          className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                            mode === m
+                              ? 'bg-primary text-white shadow-lg shadow-primary/30 border border-primary'
+                              : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
+                          }`}
+                        >
+                          {m === 'exact_vcp' ? '🔐 Byte-Exact (VCP)' : '🗜️ Compact Semantic (DSSC)'}
+                        </button>
+                      ))}
+                    </div>
+                    {mode === 'dssc' && (
+                      <p className="mt-2 text-xs text-purple-300">
+                        ✨ DSSC maps multi-bit symbols per carrier using dynamic state spaces (~15 bits/carrier), significantly reducing the required carrier count.
+                      </p>
+                    )}
                   </div>
+
+                  {/* DSSC Session Key */}
+                  {mode === 'dssc' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1">
+                        Session Key (Hex)
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={sessionKeyHex}
+                          onChange={(e) => setSessionKeyHex(e.target.value)}
+                          placeholder="64-character hex key"
+                          className="flex-1 bg-gray-900 border border-gray-700 rounded p-2 text-xs text-purple-300 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSessionKeyHex(generateSessionKey())}
+                          className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-xs text-gray-300 transition-colors"
+                        >
+                          🔄 New Key
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Diversity Mode (exact_vcp only) */}
+                  {mode === 'exact_vcp' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Carrier Diversity Mode
+                      </label>
+                      <select
+                        value={diversityMode}
+                        onChange={(e) => setDiversityMode(e.target.value as any)}
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:border-primary"
+                      >
+                        <option value="best">Best Match (Highest score)</option>
+                        <option value="round_robin">Round Robin (Balanced modalities)</option>
+                        <option value="balanced">Balanced (Mix of both)</option>
+                      </select>
+                    </div>
+                  )}
 
                   {/* Modalities */}
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Modalities
+                      Allowed Modalities
                     </label>
                     <div className="flex flex-wrap gap-3">
                       {['image', 'text', 'audio'].map((mod) => (
@@ -190,13 +266,23 @@ export default function EncodePage() {
                   <Card title="Encoding Results">
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
+                        <span className="text-gray-400">Mode:</span>
+                        <Badge variant="info">{result.mode.toUpperCase()}</Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
                         <span className="text-gray-400">Elapsed Time:</span>
                         <span className="text-white font-mono">{result.elapsed_ms.toFixed(1)} ms</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Media Items:</span>
-                        <span className="text-white font-semibold">{result.media_ids.length}</span>
+                        <span className="text-gray-400">Media Carriers:</span>
+                        <span className="text-white font-semibold">{result.media_ids.length} items</span>
                       </div>
+                      {result.bits_per_carrier && result.mode === 'dssc' && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-400">Information Density:</span>
+                          <span className="text-purple-300 font-mono">~{result.bits_per_carrier} bits/carrier</span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between">
                         <span className="text-gray-400">Error Correction (RS-ECC):</span>
                         <Badge variant="success">ACTIVE (0% BER)</Badge>

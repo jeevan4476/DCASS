@@ -131,8 +131,7 @@ def validate_transmit_media_ids(media_ids: list[str]) -> None:
 # ---------------------------------------------------------------------------
 # Lazy engine singletons
 # ---------------------------------------------------------------------------
-_encoder = None
-_decoder = None
+_engine = None
 _engine_lock = threading.Lock()
 _initializing = False
 _ready = False
@@ -147,49 +146,38 @@ _transmission_lock = threading.Lock()
 _index_counts_cache: Optional[dict] = None
 
 
-def _get_encoder():
-    global _encoder
-    if _encoder is None:
+def _get_engine():
+    global _engine
+    if _engine is None:
         with _engine_lock:
-            if _encoder is None:
-                from src.engine.encoder import SemanticEncoder
+            if _engine is None:
+                from src.engine.semantic_engine import SemanticEngine
 
-                encoder = SemanticEncoder(expand_synonyms=True)
-                encoder.load()
-                _encoder = encoder
-    return _encoder
+                engine = SemanticEngine()
+                engine.load()
+                _engine = engine
+    return _engine
+
+
+def _get_encoder():
+    return _get_engine()._exact_encoder
 
 
 def _get_decoder():
-    global _decoder
-    if _decoder is None:
-        with _engine_lock:
-            if _decoder is None:
-                from src.engine.decoder import SemanticDecoder
-
-                decoder = SemanticDecoder()
-                decoder.load()
-                _decoder = decoder
-    return _decoder
+    return _get_engine()._exact_decoder
 
 
 def warmup():
-    """Pre-load encoder and decoder on startup."""
+    """Pre-load unified SemanticEngine on startup."""
     global _initializing, _ready
     _initializing = True
     print("\n" + "=" * 70)
     print("🔥 Warming up DCASS engine...")
     print("=" * 70)
     try:
-        # Load encoder (this triggers CLIP model loading)
-        print("\n📦 Loading encoder and CLIP model...")
-        encoder = _get_encoder()
-        print(f"✅ Encoder ready: {encoder}")
-
-        # Load decoder
-        print("\n📦 Loading decoder...")
-        decoder = _get_decoder()
-        print(f"✅ Decoder ready: {decoder}")
+        print("\n📦 Loading SemanticEngine and indices...")
+        engine = _get_engine()
+        print(f"✅ SemanticEngine ready: {engine}")
 
         _ready = True
         print("\n" + "=" * 70)
@@ -208,22 +196,26 @@ def warmup():
 # ---------------------------------------------------------------------------
 class EncodeRequest(BaseModel):
     message: str
-    mode: Literal["best", "round_robin", "balanced"] = "best"
-    payload_mode: Literal["exact_vcp", "semantic_legacy"] = "exact_vcp"
+    mode: Optional[str] = "exact_vcp"
+    session_key_hex: Optional[str] = None
+    diversity_mode: Literal["best", "round_robin", "balanced"] = "best"
     modalities: list[str] = Field(default=["image", "text", "audio"])
     use_ecc: bool = True
+    ecc_parity_bytes: int = Field(default=8, ge=1, le=64)
     use_dynamic_context: bool = False
     context_bucket_seconds: int = Field(default=3600, ge=1)
 
 
 class EncodeResponse(BaseModel):
+    mode: str = "exact_vcp"
     media_ids: list[str]
-    chunks: list[str]
-    encoded: list[dict]
+    carrier_count: int = 0
+    chunks: list[str] = Field(default_factory=list)
+    encoded: list[dict] = Field(default_factory=list)
     media_sequence: list[dict] = Field(default_factory=list)
-    modality_breakdown: dict[str, int]
+    modality_breakdown: dict[str, int] = Field(default_factory=dict)
     elapsed_ms: float
-    payload_mode: str = "semantic_legacy"
+    bits_per_carrier: float = 8.0
     ecc_parity_bytes: int = 0
     payload_bytes: list[int] = Field(default_factory=list)
     context_info: dict = Field(default_factory=dict)
@@ -231,26 +223,24 @@ class EncodeResponse(BaseModel):
 
 class DecodeRequest(BaseModel):
     media_ids: list[str]
-    payload_mode: Literal["exact_vcp", "semantic_legacy"] = "exact_vcp"
+    mode: Optional[Literal["exact_vcp", "dssc"]] = "exact_vcp"
+    session_key_hex: Optional[str] = None
+    modalities: Optional[list[str]] = None
     use_ecc: bool = True
-    # DEBUG ONLY (P2-12): legacy side-channel that carries the payload OUTSIDE
-    # the media sequence. The exact_vcp mode exists to eliminate it; do not
-    # use it for real transmissions.
-    raw_codeword_hex: Optional[str] = None
+    ecc_parity_bytes: int = Field(default=8, ge=1, le=64)
     use_dynamic_context: bool = False
     context_bucket_seconds: int = Field(default=3600, ge=1)
-    # Epoch id from the encode response; skips candidate search on decode.
     context_epoch_hint: Optional[str] = None
 
 
 class DecodeResponse(BaseModel):
+    mode: str = "exact_vcp"
     reconstructed_meaning: str
     items: list[dict]
     decoded: list[dict] = Field(default_factory=list)
     verification_rate: float
     all_verified: bool
     elapsed_ms: float
-    payload_mode: str = "semantic_legacy"
     ecc_success: bool = True
     ecc_errors_fixed: list[int] = Field(default_factory=list)
     payload_bytes: list[int] = Field(default_factory=list)
@@ -286,69 +276,122 @@ def health():
 @app.post("/api/encode", response_model=EncodeResponse)
 def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
     t0 = time.perf_counter()
+
+    # Determine mode and diversity_mode
+    engine_mode = "exact_vcp"
+    diversity_mode = req.diversity_mode
+    if req.mode in ("best", "round_robin", "balanced"):
+        diversity_mode = req.mode
+        engine_mode = "exact_vcp"
+    elif req.mode in ("exact_vcp", "dssc"):
+        engine_mode = req.mode
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid mode: {req.mode}")
+
+    session_key: Optional[bytes] = None
+    if engine_mode == "dssc":
+        if not req.session_key_hex:
+            raise HTTPException(
+                status_code=400,
+                detail="session_key is required for DSSC mode. Provide session_key_hex as a hex string.",
+            )
+        try:
+            session_key = bytes.fromhex(req.session_key_hex)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="session_key_hex is not valid hex.")
+
     context_manager = None
     if req.use_dynamic_context:
         context_manager = _build_context_manager(req.context_bucket_seconds)
+
     try:
-        encoder = _get_encoder()
-        result = encoder.encode(
-            req.message,
+        engine = _get_engine()
+        result = engine.encode(
+            message=req.message,
+            mode=engine_mode,
+            session_key=session_key,
             modalities=req.modalities,
-            diversity_mode=req.mode,
             use_ecc=req.use_ecc,
-            payload_mode=req.payload_mode,
+            ecc_parity_bytes=req.ecc_parity_bytes,
+            diversity_mode=diversity_mode,
             context_manager=context_manager,
         )
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    encoded_items = []
-    media_seq_items = []
-    for enc in result.encoded:
-        fpath = enc.file_path or (enc.media.file_path if enc.media else "")
-        encoded_items.append(
-            {
-                "media_id": enc.media.id,
-                "modality": enc.media.modality,
-                "score": round(enc.media.normalized_score, 4),
-                "content": enc.media.content[:120],
-                "file_path": fpath,
-                "payload_byte": enc.payload_byte,
-                "cluster_id": enc.cluster_id,
-            }
-        )
+    encoded_items: list[dict] = []
+    media_seq_items: list[dict] = []
+    chunks: list[str] = []
+    modality_breakdown: dict[str, int] = {}
 
-    for item in result.media_sequence:
-        fpath = item.file_path or ""
-        media_seq_items.append(
-            {
-                "id": item.id,
-                "media_id": item.id,
-                "modality": item.modality,
-                "content": item.content[:120],
-                "score": round(item.score, 4),
-                "normalized_score": round(item.normalized_score, 4),
-                "file_path": fpath,
-                "metadata": item.metadata,
-            }
-        )
+    if result.exact_vcp_result is not None:
+        vcp = result.exact_vcp_result
+        chunks = [c.original for c in vcp.chunks]
+        modality_breakdown = vcp.modality_breakdown
+        for enc in vcp.encoded:
+            fpath = enc.file_path or (enc.media.file_path if enc.media else "")
+            encoded_items.append(
+                {
+                    "media_id": enc.media.id,
+                    "modality": enc.media.modality,
+                    "score": round(enc.media.normalized_score, 4),
+                    "content": enc.media.content[:120],
+                    "file_path": fpath,
+                    "payload_byte": enc.payload_byte,
+                    "cluster_id": enc.cluster_id,
+                }
+            )
+        for item in vcp.media_sequence:
+            media_seq_items.append(
+                {
+                    "id": item.id,
+                    "media_id": item.id,
+                    "modality": item.modality,
+                    "content": item.content[:120],
+                    "score": round(item.score, 4),
+                    "file_path": item.file_path or "",
+                }
+            )
+        context_info = dict(vcp.context_info)
+    elif result.dssc_result is not None:
+        dssc = result.dssc_result
+        modality_breakdown = {}
+        for carrier in dssc.encoded_carriers:
+            item = engine.index.get_by_id(carrier.media_id)
+            mod = item.modality if item else "unknown"
+            modality_breakdown[mod] = modality_breakdown.get(mod, 0) + 1
+            encoded_items.append(
+                {
+                    "media_id": carrier.media_id,
+                    "modality": mod,
+                    "score": 1.0,
+                    "content": (item.content[:120] if item else ""),
+                    "file_path": (item.file_path or "" if item else ""),
+                    "payload_byte": carrier.symbol,
+                    "cluster_id": None,
+                }
+            )
+        context_info = result.context_info
+    else:
+        context_info = result.context_info
 
-    context_info = dict(result.context_info)
     if req.use_dynamic_context and "context_mode" not in context_info:
         context_info["context_mode"] = (
             "keyed" if _context_secret_from_env() else "obfuscation"
         )
 
     return EncodeResponse(
+        mode=result.mode,
         media_ids=result.media_ids,
-        chunks=[c.original for c in result.chunks],
+        carrier_count=result.carrier_count,
+        chunks=chunks,
         encoded=encoded_items,
         media_sequence=media_seq_items,
-        modality_breakdown=result.modality_breakdown,
+        modality_breakdown=modality_breakdown,
         elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
-        payload_mode=result.payload_mode,
+        bits_per_carrier=result.bits_per_carrier,
         ecc_parity_bytes=result.ecc_parity_bytes,
-        payload_bytes=result.payload_symbols,
+        payload_bytes=result.payload_bytes,
         context_info=context_info,
     )
 
@@ -356,64 +399,100 @@ def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
 @app.post("/api/decode", response_model=DecodeResponse)
 def decode(req: DecodeRequest, _: None = Depends(require_api_token)):
     t0 = time.perf_counter()
-    decoder = _get_decoder()
 
-    raw_codeword = None
-    if req.raw_codeword_hex:
+    engine_mode = req.mode or "exact_vcp"
+    session_key: Optional[bytes] = None
+    if engine_mode == "dssc":
+        if not req.session_key_hex:
+            raise HTTPException(
+                status_code=400,
+                detail="session_key is required for DSSC mode. Provide session_key_hex as a hex string.",
+            )
         try:
-            raw_codeword = bytes.fromhex(req.raw_codeword_hex)
+            session_key = bytes.fromhex(req.session_key_hex)
         except ValueError:
-            pass
+            raise HTTPException(status_code=400, detail="session_key_hex is not valid hex.")
 
     context_manager = None
     if req.use_dynamic_context:
         context_manager = _build_context_manager(req.context_bucket_seconds)
 
     try:
-        result = decoder.decode(
-            req.media_ids,
+        engine = _get_engine()
+        result = engine.decode(
+            media_ids=req.media_ids,
+            mode=engine_mode,
+            session_key=session_key,
+            modalities=req.modalities,
             use_ecc=req.use_ecc,
-            raw_codeword=raw_codeword,
-            payload_mode=req.payload_mode,
+            ecc_parity_bytes=req.ecc_parity_bytes,
             context_manager=context_manager,
             context_epoch_hint=req.context_epoch_hint,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    items = []
-    decoded_items = []
-    for d in result.decoded:
-        file_path = d.file_path or ""
-        if not file_path and d.verified:
-            item = decoder.index.get_by_id(d.media_id)
-            if item:
-                file_path = item.file_path or ""
-
-        item_dict = {
-            "media_id": d.media_id,
-            "modality": d.modality,
-            "content": d.content[:200],
-            "file_path": file_path,
-            "verified": d.verified,
-            "payload_byte": d.payload_byte,
-            "cluster_id": d.cluster_id,
-        }
-        items.append(item_dict)
-        decoded_items.append(item_dict)
+    items: list[dict] = []
+    if result.exact_vcp_result is not None:
+        vcp = result.exact_vcp_result
+        for d in vcp.decoded:
+            file_path = d.file_path or ""
+            if not file_path and d.verified:
+                item = engine.index.get_by_id(d.media_id)
+                if item:
+                    file_path = item.file_path or ""
+            items.append(
+                {
+                    "media_id": d.media_id,
+                    "modality": d.modality,
+                    "content": d.content[:200],
+                    "file_path": file_path,
+                    "verified": d.verified,
+                    "payload_byte": d.payload_byte,
+                    "cluster_id": d.cluster_id,
+                }
+            )
+        ecc_success = vcp.ecc_success
+        ecc_fixed = vcp.ecc_errors_fixed
+        epoch_id = vcp.context_epoch_id
+        payload_bytes = vcp.payload_symbols
+    elif result.dssc_result is not None:
+        dssc = result.dssc_result
+        for mid in dssc.media_ids:
+            item = engine.index.get_by_id(mid)
+            items.append(
+                {
+                    "media_id": mid,
+                    "modality": item.modality if item else "unknown",
+                    "content": item.content[:200] if item else "",
+                    "file_path": item.file_path or "" if item else "",
+                    "verified": item is not None,
+                    "payload_byte": None,
+                    "cluster_id": None,
+                }
+            )
+        ecc_success = dssc.success
+        ecc_fixed = dssc.ecc_fixed_errors
+        epoch_id = None
+        payload_bytes = []
+    else:
+        ecc_success = result.success
+        ecc_fixed = result.ecc_fixed_errors
+        epoch_id = None
+        payload_bytes = []
 
     return DecodeResponse(
-        reconstructed_meaning=result.reconstructed_meaning,
+        mode=result.mode,
+        reconstructed_meaning=result.reconstructed_message or "",
         items=items,
-        decoded=decoded_items,
+        decoded=items,
         verification_rate=result.verification_rate,
-        all_verified=result.all_verified,
+        all_verified=all(i["verified"] for i in items) if items else True,
         elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
-        payload_mode=result.payload_mode,
-        ecc_success=result.ecc_success,
-        ecc_errors_fixed=result.ecc_errors_fixed,
-        payload_bytes=result.payload_symbols,
-        context_epoch_id=result.context_epoch_id,
+        ecc_success=ecc_success,
+        ecc_errors_fixed=ecc_fixed,
+        payload_bytes=payload_bytes,
+        context_epoch_id=epoch_id,
     )
 
 
@@ -518,13 +597,12 @@ def status():
 @app.get("/api/ready")
 def ready():
     """Check if the server is ready to process requests."""
-    # Consider ready if both encoder and decoder are loaded (even without warmup)
-    is_ready = _ready or (_encoder is not None and _decoder is not None)
+    is_ready = _ready or (_engine is not None and _engine.is_loaded())
     return {
         "ready": is_ready,
         "initializing": _initializing,
-        "encoder_loaded": _encoder is not None,
-        "decoder_loaded": _decoder is not None,
+        "encoder_loaded": _engine is not None and _engine.is_loaded(),
+        "decoder_loaded": _engine is not None and _engine.is_loaded(),
     }
 
 

@@ -34,14 +34,18 @@ const apiLongTimeout = axios.create({
 
 export interface EncodeRequest {
   message: string;
-  mode?: 'best' | 'round_robin' | 'balanced';
-  payload_mode?: 'exact_vcp' | 'semantic_legacy';
+  mode?: 'exact_vcp' | 'dssc';
+  session_key_hex?: string;
+  diversity_mode?: 'best' | 'round_robin' | 'balanced';
   modalities?: string[];
   use_ecc?: boolean;
+  ecc_parity_bytes?: number;
 }
 
 export interface EncodeResponse {
+  mode: string;
   media_ids: string[];
+  carrier_count: number;
   chunks: string[];
   encoded: Array<{
     media_id: string;
@@ -62,20 +66,24 @@ export interface EncodeResponse {
   }>;
   modality_breakdown: Record<string, number>;
   elapsed_ms: number;
-  raw_codeword_hex?: string;
-  payload_mode?: string;
+  bits_per_carrier?: number;
   ecc_parity_bytes?: number;
   payload_bytes?: number[];
+  context_info?: Record<string, unknown>;
 }
 
 export interface DecodeRequest {
   media_ids: string[];
-  payload_mode?: 'exact_vcp' | 'semantic_legacy';
+  mode?: 'exact_vcp' | 'dssc';
+  session_key_hex?: string;
+  modalities?: string[];
   use_ecc?: boolean;
-  raw_codeword_hex?: string;
+  ecc_parity_bytes?: number;
+  context_epoch_hint?: string;
 }
 
 export interface DecodeResponse {
+  mode: string;
   reconstructed_meaning: string;
   items: Array<{
     media_id: string;
@@ -83,8 +91,8 @@ export interface DecodeResponse {
     content: string;
     file_path?: string;
     verified: boolean;
-    payload_byte?: number;
-    cluster_id?: number;
+    payload_byte?: number | null;
+    cluster_id?: number | null;
   }>;
   decoded?: Array<{
     media_id: string;
@@ -92,16 +100,16 @@ export interface DecodeResponse {
     content: string;
     file_path?: string;
     verified: boolean;
-    payload_byte?: number;
-    cluster_id?: number;
+    payload_byte?: number | null;
+    cluster_id?: number | null;
   }>;
   verification_rate: number;
   all_verified: boolean;
   elapsed_ms: number;
-  payload_mode?: string;
   ecc_success?: boolean;
   ecc_errors_fixed?: number[];
   payload_bytes?: number[];
+  context_epoch_id?: string;
 }
 
 export interface SearchRequest {
@@ -152,7 +160,7 @@ export async function checkReady(): Promise<{ ready: boolean; initializing: bool
 export async function encodeMessage(request: EncodeRequest): Promise<EncodeResponse> {
   const response = await apiLongTimeout.post('/encode', {
     use_ecc: true,
-    payload_mode: 'exact_vcp',
+    mode: 'exact_vcp',
     ...request,
   });
   return response.data;
@@ -161,7 +169,7 @@ export async function encodeMessage(request: EncodeRequest): Promise<EncodeRespo
 export async function decodeSequence(request: DecodeRequest): Promise<DecodeResponse> {
   const response = await apiLongTimeout.post('/decode', {
     use_ecc: true,
-    payload_mode: 'exact_vcp',
+    mode: 'exact_vcp',
     ...request,
   });
   return response.data;
