@@ -53,6 +53,8 @@ export interface EncodeResponse {
     score: number;
     content: string;
     file_path?: string;
+    gdrive_path?: string;
+    gdrive_url?: string;
     payload_byte?: number;
     cluster_id?: number;
   }>;
@@ -63,6 +65,8 @@ export interface EncodeResponse {
     content: string;
     score: number;
     file_path?: string;
+    gdrive_path?: string;
+    gdrive_url?: string;
   }>;
   modality_breakdown: Record<string, number>;
   elapsed_ms: number;
@@ -90,6 +94,8 @@ export interface DecodeResponse {
     modality: string;
     content: string;
     file_path?: string;
+    gdrive_path?: string;
+    gdrive_url?: string;
     verified: boolean;
     payload_byte?: number | null;
     cluster_id?: number | null;
@@ -99,6 +105,8 @@ export interface DecodeResponse {
     modality: string;
     content: string;
     file_path?: string;
+    gdrive_path?: string;
+    gdrive_url?: string;
     verified: boolean;
     payload_byte?: number | null;
     cluster_id?: number | null;

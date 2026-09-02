@@ -11,7 +11,9 @@ Architecture:
 
 from __future__ import annotations
 
+import os
 import json
+import urllib.parse
 import warnings
 import numpy as np
 import faiss
@@ -241,6 +243,54 @@ class MediaItem:
                 if cand.exists():
                     return str(cand.resolve())
             return None
+
+    @property
+    def gdrive_path(self) -> str:
+        """Resolve canonical relative Google Drive path under DCASS_Backup/."""
+        if self.modality == "image":
+            raw_path = (
+                self.metadata.get("path")
+                or self.metadata.get("image_path")
+                or self.metadata.get("file_path")
+            )
+            if raw_path:
+                p = Path(raw_path)
+                filename = p.name
+                source = str(self.metadata.get("source", "")).lower()
+                if "30k" in source or "flickr30k" in str(raw_path):
+                    return f"data/raw/flickr30k/images/{filename}"
+                elif "coco" in source or "coco" in str(raw_path):
+                    return f"data/raw/coco/{filename}"
+                elif "laion" in source or "laion" in str(raw_path):
+                    return f"data/raw/laion/{filename}"
+                return f"data/raw/flickr8k/images/{filename}"
+            return f"data/raw/flickr8k/images/{self.id}.jpg"
+
+        elif self.modality == "audio":
+            raw_path = (
+                self.metadata.get("audio_path")
+                or self.metadata.get("path")
+                or self.metadata.get("file_path")
+            )
+            if raw_path:
+                return f"data/audio/{Path(raw_path).name}"
+            return f"data/audio/{self.id}.wav"
+
+        else:  # text
+            source = str(self.metadata.get("source", "")).lower()
+            if "wiki" in source or "wiki" in self.id.lower():
+                return "data/raw/wikipedia/sentences.json"
+            return "data/raw/text/sentences.json"
+
+    @property
+    def gdrive_url(self) -> str:
+        """Resolve web link to view or preview this media file in Google Drive."""
+        base_url = os.environ.get("DCASS_GDRIVE_BASE_URL", "").rstrip("/")
+        if base_url:
+            return f"{base_url}/{self.gdrive_path}"
+        # Standard Google Drive search URL by file name or media ID
+        search_term = Path(self.gdrive_path).name if self.gdrive_path else self.id
+        return f"https://drive.google.com/drive/u/0/search?q={urllib.parse.quote(search_term)}"
 
     def __repr__(self) -> str:
         return f"MediaItem({self.modality}:{self.id}, score={self.normalized_score:.3f})"

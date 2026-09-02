@@ -337,6 +337,8 @@ def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
                     "score": round(enc.media.normalized_score, 4),
                     "content": enc.media.content[:120],
                     "file_path": fpath,
+                    "gdrive_path": enc.media.gdrive_path if enc.media else "",
+                    "gdrive_url": enc.media.gdrive_url if enc.media else "",
                     "payload_byte": enc.payload_byte,
                     "cluster_id": enc.cluster_id,
                 }
@@ -350,6 +352,8 @@ def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
                     "content": item.content[:120],
                     "score": round(item.score, 4),
                     "file_path": item.file_path or "",
+                    "gdrive_path": item.gdrive_path or "",
+                    "gdrive_url": item.gdrive_url or "",
                 }
             )
         context_info = dict(vcp.context_info)
@@ -367,8 +371,22 @@ def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
                     "score": 1.0,
                     "content": (item.content[:120] if item else ""),
                     "file_path": (item.file_path or "" if item else ""),
+                    "gdrive_path": (item.gdrive_path or "" if item else ""),
+                    "gdrive_url": (item.gdrive_url or "" if item else ""),
                     "payload_byte": carrier.symbol,
                     "cluster_id": None,
+                }
+            )
+            media_seq_items.append(
+                {
+                    "id": carrier.media_id,
+                    "media_id": carrier.media_id,
+                    "modality": mod,
+                    "content": (item.content[:120] if item else ""),
+                    "score": 1.0,
+                    "file_path": (item.file_path or "" if item else ""),
+                    "gdrive_path": (item.gdrive_path or "" if item else ""),
+                    "gdrive_url": (item.gdrive_url or "" if item else ""),
                 }
             )
         context_info = result.context_info
@@ -437,16 +455,17 @@ def decode(req: DecodeRequest, _: None = Depends(require_api_token)):
         vcp = result.exact_vcp_result
         for d in vcp.decoded:
             file_path = d.file_path or ""
-            if not file_path and d.verified:
-                item = engine.index.get_by_id(d.media_id)
-                if item:
-                    file_path = item.file_path or ""
+            item = engine.index.get_by_id(d.media_id)
+            if not file_path and d.verified and item:
+                file_path = item.file_path or ""
             items.append(
                 {
                     "media_id": d.media_id,
                     "modality": d.modality,
                     "content": d.content[:200],
                     "file_path": file_path,
+                    "gdrive_path": item.gdrive_path if item else "",
+                    "gdrive_url": item.gdrive_url if item else "",
                     "verified": d.verified,
                     "payload_byte": d.payload_byte,
                     "cluster_id": d.cluster_id,
@@ -466,6 +485,8 @@ def decode(req: DecodeRequest, _: None = Depends(require_api_token)):
                     "modality": item.modality if item else "unknown",
                     "content": item.content[:200] if item else "",
                     "file_path": item.file_path or "" if item else "",
+                    "gdrive_path": item.gdrive_path or "" if item else "",
+                    "gdrive_url": item.gdrive_url or "" if item else "",
                     "verified": item is not None,
                     "payload_byte": None,
                     "cluster_id": None,
