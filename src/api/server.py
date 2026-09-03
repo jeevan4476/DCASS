@@ -198,6 +198,7 @@ class EncodeRequest(BaseModel):
     message: str
     mode: Optional[str] = "exact_vcp"
     session_key_hex: Optional[str] = None
+    cover_story: Optional[str] = None
     diversity_mode: Literal["best", "round_robin", "balanced"] = "best"
     modalities: list[str] = Field(default=["image", "text", "audio"])
     use_ecc: bool = True
@@ -315,6 +316,7 @@ def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
             ecc_parity_bytes=req.ecc_parity_bytes,
             diversity_mode=diversity_mode,
             context_manager=context_manager,
+            cover_story=req.cover_story,
         )
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -306,29 +306,11 @@ export default function EncodePage() {
                           {item.content && (
                             <div className="text-sm text-gray-300">{item.content}</div>
                           )}
-                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-700/50 text-xs">
-                            {item.file_path ? (
-                              <span className="text-gray-400 font-mono break-all flex-1 min-w-[200px]">
-                                📂 Local: {item.file_path}
-                              </span>
-                            ) : (
-                              <span className="text-amber-400/80 font-mono flex-1 min-w-[200px]">
-                                ☁️ Cloud Only (Not downloaded locally)
-                              </span>
-                            )}
-                            {item.gdrive_url && (
-                              <a
-                                href={item.gdrive_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-blue-900/40 text-blue-300 hover:bg-blue-800/60 hover:text-white border border-blue-700/50 transition-colors font-sans font-medium whitespace-nowrap"
-                                title={item.gdrive_path ? `Path in Drive: ${item.gdrive_path}` : 'View in Google Drive'}
-                              >
-                                <span>Google Drive</span>
-                                <span className="text-xs">↗</span>
-                              </a>
-                            )}
-                          </div>
+                          {item.file_path && (
+                            <div className="text-xs text-gray-500 font-mono break-all pt-1 border-t border-gray-700/50">
+                              File: {item.file_path}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

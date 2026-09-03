@@ -217,6 +217,8 @@ class VCPPayloadMapper:
                 meta=meta,
                 query=query,
             )
+            score = self._score_candidate(query, media, local_index)
+            candidates.append(PayloadCarrier(media, int(symbol), global_index, local_index, score))
         if not candidates and modalities:
             # Graceful fallback: if the requested modality has no carriers in this cluster,
             # fall back to any available modality in the cluster rather than failing.
