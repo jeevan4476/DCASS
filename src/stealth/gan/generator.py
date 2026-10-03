@@ -3,7 +3,7 @@
 GAN Generator for DCASS Steganography Scheduling.
 
 Implements an autoregressive temporal pattern generator that produces realistic
-human-like transmission timing distributions for covert communication:
+human-like transmission timing distributions for traffic scheduling simulation:
 - Variable and arbitrary sequence lengths (N >= 1 without length limits)
 - Causal temporal residual blocks supporting native 2nd-order gradients on GPU
 - Step-by-step autoregressive streaming for live transmission pipelines

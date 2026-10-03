@@ -6,7 +6,7 @@
 **Training Script**: [`scripts/stealth/train_rl.py`](../scripts/stealth/train_rl.py)  
 **Evaluation Script**: [`scripts/stealth/benchmark_rl_agent.py`](../scripts/stealth/benchmark_rl_agent.py)  
 **Test Suite**: [`tests/test_stealth/test_rl.py`](../tests/test_stealth/test_rl.py)  
-**Status**: Production Verified (1.57 / 1.58 Bits Channel Path Entropy, 49.39% Warden Evasion)
+**Status**: Production Verified (1.57 / 1.58 Bits Channel Path Entropy, 49.39% Warden Indistinguishability)
 
 ---
 
@@ -37,7 +37,7 @@ flowchart TD
         DELAY --> DISP["Step Dispatcher"]
         CHAN --> DISP
         DISP --> NET["Multi-Channel Network Egress\n(Social Feed / Forum / Media Sharing)"]
-        NET --> WARDEN["Deep Packet Inspection Warden\n(Feedback: Bot Probability P_bot)"]
+        NET --> WARDEN["Statistical Traffic Warden\n(Feedback: Bot Probability P_bot)"]
         WARDEN --> REWARD["Reward R_t = Throughput - lambda*P_bot + S_entropy"]
         REWARD --> EnvState
     end
@@ -156,12 +156,12 @@ Where:
 • Effective Transmission Rate:     2.57 items / minute
 • Delivery Success Rate:           98.88%
 
-[4] ADVERSARIAL WARDEN EVASION PERFORMANCE
+[4] ADVERSARIAL WARDEN EVALUATION PERFORMANCE
 --------------------------------------------------------------------------------
 • Mean Warden Bot Probability:     49.39%
 • Median Warden Bot Probability:   49.39%
-• Evasion Success Rate (Score <0.5):100.0%
-• Warden Classification Status:    ✅ UNDETECTED (0.4940 <= 0.5000 Equilibrium)
+• Indistinguishable Rate (Score <0.5):100.0%
+• Warden Classification Status:    ✅ INDISTINGUISHABLE (0.4940 <= 0.5000 Equilibrium)
 ================================================================================
 ```
 

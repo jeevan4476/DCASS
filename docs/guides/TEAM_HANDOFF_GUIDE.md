@@ -30,7 +30,7 @@
 
 ### Project Status: Production-Ready for Core Functionality
 
-DCASS (Dynamic Context-Aware Semantic Steganography) is a **research-oriented steganography system** that enables covert communication by selecting and distributing semantically aligned media content using human-like behavioral patterns.
+DCASS (Dynamic Context-Aware Semantic Steganography) is an academic **research system** for zero-modification semantic steganography and information hiding by selecting and distributing semantically aligned media content using human-like behavioral patterns.
 
 **Key Achievement:** The system implements a **3-tier fallback architecture** (RL → GAN → Static) that ensures it always works, even without trained AI models.
 

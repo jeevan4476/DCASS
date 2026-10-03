@@ -5,14 +5,14 @@
 
 ## 📌 Overview
 
-DCASS is a **research-oriented system** for *semantic steganography* that enables covert communication **without modifying any carrier media**.  
+DCASS is an academic **research system** for *zero-modification semantic steganography* and information hiding.  
 Instead of embedding data into pixels, audio samples, or bitstreams, DCASS encodes messages by **curating semantically aligned, naturally occurring media** (text, images, audio) and distributing them using **human-like behavioral patterns**.
 
 This project explores the intersection of:
 - Semantic communication
 - Multi-modal embeddings
-- AI-driven stealth (GANs & Reinforcement Learning)
-- Traffic analysis evasion
+- AI-driven behavioral modeling (GANs & Reinforcement Learning)
+- Traffic pattern analysis and realistic scheduling
 
 The system is designed as a **proof-of-concept prototype** accompanied by a **research paper**.
 
@@ -27,7 +27,7 @@ DCASS:
 - Retrieves **existing media** from a large corpus
 - Uses **dynamic context keys** to prevent static mappings
 - Distributes content using **behaviorally realistic schedules**
-- Achieves stealth against both **content-based steganalysis** and **traffic analysis**
+- Evaluates robustness against both **content-based steganalysis** and **statistical traffic analysis**
 
 ---
 
@@ -45,9 +45,9 @@ DCASS:
 - **Dynamic Context Awareness**  
   Time, public data, and contextual keys affect encoding
 
-- **AI-Based Stealth**
+- **AI-Based Behavioral Scheduling**
   - GAN-based human behavior scheduler
-  - Reinforcement Learning agent for adaptive stealth
+  - Reinforcement Learning agent for adaptive scheduling
 
 - **Adversarial Evaluation**
   Traffic analysis, stealth metrics, and benchmarking

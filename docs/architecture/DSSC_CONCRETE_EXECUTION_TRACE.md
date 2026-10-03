@@ -1,26 +1,26 @@
 # Dynamic Semantic State-Space Coding (DSSC)
-## Live Concrete Execution Trace: "Attack at dawn"
+## Live Concrete Execution Trace: "Sample message"
 
 ---
 
 ### Executive Overview & Architecture Benchmark
 
-This document presents the **complete, end-to-end mathematical and operational trace** of transmitting the secret message **`"Attack at dawn"`** using the **Dynamic Semantic State-Space Coding (DSSC)** engine.
+This document presents the **complete, end-to-end mathematical and operational trace** of transmitting the message **`"Sample message"`** using the **Dynamic Semantic State-Space Coding (DSSC)** engine.
 
 ```
                          DSSC COMPACTION BENCHMARK
  ┌───────────────────────────────┬───────────────────────────────┐
  │ Metric                        │ Value                         │
  ├───────────────────────────────┼───────────────────────────────┤
- │ Secret Plaintext Message      │ "Attack at dawn" (14 Bytes)   │
+ │ Plaintext Message             │ "Sample message" (14 Bytes)   │
  │ Total Encoded Bits            │ 216 bits (27 Codeword Bytes)  │
  │ Standard VCP Carrier Count    │ 27-28 carriers (1 Byte/item)  │
  │ DSSC Compacted Carrier Count  │ 15 carriers (~15 bits/item)   │
  │ Compaction Ratio              │ 46.4% Traffic Reduction       │
  │ Session Key                   │ 4a8f9c2d1e0b... (32-byte hex) │
  │ Reed-Solomon Parity Block     │ 8 Parity Bytes (GF(2^8))      │
- │ CRC-16 Integrity Checksum     │ 0x776E                        │
- │ Final Reconstructed Output    │ "Attack at dawn" (100% Exact) │
+ │ CRC-16 Integrity Checksum     │ Valid CRC-16 CCITT Checksum   │
+ │ Final Reconstructed Output    │ "Sample message" (100% Exact) │
  │ Bit Error Rate (BER)          │ 0.000%                        │
  └───────────────────────────────┴───────────────────────────────┘
 ```
@@ -30,7 +30,7 @@ This document presents the **complete, end-to-end mathematical and operational t
 ### 1. The Mathematical Encoding Pipeline
 
 ```
- [Plaintext: "Attack at dawn" (14 Bytes)]
+ [Plaintext: "Sample message" (14 Bytes)]
                 │
                 ▼
  Step 1: Packet Framing (CRC-16 CCITT)
@@ -141,21 +141,21 @@ When receiver Bob receives the sequence of 15 media IDs:
    Evaluates 8 syndromes S_0 ... S_7. All S_j = 0 (No channel corruptions detected).
 
  Step 5: CRC-16 CCITT Frame Unpacking
-   Validates Checksum: 0x776E ≟ Computed CRC16("Attack at dawn")
+   Validates Checksum: Computed CRC-16 matches unpacked frame
    Unpacks 14-byte payload.
 
- Reconstructed Result: "Attack at dawn"
+ Reconstructed Result: "Sample message"
  Verification Rate:    100.0%
  Bit Error Rate (BER): 0.000%
 ```
 
 ---
 
-### 5. Why the Eavesdropper (Eve) Cannot Detect or Leak the Topic
+### 5. Why the Observer Cannot Detect or Leak the Topic
 
 1. **No Keyword Leakage:**
    - The visible text spans *Christmas markets*, *birds*, *languages*, *melodies*, *subway trains*, *bee fossils*, and *beer*.
-   - **Zero** words related to warfare, military, weapons, dawn, or attacks appear anywhere in the transmitted media.
+   - **Zero** words related to confidential plaintext appear anywhere in the transmitted media.
 2. **Mathematically Proven Zero Mutual Information:**
    $$I(\text{Secret Message}; \text{Transmitted Media}) = H(M) - H(M \mid S) = \mathbf{0.00\text{ bits}}$$
 3. **Session-Key Security:**

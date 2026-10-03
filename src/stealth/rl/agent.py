@@ -3,7 +3,7 @@
 PPO RL Agent for DCASS Stealth Optimization.
 
 This module implements a Proximal Policy Optimization (PPO) agent that learns
-to schedule transmissions to maximize throughput while evading the Warden.
+to schedule transmissions to maximize throughput while remaining indistinguishable under traffic analysis.
 """
 
 from __future__ import annotations

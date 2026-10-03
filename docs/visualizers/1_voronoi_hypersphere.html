@@ -202,7 +202,7 @@
             <label style="display: block; font-size: 0.82rem; font-weight: 600; color: #94a3b8; margin-bottom: 4px;">
                 Secret Message:
             </label>
-            <input type="text" id="secret-text" value="Attack at dawn" placeholder="Enter message...">
+            <input type="text" id="secret-text" value="Sample message" placeholder="Enter message...">
         </div>
 
         <button class="action-btn dssc-btn" id="compute-btn" onclick="updateTrajectory()">
@@ -347,7 +347,7 @@
     }
 
     function updateTrajectory() {
-        const text = document.getElementById('secret-text').value || "Attack at dawn";
+        const text = document.getElementById('secret-text').value || "Sample message";
         const rawBytes = Array.from(new TextEncoder().encode(text));
 
         // Framed payload: Header (4B) + Data + CRC-16 (2B) + RS Parity (8B)

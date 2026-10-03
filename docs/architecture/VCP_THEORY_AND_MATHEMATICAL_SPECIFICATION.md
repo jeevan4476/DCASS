@@ -126,7 +126,7 @@ The multi-modal corpus comprises **256,366 real public carriers**:
 ### 4. The Exact VCP Encoding Algorithm
 
 ```
- Input: Secret Plaintext Message (e.g., "Attack at dawn" - 14 Bytes)
+ Input: Plaintext Message (e.g., "Sample message" - 14 Bytes)
         Decoy Query Q_decoy (e.g., "Historic European travel")
         Allowed Modalities (Image, Text, Audio)
         Diversity Mode (Best Match / Round Robin / Balanced)
@@ -183,7 +183,7 @@ When receiver Bob receives the sequence of media IDs $\mathcal{M} = [m_0, m_1, \
    • Strip [0x01, len] header and CRC checksum.
    │
    ▼
- Output: 100% Bit-Exact Plaintext: "Attack at dawn" (0.0% Bit Error Rate)
+ Output: 100% Bit-Exact Plaintext: "Sample message" (0.0% Bit Error Rate)
 ```
 
 ---
@@ -221,7 +221,7 @@ When receiver Bob receives the sequence of media IDs $\mathcal{M} = [m_0, m_1, \
 | **Mapping Mechanism** | Continuous Cosine Search | **256 Spherical Voronoi Cells** | Candidate Subspace Permutations |
 | **Information Density** | Uncalibrated (Fuzzy) | **8.0 bits / carrier (1 Byte)** | **~15.0 bits / carrier (Multi-bit)** |
 | **Recovery Accuracy** | ~81.6% (Approximate) | **100% Bit-Exact (0% BER)** | **100% Bit-Exact (0% BER)** |
-| **Carriers for "Attack at dawn"**| ~15 items (Paraphrase) | **28 items (Exact + ECC)** | **14 items (50.0% Reduction)** |
+| **Carriers for "Sample message"**| ~15 items (Paraphrase) | **28 items (Exact + ECC)** | **14 items (50.0% Reduction)** |
 | **Topic Leakage** | Severe ($I(S;M) \gg 0$) | **Zero ($I(S;M) = 0$)** | **Zero ($I(S;M) = 0$)** |
 | **Mathematical Reliability** | Heuristic / Lossy | **Algebraic GF(2^8) Proof** | **Algebraic GF(2^8) Proof** |
 | **Steganalysis Detectability** | $\text{AUC} = 0.50$ (Unmodified) | **$\text{AUC} = 0.50$ (Unmodified)** | **$\text{AUC} = 0.50$ (Unmodified)** |

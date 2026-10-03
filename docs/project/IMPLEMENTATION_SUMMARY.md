@@ -34,11 +34,11 @@ This document summarizes the complete implementation of the AI-driven stealth la
 
 ---
 
-### 2. Adversarial Warden (Deep Packet Inspection)
+### 2. Adversarial Warden (Statistical Traffic Analysis)
 **Location:** `src/analysis/adversarial/`
 
 #### Components:
-- **`warden.py`**: Deep Packet Inspection Classifier
+- **`warden.py`**: Statistical Traffic Classifier
   - BiLSTM + Transformer Encoder architecture
   - Statistical feature extraction (CV, skewness, autocorrelation)
   - Per-timestamp anomaly detection
@@ -325,7 +325,7 @@ DCASS/
 │   │       └── __init__.py
 │   └── analysis/
 │       └── adversarial/
-│           ├── warden.py             # Deep Packet Inspection
+│           ├── warden.py             # Statistical Traffic Classifier
 │           └── __init__.py
 ├── scripts/
 │   ├── run_sender.py                 # Alice (sender) script

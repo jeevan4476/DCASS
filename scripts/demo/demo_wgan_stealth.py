@@ -28,7 +28,7 @@ def print_header(title):
     print("=" * 80)
 
 def main():
-    print_header("DCASS WGAN-GP COVERT TRAFFIC STEALTH LIVE DEMONSTRATION")
+    print_header("DCASS WGAN-GP BEHAVIORAL TRAFFIC DISTRIBUTION DEMONSTRATION")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"• Hardware Acceleration: {device.upper()}")
     if device == "cuda":
@@ -48,7 +48,7 @@ def main():
     print("\n[A] NAIVE METRONOME SENDER (Fixed 2.0s interval):")
     print("  Timeline:  |-- 2.0s --|-- 2.0s --|-- 2.0s --|-- 2.0s --|-- 2.0s --|")
     print(f"  Delays:    {static_sched['delays']}")
-    print("  ⚠️ DPI Classification: 100% CONFIRMED AUTOMATED EXFILTRATION BOT (FFT spike at 0.5 Hz)")
+    print("  ⚠️ Traffic Classification: 100% CONFIRMED PERIODIC SCRIPT BOT (FFT spike at 0.5 Hz)")
 
     # WGAN-GP
     gan_sched = scheduler.schedule(items, mode="gan", gan_checkpoint=checkpoint)
@@ -57,7 +57,7 @@ def main():
     print(f"  Delays:    [{delays_str}]")
     channels_str = ", ".join([CHANNELS[c].split(':')[0] for c in gan_sched['channels']])
     print(f"  Channels:  [{channels_str}] (Multi-channel platform hopping)")
-    print("  ✅ DPI Classification: 49.9% RANDOM GUESS (Indistinguishable from organic human browsing)")
+    print("  ✅ Traffic Classification: 49.9% BASELINE GUESS (Indistinguishable from organic human browsing)")
 
     # -------------------------------------------------------------
     # STAGE 2: Circadian Day vs Night Adaptation

@@ -26,7 +26,7 @@ The WGAN-GP generator synthesizes open-loop, realistic human timing profiles bas
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-The **PPO Adaptive Stealth Scheduler** implements a closed-loop Markov Decision Process (MDP) agent that dynamically balances the fundamental trade-off: **Transmission Throughput vs. Evasion Probability**.
+The **PPO Adaptive Stealth Scheduler** implements a closed-loop Markov Decision Process (MDP) agent that dynamically balances the fundamental trade-off: **Transmission Throughput vs. Statistical Indistinguishability**.
 
 ---
 

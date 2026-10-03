@@ -188,7 +188,7 @@ def test_api_encode_dssc_mode():
     import os
     session_key_hex = os.urandom(32).hex()
     resp = client.post("/api/encode", json={
-        "message": "Attack at dawn",
+        "message": "Sample message",
         "mode": "dssc",
         "session_key_hex": session_key_hex,
         "use_ecc": True,
@@ -206,7 +206,7 @@ def test_api_decode_dssc_roundtrip():
     """Encode then decode in DSSC mode recovers the original message."""
     import os
     session_key_hex = os.urandom(32).hex()
-    message = "Attack at dawn"
+    message = "Sample message"
 
     enc = client.post("/api/encode", json={
         "message": message,

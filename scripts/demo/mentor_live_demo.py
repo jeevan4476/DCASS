@@ -86,7 +86,7 @@ def main():
     print("\n[STAGE 3/5] Reed-Solomon GF(2^8) Live Error Recovery Proof")
     print("-" * 75)
     rs = RSErrorCorrection(parity_bytes=8)  # Can fix up to 4 byte errors
-    test_msg = "Top-Secret Payload 2026"
+    test_msg = "Semantic Benchmark 2026"
     codeword = rs.encode(test_msg)
 
     # Simulate 3 random byte corruptions (vector quantization noise)
@@ -97,7 +97,7 @@ def main():
 
     decoded_str, is_success, errors_fixed = rs.decode(bytes(corrupted))
 
-    print(f"  1. Original Secret Message:  '{test_msg}'")
+    print(f"  1. Original Plaintext Message: '{test_msg}'")
     print(f"  2. RS Codeword (Data + 8 Parity): {len(codeword)} bytes")
     print(f"  3. Simulated Vector Noise:   Corrupted 3 bytes at positions {errors_fixed}")
     print(f"  4. Berlekamp-Massey Output:  '{decoded_str}'")
@@ -116,8 +116,8 @@ def main():
     decoder = SemanticDecoder()
     decoder.load()
 
-    secret_message = "Attack at midnight near river bank and i will be bombing the taj mahal for my good wife and my kids"
-    print(f"\n  • Input Secret Payload:    '{secret_message}'")
+    secret_message = "Autonomous multimodal systems enable privacy-preserving knowledge discovery"
+    print(f"\n  • Input Message:           '{secret_message}'")
 
     print("  • Executing Multi-Modal Vector Search...")
     start_enc = time.time()

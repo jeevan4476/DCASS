@@ -3,7 +3,7 @@
 RL Environment for DCASS Stealth Optimization.
 
 This module implements a Gym-style environment for training an RL agent to
-optimize transmission scheduling while evading the Warden.
+optimize transmission scheduling while maintaining low anomaly scores under Warden traffic analysis.
 """
 
 from __future__ import annotations

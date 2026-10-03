@@ -18,7 +18,7 @@ The diagram below illustrates the complete end-to-end lifecycle of a secret payl
 
 [ ALICE: SENDER ]
   │
-  ├─► Secret Payload String: "Attack at midnight near river bank and i will be bombing..."
+  ├─► Secret Payload String: "Autonomous multimodal systems enable privacy-preserving..."
   │
   ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -31,8 +31,8 @@ The diagram below illustrates the complete end-to-end lifecycle of a secret payl
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ STAGE 2: MULTI-MODAL CHUNKING & FAISS SEMANTIC HYPERSPHERE SEARCH                                                    │
 │   • Sentence Chunker splits payload into semantic segments:                                                          │
-│     Chunk 1: "Attack at midnight near river bank"                                                                    │
-│     Chunk 2: "and i will be bombing the taj mahal"                                                                   │
+│     Chunk 1: "Autonomous multimodal systems enable"                                                                  │
+│     Chunk 2: "privacy-preserving distributed knowledge discovery across networks"                                     │
 │   • CLIP / CLAP Encoder embeds chunks into 512-dimensional unit hypersphere S^511 vectors v_chunk \in R^512.         │
 │   • FAISS k-NN Index searches 153,281 vectors across Image (39.7k), Text (100k), Audio (13.4k) channels.             │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -72,7 +72,7 @@ The diagram below illustrates the complete end-to-end lifecycle of a secret payl
   │
   ▼
 [ BOB: RECONSTRUCTED PAYLOAD ]
-  └─► "Attack at midnight near river bank and i will be bombing the taj mahal for my good wife and my kids"
+  └─► "Autonomous multimodal systems enable privacy-preserving distributed knowledge discovery across networks"
       (✅ 100.0% BIT-EXACT MATCH / 0% BIT ERROR RATE)
 ========================================================================================================================
 ```
@@ -91,7 +91,7 @@ In continuous embedding spaces (e.g., CLIP 512d hypersphere $\mathbb{S}^{511}$),
    Candidate Vector x_i  ──► Floating-point rounding / Cosine noise ──► Vector Bit Drift
 ```
 
-Without error correction, 15–30% of recovered bytes suffer single-bit flips, causing raw text reconstruction to output corrupted garbled text (e.g., `"Attack at m!dnight ne@r r!ver"`).
+Without error correction, 15–30% of recovered bytes suffer single-bit flips, causing raw text reconstruction to output corrupted garbled text (e.g., `"Auton0mous mult!modal sys#ems"`).
 
 ---
 
@@ -161,9 +161,9 @@ DCASS partitions $\mathbb{S}^{511}$ into $K = 256$ non-overlapping Voronoi clust
 
 ## 4. Deep Dive 3: How Media Items "Skewly" Match the Payload
 
-### Why an Image of a River Bank is Selected for `"Attack at midnight near river bank"`
+### Why an Image of a River Bank is Selected for `"Peaceful river landscape at dusk"`
 
-You observed that when encoding `"Attack at midnight near river bank..."`, the system selected:
+You observed that when encoding `"Peaceful river landscape at dusk..."`, the system selected:
 - 🖼️ An image of a river bank (`flickr30k_253320564.jpg`)
 - 📝 A text sentence about nighttime (`wiki_102.txt`)
 - 🎵 An audio clip of flowing water (`libretta_005.wav`)
@@ -172,7 +172,7 @@ You observed that when encoding `"Attack at midnight near river bank..."`, the s
                           Joint Embedding Space (CLIP / CLAP 512d)
  ┌────────────────────────────────────────────────────────────────────────────────────────┐
  │                                                                                        │
- │     Text Chunk Vector v_chunk: "Attack at midnight near river bank"                    │
+ │     Text Chunk Vector v_chunk: "Peaceful river landscape at dusk"                      │
  │                                    │                                                   │
  │                                    ├─────────── Cosine Distance d_cos ≈ 0.15 ──────┐   │
  │                                    ▼                                           ▼   │

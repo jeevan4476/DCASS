@@ -3,10 +3,10 @@
 Reed-Solomon Error Correction Code (RS-ECC) Module for DCASS.
 
 Provides algebraic block error correction over Galois Field GF(2^8)
-to eliminate vector quantization noise and semantic drift during covert transmission.
+to eliminate vector quantization noise and semantic drift during carrier reconstruction.
 
 Key Features:
-- Appends R parity bytes to secret payloads before FAISS vector search
+- Appends R parity bytes to message payloads before FAISS vector search
 - Fixes up to t = floor(R / 2) arbitrary corrupted media items or vector mismatches
 - Correctness is guaranteed only when the number of corrupted bytes is <= t
 """
@@ -42,7 +42,7 @@ class RSErrorCorrection:
         Encode raw string or bytes with Reed-Solomon parity.
 
         Args:
-            data: Secret payload (string or bytes)
+            data: Input message payload (string or bytes)
 
         Returns:
             Codeword bytes (Data + Parity bytes)

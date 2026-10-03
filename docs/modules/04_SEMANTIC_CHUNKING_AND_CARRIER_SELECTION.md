@@ -4,24 +4,24 @@
 ## 1. Executive Intuition and Conceptual Analogy
 
 ### 1.1 The Cover Story Analogy
-Imagine an undercover operative who wants to transmit a secret instruction to a colleague across a public messaging platform without raising suspicion. Instead of attempting to hide microscopic ink inside the pixels of an image or encrypting text into unreadable ciphertext (which immediately triggers network inspection alarms), the operative posts a coherent series of travel photographs and travel captions.
+Imagine researchers who want to transmit confidential coordination data across a public platform without raising suspicion. Instead of attempting to hide microscopic ink inside the pixels of an image or encrypting text into unreadable ciphertext (which immediately triggers network inspection alarms), they post a coherent series of travel photographs and travel captions.
 
-If the secret message is:
-> *"Attack at midnight near river bank"*
+If the message is:
+> *"Meet at dusk near river bank"*
 
 A naive steganographic approach would alter pixel least significant bits (LSBs) of a single photo, leaving a distinct high-frequency noise signature that convolutional neural networks detect in milliseconds. 
 
 DCASS takes an entirely different approach:
-1. It splits the secret message into logical semantic concepts: *"Attack at midnight"* and *"near river bank"*.
+1. It splits the message into logical semantic concepts: *"Meet at dusk"* and *"near river bank"*.
 2. It searches a public database of 153,281 authentic media files to find items that naturally discuss or depict nighttime and river banks.
-3. It selects media items whose mathematical vector cluster coordinates simultaneously match the exact cryptographic byte symbols of the secret message.
+3. It selects media items whose mathematical vector cluster coordinates simultaneously match the exact cryptographic byte symbols of the message.
 
-An eavesdropper reading the public social media thread sees a photo of a serene river bank at dusk, a quote about midnight stillness, and a short audio clip of flowing river water. The sequence appears completely natural, harmless, and contextually consistent, while the receiver extracts the exact secret message with zero bit errors.
+An observer reading the public social media thread sees a photo of a serene river bank at dusk, a quote about midnight stillness, and a short audio clip of flowing river water. The sequence appears completely natural, harmless, and contextually consistent, while the receiver extracts the exact message with zero bit errors.
 
 ```mermaid
 flowchart TD
-    SecretMsg["Secret Payload String\n'Attack at midnight near river bank'"] --> Chunker["Semantic Chunker\n(Sentence & Phrase Splitting)"]
-    Chunker --> Chunk1["Chunk 1: 'Attack at midnight'"]
+    SecretMsg["Payload String\n'Meet at dusk near river bank'"] --> Chunker["Semantic Chunker\n(Sentence & Phrase Splitting)"]
+    Chunker --> Chunk1["Chunk 1: 'Meet at dusk'"]
     Chunker --> Chunk2["Chunk 2: 'near river bank'"]
     
     Chunk1 --> Vec1["512d Unit Vector v_chunk1"]
@@ -239,7 +239,7 @@ DCASS provides a two-tiered extraction capability depending on whether the recei
 | **Mathematical Precision** | **100.0% bit-exact match (0% Bit Error Rate)** | High-level contextual story gist |
 | **Output Type** | Exact ASCII/UTF-8 plaintext byte string | Joined string of captions and text lines |
 | **Required Assets** | Codebook centroids (`voronoi_codebook.npz`) + RS parameters | Public corpus index metadata |
-| **Example Output** | `"Attack at midnight near river bank"` | `"A river bank at sunset | Night stillness over water"` |
+| **Example Output** | `"Meet at dusk near river bank"` | `"A river bank at sunset | Night stillness over water"` |
 
 ```mermaid
 flowchart TD
@@ -251,7 +251,7 @@ flowchart TD
     PathA --> FAISSVectorLookup["FAISS 512d Vector Retrieval"]
     FAISSVectorLookup --> VCPCentroid["VCP Centroid Nearest Neighbor -> Raw Byte Stream"]
     VCPCentroid --> RSECC["Reed-Solomon GF(2^8) Error Recovery"]
-    RSECC --> ExactPlaintext["Exact Plaintext Recovered\n'Attack at midnight near river bank'\n(0% BER / Bit-Exact)"]
+    RSECC --> ExactPlaintext["Exact Plaintext Recovered\n'Meet at dusk near river bank'\n(0% BER / Bit-Exact)"]
     
     PathB --> MetadataLookup["Corpus Caption & Metadata Extraction"]
     MetadataLookup --> SemanticGist["Topical Narrative Summary\n'A calm river bank at dusk | Nighttime in the forest'\n(Plausible Public Social Post)"]

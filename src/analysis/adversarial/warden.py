@@ -1,9 +1,9 @@
 # src/analysis/adversarial/warden.py
 """
-Adversarial Warden - Deep Packet Inspection Simulator for DCASS.
+Adversarial Warden - Statistical Traffic Classifier for DCASS.
 
 This module implements a deep learning-based traffic classifier that acts as
-an advanced network firewall to detect steganographic communication patterns.
+the standard academic Simmons Warden to analyze transmission timing patterns.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ class WardenVerdict:
 
 class DeepPacketInspectionWarden(nn.Module):
     """
-    Adversarial Warden - DPI-style Traffic Classifier.
+    Adversarial Warden - Statistical Traffic Classifier (Simmons' Model).
 
     Analyzes transmission timing patterns to detect steganographic behavior.
     Acts as the Discriminator in the GAN framework and provides adversarial

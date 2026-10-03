@@ -1,7 +1,3 @@
-# DCASS Class Diagram
-
-## Core Classes
-
 ```mermaid
 classDiagram
     %% Engine Layer
@@ -204,16 +200,4 @@ classDiagram
 
     ConsoleChannel --|> BaseChannel
     LocalFolderChannel --|> BaseChannel
-```
-
-## Modality Type
-
-```mermaid
-classDiagram
-    class Modality {
-        <<enumeration>>
-        image
-        text
-        audio
-    }
 ```

@@ -51,7 +51,7 @@ This directory contains deep technical, mathematical, and intuitive specificatio
  │ File: docs/modules/05_WGAN_GP_TRAFFIC_MIMICRY.md                                              │
  │ Code: src/stealth/gan/generator.py, src/stealth/gan/trainer.py, src/analysis/adversarial/      │
  │ Math: Wasserstein-1 Distance, 1-Lipschitz Gradient Penalty (lambda=10.0), Causal Gated TCN   │
- │ Purpose: Generates human social-media posting burstiness, defeating Deep Packet Inspection    │
+ │ Purpose: Generates human social-media posting burstiness for traffic pattern simulation        │
  └───────────────────────────────────────────────────────────────────────────────────────────────┘
                                                  │
                                                  ▼
@@ -69,7 +69,7 @@ This directory contains deep technical, mathematical, and intuitive specificatio
  │ File: docs/modules/07_PPO_REINFORCEMENT_LEARNING_SCHEDULER.md                                 │
  │ Code: src/stealth/rl/agent.py (PPOAgent, ActorCritic), src/stealth/rl/environment.py          │
  │ Math: Multi-Objective R_t, Action Masking, GAE-lambda, Path Entropy H(p)=1.57/1.58 bits      │
- │ Purpose: Closed-loop multi-platform channel hopping with live cooldown and backpressure evad  │
+ │ Purpose: Closed-loop multi-platform channel hopping with live cooldown and backpressure handling│
  └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ===================================================================================================
 ```

@@ -19,7 +19,7 @@ A human walker behaves very differently:
 │ 1. Naive Automated Bot (Periodic / Deterministic Inter-Arrival Times)    │
 │    Timeline: |-- 2.0s --|-- 2.0s --|-- 2.0s --|-- 2.0s --|-- 2.0s --|    │
 │    Fourier Spectrum: Massive artificial delta spike at frequency f = 0.5Hz│
-│    Warden Classifier Verdict: 100% CONFIRMED AUTOMATED EXFILTRATION BOT. │
+│    Warden Classifier Verdict: 100% CONFIRMED PERIODIC REPEAT SCRIPT.      │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ 2. Naive Uniform Random Schedulers (Uniform Jitter)                      │
 │    Timeline: |-- 1.8s --|-- 2.3s --|-- 1.9s --|-- 2.1s --|-- 1.7s --|    │
@@ -33,11 +33,11 @@ A human walker behaves very differently:
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The DCASS WGAN-GP generator is the statistical camouflage engine for covert transmission. Even though individual media items contain zero pixel or audio modifications, transmitting them at regular or naive random intervals would allow a network monitor (referred to as the **Warden** or **Deep Packet Inspection (DPI) Monitor**) to detect the covert channel. WGAN-GP ensures that the timing, burstiness, and channel selection match genuine human social media browsing behavior.
+The DCASS WGAN-GP generator is the statistical modeling engine for transmission scheduling. Even though individual media items contain zero pixel or audio modifications, transmitting them at regular or naive random intervals would allow a network traffic classifier (referred to in the literature as the **Warden**) to distinguish automated streams from human activity. WGAN-GP ensures that the timing, burstiness, and channel selection match genuine human social media browsing behavior.
 
 ---
 
-## 2. Why WGAN-GP Is Required to Defeat Network Wardens
+## 2. Why WGAN-GP Is Used for Human Behavioral Mimicry
 
 ### 2.1 Threat Model: The Network Warden
 A network adversary does not only examine the bytes within individual files. Modern Deep Packet Inspection firewalls collect metadata streams:

@@ -160,7 +160,7 @@ def test_clean_roundtrip_through_vcp(setup):
 def test_rs_recovery_through_corrupted_carriers(setup):
     """Swap up to t=4 carriers with wrong-cluster IDs; RS must recover."""
     encoder, decoder, mapper = setup
-    msg = "Attack at dawn"
+    msg = "Sample message"
     result = encoder.encode(msg, use_ecc=True)
     ids = list(result.media_ids)
 

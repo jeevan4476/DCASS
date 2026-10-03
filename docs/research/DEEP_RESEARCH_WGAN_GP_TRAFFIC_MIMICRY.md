@@ -35,7 +35,7 @@ However, an adversary operating at the network perimeter (referred to as the **W
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-If covert media items are dispatched at fixed intervals ($\Delta t = \text{const}$) or uniform random intervals, the Warden's statistical tests (Kolmogorov-Smirnov test, Auto-Correlation Function, Spectral Entropy) immediately flag the transmission as an automated exfiltration bot.
+If media items are dispatched at fixed intervals ($\Delta t = \text{const}$) or uniform random intervals, statistical tests (Kolmogorov-Smirnov test, Auto-Correlation Function, Spectral Entropy) immediately distinguish the transmission as an automated programmatic script rather than human interaction.
 
 To eliminate this vulnerability, DCASS deploys a **Wasserstein Generative Adversarial Network with Gradient Penalty (WGAN-GP)** that learns the true underlying continuous probability distribution of human social media behavior.
 

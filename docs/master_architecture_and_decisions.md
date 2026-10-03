@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-**Dynamic Context-Aware Semantic Steganography (DCASS)** is a zero-footprint covert communication framework. Unlike classical steganography—which imperceptibly modifies media files (e.g., LSB replacement, DCT coefficient perturbation, deep neural generative synthesis) and inevitably creates detectable statistical artifacts—DCASS leaves carrier media **100% unaltered**. 
+**Dynamic Context-Aware Semantic Steganography (DCASS)** is a zero-modification semantic steganography and information-hiding research framework. Unlike classical steganography—which imperceptibly modifies media files (e.g., LSB replacement, DCT coefficient perturbation, deep neural generative synthesis) and inevitably creates detectable statistical artifacts—DCASS leaves carrier media **100% unaltered**. 
 
 DCASS transmits authentic, public media files (images, audio clips, text captions) from a synchronized corpus of **256,366 carriers**. The secret payload is encoded strictly in the **discrete semantic sequence, spatial hypersphere Voronoi partitions, and state-space permutations** of the selected carriers.
 
@@ -22,7 +22,7 @@ DCASS transmits authentic, public media files (images, audio clips, text caption
   SENDER (Alice)                                                         RECEIVER (Bob)
  +-------------------------+                                           +-------------------------+
  | Plaintext Secret:       |                                           | Recovered Plaintext:    |
- | "Attack at dawn"        |                                           | "Attack at dawn"        |
+ | "Sample message"        |                                           | "Sample message"        |
  +-----------+-------------+                                           +-----------^-------------+
              |                                                                     |
              v                                                                     |
@@ -88,8 +88,8 @@ DCASS transmits authentic, public media files (images, audio clips, text caption
 ### Generation 1: `semantic_legacy` (Initial Flawed Approach)
 - **Mechanism:** Secret text was chunked and directly used as a search query against image captions in FAISS.
 - **Flaws:**
-  1. **Fuzzy Reconstruction:** Cosine similarity only yielded ~80% accuracy. "Attack at dawn" reconstructed into imprecise words ("soldiers morning sunrise"), failing cryptographic standards.
-  2. **Severe Topic Leakage:** Querying the corpus for military words transmitted military images, leaking the confidential topic to any eavesdropper.
+  1. **Fuzzy Reconstruction:** Cosine similarity only yielded ~80% accuracy. "Sample message" reconstructed into imprecise words, failing cryptographic standards.
+  2. **Severe Topic Leakage:** Querying the corpus directly for keywords transmitted related images, leaking the confidential topic to any observer.
   3. **Zero Fault Tolerance:** Dropping a single carrier corrupted the entire sentence.
 
 ### Generation 2: `exact_vcp` (Voronoi Constellation Partitioning)
@@ -115,7 +115,7 @@ DCASS transmits authentic, public media files (images, audio clips, text caption
 | **Corpus Scale & Modality** | 46,858 (Image only) | 256,366 (Multimodal) | 256,366 (Multimodal) |
 | **Message Recovery Rate** | ~81.6% Cosine (Fuzzy approx) | **100% Exact Bit Recovery** | **100% Exact Bit Recovery** |
 | **Information Density** | ~0.20 BLEU-1 | 8.0 bits / carrier (1 Byte) | **~15.0 bits / carrier (Multi-bit)** |
-| **Carriers for "Attack at dawn"** | ~15 items (approx meaning) | 28 items (bit-exact + ECC) | **14 items (50.0% traffic reduction)** |
+| **Carriers for "Sample message"** | ~15 items (approx meaning) | 28 items (bit-exact + ECC) | **14 items (50.0% traffic reduction)** |
 | **Error Correction & Framing** | None (Lost on noise) | Reed-Solomon RS(N,K) + CRC-16 | Reed-Solomon RS(N,K) + CRC-16 |
 | **Topic Leakage Defense** | High (Matched secret words) | **Zero (Cover-story decoy)** | **Zero (HMAC session permutation)** |
 | **Steganalysis Footprint** | AUC = 0.50 (Unmodified) | AUC = 0.50 (Unmodified) | AUC = 0.50 (Unmodified) |
@@ -133,17 +133,17 @@ All 41 core engine and API tests pass with 100% success rate:
 
 ---
 
-## 5. Concrete End-to-End Execution Trace: "Attack at dawn"
+## 5. Concrete End-to-End Execution Trace: "Sample message"
 
-To demonstrate the mathematical determinism and lack of heuristic guessing, here is the exact trace of the system encoding and decoding the secret message `"Attack at dawn"`.
+To demonstrate the mathematical determinism and lack of heuristic guessing, here is the exact trace of the system encoding and decoding the message `"Sample message"`.
 
 ### 5.1 Stage 1: Raw Plaintext to UTF-8 Bytes
-- **Input Text:** `"Attack at dawn"` (14 ASCII characters)
-- **Decimal Representation:** `[65, 116, 116, 97, 99, 107, 32, 97, 116, 32, 100, 97, 119, 110]`
+- **Input Text:** `"Sample message"` (14 ASCII characters)
+- **Decimal Representation:** `[83, 97, 109, 112, 108, 101, 32, 109, 101, 115, 115, 97, 103, 101]`
 - **Hex Representation:**
   ```
-  0x41 0x74 0x74 0x61 0x63 0x6B 0x20 0x61 0x74 0x20 0x64 0x61 0x77 0x6E
-   'A'  't'  't'  'a'  'c'  'k'  ' '  'a'  't'  ' '  'd'  'a'  'w'  'n'
+  0x53 0x61 0x6D 0x70 0x6C 0x65 0x20 0x6D 0x65 0x73 0x73 0x61 0x67 0x65
+   'S'  'a'  'm'  'p'  'l'  'e'  ' '  'm'  'e'  's'  's'  'a'  'g'  'e'
   ```
 
 ### 5.2 Stage 2: CRC-16 CCITT Framing (19 Bytes)
@@ -200,5 +200,5 @@ Each of the 27 codeword bytes maps directly to one of the 256 Voronoi centroids 
 2. **Inverts State-Space Permutation:** Using the shared `session_key`, Bob calculates HMAC family indices and inverts $\pi_{\text{session\_key}}^{-1}$ to recover the exact 15-bit integer symbols $\implies$ 216-bit stream.
 3. **Reassembles Codeword:** Converts 216 bits to the 27 codeword bytes.
 4. **Reed-Solomon Syndrome Evaluation:** Evaluates 8 syndromes $S_i$. If no errors, $S(x) = 0$; if up to 4 carriers were corrupted or drifted, Berlekamp-Massey + Forney algorithm automatically repairs the damaged bytes.
-5. **CRC-16 Validation:** Unframing extracts the 14 data bytes and verifies CRC-16 checksum `0x776E` matches.
-6. **Plaintext Recovery:** UTF-8 decodes to exact string: `"Attack at dawn"`.
+5. **CRC-16 Validation:** Unframing extracts the 14 data bytes and verifies CRC-16 checksum matches.
+6. **Plaintext Recovery:** UTF-8 decodes to exact string: `"Sample message"`.

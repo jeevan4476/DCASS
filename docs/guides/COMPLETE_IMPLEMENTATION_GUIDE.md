@@ -26,7 +26,7 @@
 
 ### What is DCASS?
 
-**DCASS (Dynamic Context-Aware Semantic Steganography)** is a research-oriented system that enables covert communication without modifying any carrier media. Unlike traditional steganography that embeds data into pixels or audio waveforms, DCASS encodes messages by:
+**DCASS (Dynamic Context-Aware Semantic Steganography)** is a research-oriented system that enables zero-modification semantic steganography without altering any carrier media. Unlike traditional steganography that embeds data into pixels or audio waveforms, DCASS encodes messages by:
 
 1. **Selecting** semantically aligned, naturally occurring media (text, images, audio)
 2. **Distributing** them using human-like behavioral patterns
@@ -37,7 +37,7 @@
 Traditional steganography modifies media files (e.g., LSB embedding in images), which can be detected by statistical analysis. DCASS solves this by:
 
 - Using genuine, publicly-available content
-- Making the transmission pattern the covert channel
+- Making the transmission sequence and curation the encoding channel
 - Leveraging semantic similarity for message encoding
 - Mimicking organic human social media behavior
 
@@ -445,7 +445,7 @@ Bot Probability [0, 1]
 ```
 
 **Features:**
-- Deep Packet Inspection (DPI) simulation
+- Statistical traffic pattern analysis simulation
 - BiLSTM for temporal patterns
 - Transformer for long-range dependencies
 - Confidence calibration

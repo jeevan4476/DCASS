@@ -178,7 +178,7 @@ dcass/
 │   │   ├── noise.py          # Timing jitter & random skips
 │   │   └── profiles.py       # Behavioral profiles (casual, bursty, etc.)
 │   │
-│   ├── stealth/              # AI-driven stealth evasion
+│   ├── stealth/              # AI-driven behavioral scheduling
 │   │   ├── gan/
 │   │   │   ├── generator.py  # TemporalPatternGenerator (GRU + Attention)
 │   │   │   └── trainer.py    # GANTrainer adversarial loop
@@ -601,9 +601,9 @@ For each epoch:
 
 ---
 
-### 6.10 `src/analysis/adversarial/warden.py` — DPI Warden
+### 6.10 `src/analysis/adversarial/warden.py` — Statistical Traffic Warden
 
-**Purpose**: Adversarial Warden simulating Deep Packet Inspection to detect steganographic traffic.
+**Purpose**: Adversarial Warden implementing statistical traffic analysis to detect anomalous transmission patterns.
 
 **Architecture**: `Traffic Timeline → Feature Extraction → BiLSTM (2-layer) → Transformer Encoder (4 layers) → Classification`
 

@@ -391,7 +391,7 @@ The unit test suite in [`tests/test_engine/test_ecc.py`](../tests/test_engine/te
 ```python
 def test_rs_ecc_basic_encoding_decoding():
     ecc = RSErrorCorrection(parity_bytes=8)  # Can fix up to 4 byte errors
-    message = "Covert Meeting at 0400 Hours"
+    message = "Reliable transmission test block"
     
     codeword = ecc.encode(message)
     assert len(codeword) == len(message.encode("utf-8")) + 8

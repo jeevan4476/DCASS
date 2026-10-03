@@ -91,8 +91,8 @@ flowchart TD
   decoder = SemanticDecoder()
   decoder.load()
 
-  secret = 'Covert meeting at 0400 hours near river bank'
-  print('Original Secret Message:', secret)
+  secret = 'Privacy-preserving communication near river bank'
+  print('Original Plaintext Message:', secret)
 
   result = encoder.encode(secret, diversity_mode='balanced', use_ecc=True)
   print('\nEncoded Media Sequence (IDs):', result.media_ids)

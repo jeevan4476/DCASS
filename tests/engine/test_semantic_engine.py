@@ -88,7 +88,7 @@ def live_engine():
 @pytest.mark.integration
 def test_exact_vcp_roundtrip(live_engine):
     """exact_vcp mode: encode then decode recovers exact message."""
-    message = "Attack at dawn"
+    message = "Sample message"
     enc = live_engine.encode(message, mode="exact_vcp", use_ecc=True)
     assert enc.mode == "exact_vcp"
     dec = live_engine.decode(enc.media_ids, mode="exact_vcp", use_ecc=True)
@@ -101,7 +101,7 @@ def test_dssc_roundtrip_exact_recovery(live_engine):
     """DSSC mode: encode then decode recovers exact message via CRC frame."""
     import os
     session_key = os.urandom(32)
-    message = "Attack at dawn"
+    message = "Sample message"
     enc = live_engine.encode(message, mode="dssc", session_key=session_key, use_ecc=True)
     assert enc.mode == "dssc"
     dec = live_engine.decode(enc.media_ids, mode="dssc", session_key=session_key, use_ecc=True)
@@ -112,7 +112,7 @@ def test_dssc_roundtrip_exact_recovery(live_engine):
 @pytest.mark.integration
 @pytest.mark.parametrize("message", [
     "Hi",
-    "Attack at dawn",
+    "Sample message",
     "The quick brown fox jumps over the lazy dog",
     "A" * 64,  # exactly 64 bytes
 ])
@@ -134,7 +134,7 @@ def test_dssc_wrong_key_fails(live_engine):
     import os
     session_key = os.urandom(32)
     wrong_key = os.urandom(32)
-    message = "Attack at dawn"
+    message = "Sample message"
     enc = live_engine.encode(message, mode="dssc", session_key=session_key, use_ecc=True)
     dec = live_engine.decode(enc.media_ids, mode="dssc", session_key=wrong_key, use_ecc=True)
     # Either decoding fails OR text is wrong (both are acceptable security outcomes)

@@ -20,7 +20,7 @@ Unlike classical steganography (which modifies media pixels or audio samples, le
 
    Alice (Sender)
   ┌────────────────────────┐
-  │ Plaintext Message (S)  │  e.g., "Attack at dawn" (14 Bytes)
+  │ Plaintext Message (S)  │  e.g., "Sample message" (14 Bytes)
   └───────────┬────────────┘
               │
               ▼
@@ -84,7 +84,7 @@ Unlike classical steganography (which modifies media pixels or audio samples, le
               ▼
   ┌────────────────────────┐
   │ 5. CRC-16 CCITT Check  │  Validates CRC-16 Checksum == 0x0000; strips [0x01, len] header
-  │ & Unframing            │  Emits 100% Bit-Exact Plaintext: "Attack at dawn"
+  │ & Unframing            │  Emits 100% Bit-Exact Plaintext: "Sample message"
   └────────────────────────┘
 ```
 
@@ -100,7 +100,7 @@ To protect against packet desynchronization, truncated payloads, and false-posit
 │ Magic Byte   │ Epoch / Flag │ Payload Len  │ Raw Plaintext Message Bytes  │ CRC-16 CCITT     │
 │ (1 Byte)     │ (1 Byte)     │ (2 Bytes)    │ (L Bytes)                    │ (2 Bytes)        │
 ├──────────────┼──────────────┼──────────────┼──────────────────────────────┼──────────────────┤
-│ 0x01         │ 0x00         │ 0x00, 0x0E   │ "Attack at dawn" (14 Bytes)  │ 0x77, 0x6E       │
+│ 0x01         │ 0x00         │ 0x00, 0x0E   │ "Sample message" (14 Bytes)  │ 0xD3, 0xD8       │
 └──────────────┴──────────────┴──────────────┴──────────────────────────────┴──────────────────┘
 Total Framed Packet Length = 1 + 1 + 2 + L + 2 = (L + 6) Bytes = 19 Bytes (with 1-byte length header: 19 Bytes).
 ```
@@ -263,19 +263,19 @@ When Bob receives the sequence of public media IDs $\mathcal{M} = [m_0, m_1, \do
  Step 5: CRC-16 Verification & Output
    Verify CRC16(Recovered_Data) == Expected_CRC16
    Strip Magic Byte [0x01] and Length Header [0x00, 0x0E]
-   Output: 100% Bit-Exact "Attack at dawn"
+   Output: 100% Bit-Exact "Sample message"
 ```
 
 ---
 
-### Complete Numerical Walkthrough: `"Attack at dawn"`
+### Complete Numerical Walkthrough: `"Sample message"`
 
 | Stage | Data Representation | Size / Value |
 |---|---|---|
-| **Raw Plaintext** | ASCII `"Attack at dawn"` | 14 Bytes |
-| **Plaintext Hex** | `[0x41, 0x74, 0x74, 0x61, 0x63, 0x6B, 0x20, 0x61, 0x74, 0x20, 0x64, 0x61, 0x77, 0x6E]` | 14 Bytes |
+| **Raw Plaintext** | ASCII `"Sample message"` | 14 Bytes |
+| **Plaintext Hex** | `[0x53, 0x61, 0x6D, 0x70, 0x6C, 0x65, 0x20, 0x6D, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65]` | 14 Bytes |
 | **Framing Header** | Magic `0x01` + Length `0x000E` | 3 Bytes |
-| **CRC-16 CCITT** | Checksum `0x776E` | 2 Bytes |
+| **CRC-16 CCITT** | Checksum `0xD3D8` | 2 Bytes |
 | **Framed Packet** | `[0x01, 0x00, 0x0E, 0x41, 0x74, 0x74, ..., 0x6E, 0x77, 0x6E]` | 19 Bytes |
 | **RS Parity Bytes** | `[0x44, 0x13, 0xAF, 0x75, 0x51, 0x84, 0xA5, 0x7A]` | 8 Bytes |
 | **RS Codeword** | Framed Packet (19B) + RS Parity (8B) | **27 Bytes (216 Bits)** |

@@ -9,7 +9,7 @@ from src.engine.ecc import RSErrorCorrection
 def test_rs_ecc_basic_encoding_decoding():
     """Test basic RS-ECC encoding and error recovery."""
     ecc = RSErrorCorrection(parity_bytes=8)  # Can fix up to 4 byte errors
-    message = "Covert Meeting at 0400 Hours"
+    message = "Reliable transmission test block"
 
     # 1. Encode
     codeword = ecc.encode(message)

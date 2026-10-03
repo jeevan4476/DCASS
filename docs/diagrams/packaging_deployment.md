@@ -1,7 +1,6 @@
 # DCASS Packaging and Deployment Diagram
 
 ## 6.6 Packaging and Deployment Diagram
-
 ```mermaid
 flowchart TB
   %% 6.6 Packaging and Deployment Diagram

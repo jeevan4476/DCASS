@@ -17,7 +17,7 @@ To bridge semantic carrier selection with exact message recovery and covert chan
 3. **Multi-Modal Hypersphere Search**: Unified 512-dimensional CLIP (Image & Text) and CLAP (Audio) FAISS vector spaces.
 4. **Zero-Modification Steganalytic Defense**: Relative entropy $D_{\text{KL}}(P_{\text{cover}} \parallel P_{\text{stego}}) = 0.000$ bits.
 5. **Generative Traffic Mimicry (GAN)**: WGAN-GP learning human social-media posting distributions (burstiness and circadian rhythms).
-6. **Adaptive Active-Warden Evasion (RL)**: Proximal Policy Optimization (PPO) dynamically scheduling packets to evade statistical traffic monitors.
+6. **Adaptive Active-Warden Evaluation (RL)**: Proximal Policy Optimization (PPO) dynamically scheduling packets to match genuine human browsing distributions.
 
 ---
 
@@ -32,7 +32,7 @@ The complete pipeline from Alice's raw secret payload string to Bob's exact reco
 
  [ ALICE: SENDER ]
        │
-       ├─► Input Payload: "Attack at midnight near river bank and i will be bombing the taj mahal..."
+       ├─► Input Payload: "Autonomous multimodal systems enable privacy-preserving knowledge discovery..."
        │
        ▼
  ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -97,7 +97,7 @@ The complete pipeline from Alice's raw secret payload string to Bob's exact reco
        │
        ▼
  [ BOB: RECONSTRUCTED PAYLOAD ]
-       └─► Reconstructed: "Attack at midnight near river bank and i will be bombing the taj mahal..."
+       └─► Reconstructed: "Autonomous multimodal systems enable privacy-preserving knowledge discovery..."
            (✅ 100.0% EXACT BIT-LEVEL MATCH / 0% BIT ERROR RATE)
 ========================================================================================================================
 ```

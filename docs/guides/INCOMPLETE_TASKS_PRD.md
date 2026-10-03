@@ -49,7 +49,7 @@ DCASS is a zero-modification steganography system that encodes messages by curat
 
 ### 2.1 Overview
 
-The GAN (Generative Adversarial Network) learns to generate human-like transmission timing patterns to evade Deep Packet Inspection (DPI).
+The GAN (Generative Adversarial Network) learns to generate human-like transmission timing patterns for realistic traffic distribution modeling.
 
 **Architecture:**
 ```
