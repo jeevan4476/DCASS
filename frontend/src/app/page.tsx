@@ -19,8 +19,30 @@ export default function Home() {
               Encode messages using semantically aligned media without altering any carrier content.
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
-              <Link 
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-12">
+              <Link
+                href="/send"
+                className="bg-gray-900 border border-gray-800 rounded-lg p-6 hover:border-primary transition-colors"
+              >
+                <div className="text-3xl mb-3">📤</div>
+                <h3 className="text-lg font-semibold text-white mb-2">Send</h3>
+                <p className="text-sm text-gray-400">
+                  Encode a secret message and transmit it to another user through the stealth scheduler
+                </p>
+              </Link>
+
+              <Link
+                href="/inbox"
+                className="bg-gray-900 border border-gray-800 rounded-lg p-6 hover:border-primary transition-colors"
+              >
+                <div className="text-3xl mb-3">📥</div>
+                <h3 className="text-lg font-semibold text-white mb-2">Inbox</h3>
+                <p className="text-sm text-gray-400">
+                  View and decode messages addressed to you
+                </p>
+              </Link>
+
+              <Link
                 href="/status"
                 className="bg-gray-900 border border-gray-800 rounded-lg p-6 hover:border-primary transition-colors"
               >
@@ -31,29 +53,29 @@ export default function Home() {
                 </p>
               </Link>
 
-              <Link 
+              <Link
                 href="/encode"
                 className="bg-gray-900 border border-gray-800 rounded-lg p-6 hover:border-primary transition-colors"
               >
                 <div className="text-3xl mb-3">🔐</div>
-                <h3 className="text-lg font-semibold text-white mb-2">Encode Message</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">Encode (standalone)</h3>
                 <p className="text-sm text-gray-400">
-                  Transform secret messages into semantic media sequences
+                  Transform messages into semantic media sequences without transmitting
                 </p>
               </Link>
 
-              <Link 
+              <Link
                 href="/decode"
                 className="bg-gray-900 border border-gray-800 rounded-lg p-6 hover:border-primary transition-colors"
               >
                 <div className="text-3xl mb-3">🔎</div>
-                <h3 className="text-lg font-semibold text-white mb-2">Decode Sequence</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">Decode (standalone)</h3>
                 <p className="text-sm text-gray-400">
                   Reconstruct semantic meaning from media IDs using loaded indices
                 </p>
               </Link>
 
-              <Link 
+              <Link
                 href="/wire"
                 className="bg-gray-900 border border-gray-800 rounded-lg p-6 hover:border-primary transition-colors"
               >
@@ -63,6 +85,13 @@ export default function Home() {
                   Real-time transmission telemetry and packet monitoring
                 </p>
               </Link>
+            </div>
+
+            <div className="mb-10 flex items-center justify-center gap-4 text-sm text-gray-400">
+              <span>New here?</span>
+              <Link href="/register" className="text-primary hover:underline">Register</Link>
+              <span>·</span>
+              <Link href="/login" className="text-primary hover:underline">Login</Link>
             </div>
 
             <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 text-left">

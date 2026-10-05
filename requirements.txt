@@ -55,6 +55,12 @@ uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 
 # =============================================================================
+# Auth (src/api/auth.py — minimal demo auth, see docs/GAN_RL_INTEGRATION_PLAN.md Phase F)
+# =============================================================================
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# =============================================================================
 # Benchmarks (analysis/benchmarks/metrics.py lazy-imports bert_score)
 # =============================================================================
 bert-score>=0.3.13

@@ -2,16 +2,19 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/lib/auth';
 
 export default function Navigation() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
 
   const links = [
     { href: '/', label: 'Home' },
+    { href: '/send', label: 'Send' },
+    { href: '/inbox', label: 'Inbox' },
     { href: '/status', label: 'Status' },
     { href: '/encode', label: 'Encode' },
     { href: '/decode', label: 'Decode' },
-    { href: '/logs', label: 'System Logs' },
   ];
 
   return (
@@ -35,6 +38,26 @@ export default function Navigation() {
                 </Link>
               ))}
             </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            {user ? (
+              <>
+                <span className="text-sm text-gray-400">{user.username}</span>
+                <button
+                  onClick={logout}
+                  className="text-sm text-gray-300 hover:text-white px-3 py-1 rounded hover:bg-gray-800 transition-colors"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <Link
+                href="/login"
+                className="text-sm text-gray-300 hover:text-white px-3 py-1 rounded hover:bg-gray-800 transition-colors"
+              >
+                Sign in
+              </Link>
+            )}
           </div>
         </div>
       </div>

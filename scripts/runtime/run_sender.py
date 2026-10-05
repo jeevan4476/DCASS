@@ -254,36 +254,56 @@ def send_sequence(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def train_agent_in_container(episodes: int):
-    """Train the RL agent inside the Docker container. For later use."""
-    from src.stealth.rl.agent import PPOAgent, PPOConfig
-    from src.stealth.rl.environment import StealthEnvironment
-    from src.analysis.adversarial.warden import DeepPacketInspectionWarden
+def train_agent_in_container(episodes: int, gan_checkpoint: Optional[Path] = None):
+    """
+    Train the RL agent inside the Docker container.
 
-    log.info("Training RL agent for %d episodes …", episodes)
+    Delegates to scripts/stealth/train_rl.py so there is exactly ONE RL
+    training path in the repo. Previously this function built a
+    RANDOM-weight Warden and trained against it, which produced a reward
+    signal carrying no real stealth information (see
+    docs/GAN_RL_INTEGRATION_PLAN.md, Phase B). It now requires a trained
+    GAN checkpoint (default: the scheduler's expected location) and runs
+    the real Phase-B training script as a subprocess.
+    """
+    import subprocess
 
-    warden = DeepPacketInspectionWarden(num_channels=3)
-    warden.eval()
+    from src.stealth.stealth_scheduler import DEFAULT_GAN_CHECKPOINT
 
-    env = StealthEnvironment(num_channels=3, warden=warden, lambda_stealth=50.0)
-    config = PPOConfig(state_dim=env.state_dim, device="cpu")
-    agent = PPOAgent(env, config)
+    gan_checkpoint = gan_checkpoint or DEFAULT_GAN_CHECKPOINT
+    if not Path(gan_checkpoint).exists():
+        log.error(
+            "No trained GAN checkpoint found at %s. Run "
+            "scripts/stealth/train_gan.py first (Phase A) before training RL — "
+            "training against an untrained Warden gives a reward signal with "
+            "no real stealth information.",
+            gan_checkpoint,
+        )
+        raise SystemExit(1)
 
-    rng = np.random.default_rng(42)
+    train_rl_script = PROJECT_ROOT / "scripts" / "stealth" / "train_rl.py"
+    out_path = Path("/app/checkpoints/rl/ppo_agent_final.pt")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def media_gen():
-        n = rng.integers(10, 30)
-        return [f"media_{i:03d}" for i in range(n)]
-
-    agent.train(
-        num_episodes=episodes, media_sequence_generator=media_gen, log_interval=10
+    log.info(
+        "Training RL agent for %d episodes against frozen Warden from %s …",
+        episodes,
+        gan_checkpoint,
     )
-
-    ckpt_dir = Path("/app/checkpoints/rl")
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-    save_path = ckpt_dir / "ppo_agent_final.pt"
-    agent.save(save_path)
-    log.info("Training complete. Agent saved → %s", save_path)
+    subprocess.run(
+        [
+            sys.executable,
+            str(train_rl_script),
+            "--warden-checkpoint",
+            str(gan_checkpoint),
+            "--episodes",
+            str(episodes),
+            "--out",
+            str(out_path),
+        ],
+        check=True,
+    )
+    log.info("Training complete. Agent saved → %s", out_path)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -384,7 +404,12 @@ def main():
 
     # ── Training mode ───────────────────────────────────────────────────
     if args.mode == "train":
-        train_agent_in_container(episodes=args.episodes)
+        gan_ckpt_for_training = (
+            Path(args.gan_checkpoint) if args.gan_checkpoint else None
+        )
+        train_agent_in_container(
+            episodes=args.episodes, gan_checkpoint=gan_ckpt_for_training
+        )
         print("\n[Sender] Done!")
         return
 

@@ -2,6 +2,28 @@
 
 **Date:** 2026-08-22 · **Commit:** `18b5739` · **Method:** full read of `src/`, `config/`, `scripts/`, `tests/`, `frontend/`, Docker + Make tooling. Docs treated as claims to verify, not as source of truth.
 
+> **Addendum (2026-10-04) — GAN/RL integration pass.** The items below were
+> fixed or superseded by the work tracked in
+> [docs/GAN_RL_INTEGRATION_PLAN.md](GAN_RL_INTEGRATION_PLAN.md) /
+> [docs/modules/08_INTEGRATION.md](modules/08_INTEGRATION.md). This section
+> is additive — the rest of the audit below is left as the historical
+> record it is; do not mistake findings marked "Open" elsewhere in this
+> file as still open if they're listed as fixed here.
+>
+> - **H-9 (auto mode silently degrades to static) — already fixed before this pass**, confirmed stale. `StealthScheduler.schedule` implements the documented rl → gan → static cascade (`src/stealth/stealth_scheduler.py`).
+> - **H-10 (checkpoints CWD-relative) — already fixed before this pass**, confirmed stale. Paths are anchored via `Path(__file__).parent.parent.parent`, and `_load_generator` now reads `latent_dim`/`hidden_dim` from the checkpoint's stored `TrainingConfig` rather than hardcoding them.
+> - **R-22 (gradient penalty on the sigmoid-squashed output) — already fixed before this pass**, confirmed stale. `compute_gradient_penalty` computes gradients on `raw_critic_score`, with an explicit comment about why.
+> - **R-23 (channel head gets no gradient) — already fixed before this pass**, confirmed stale. `sample_channels()` and `channel_probs_straight_through()` use real straight-through Gumbel-Softmax.
+> - **R-24 (wasted backward pass, fake_delays undetached) — already fixed before this pass**, confirmed stale. The Warden-phase forward detaches `fake_delays`.
+> - **"scripts/training/ vs scripts/stealth/" duplicate training entry points (layer map, L-19) — confirmed gone.** `scripts/training/` and `scripts/stealth/train_gan_extended.py` do not exist in the current tree. `scripts/stealth/train_gan.py` and `scripts/stealth/train_rl.py` are now the single canonical training entry points (newly written in this pass — they did not exist before and were only referenced by `docker-compose.yml`), wrapping `src/stealth/gan/trainer.py::GANTrainer` and `src/stealth/rl/agent.py::PPOAgent` respectively. This also answers the "which training entry point is canonical" open question in §9.
+> - **P1-6 (Warden zero-padding only affects the logged metric, not the learning signal) — behavior changed in this pass.** `_compute_reward()` previously gated the Warden penalty behind `len(history) >= warden_window_size`, so ~2/3 of short training episodes (10-29 items) never received a stealth signal at all. It now applies the same mean-delay padding `get_warden_score()` already used, from the first transmission onward — so the audit's impact claim ("rewards are not affected") is no longer accurate as of this pass; the reward now DOES receive a (padded) Warden signal from step 1.
+> - **Training against an untrained Warden — new finding this pass, now fixed.** Not in the original audit: `scripts/runtime/run_sender.py:train_agent_in_container` built a random-weight `DeepPacketInspectionWarden` and trained the RL agent's reward against it, so the stealth penalty carried no real signal. It now delegates to `scripts/stealth/train_rl.py --warden-checkpoint <gan checkpoint>`, which loads and freezes the Warden trained in Phase A.
+> - **Checkpoint path mismatch between `docker-compose.yml`'s training services and `StealthScheduler`'s defaults — new finding this pass, now fixed.** The `dcass-train-gan`/`dcass-train-rl` services didn't pass `--out`, so checkpoints would have landed at the wrong in-container path and never reached the host-mounted `storage/models/`. Both commands now pass explicit `--out` paths matching the mount.
+> - **GP now covers channels, not just delays — new finding this pass, now fixed.** `compute_gradient_penalty` previously interpolated delays only and reused real channels verbatim, so the Lipschitz constraint was never enforced over the discrete channel input. It now interpolates channel soft-probabilities too.
+> - **Mixed-length batch bug — new finding this pass, now fixed.** `GANTrainer.train_step` used to take `seq_lengths[0]` as "the" sequence length for the whole batch. It now builds a per-sample validity mask and the Warden masks padded steps out of its statistical features, pooling, and attention.
+> - **Delay semantics in `StealthEnvironment` — new finding this pass, now fixed.** The RL environment advanced `current_time` and checked rate limits BEFORE sending, which disagreed with the "pause AFTER item i" convention H-6 already established for `NoiseController` and the API transmitter. `step()` now sends first, then advances time, with the rate-limit check looking ahead to `current_time + delay`.
+> - **RL action mask dropped at inference — new finding this pass, now fixed.** `collect_rollout` already applied `get_action_mask()` during training, but `StealthScheduler._schedule_rl` never passed a mask to `select_action()` at inference, so a trained policy could still be scheduled onto a channel that was cooling down. Fixed; rate-limit-violation steps are also no longer appended to the exported schedule.
+
 **Contents:** §1–3 what the system is and how every workflow runs · §4 21 findings by severity · §5 claim vs. code · §6 what's genuinely good · §7 build order · **§8 reconciliation with the team's `DCASS_FULL_AUDIT_REPORT.md`** (4 of its 14 items are already fixed; 3 new findings surfaced from the cross-check) · §9 open questions.
 
 ---

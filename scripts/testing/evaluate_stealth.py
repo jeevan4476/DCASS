@@ -48,20 +48,60 @@ def evaluate_warden(warden, delays_list, channels_list):
     return verdict.bot_probability.tolist()
 
 
+def load_trained_warden(gan_checkpoint: Path, num_channels: int = 3, device: str = "cpu"):
+    """
+    Load the Warden trained alongside the Generator in Phase A, instead of
+    an untrained (random-weight) one. Evaluating stealth quality against a
+    random Warden produces meaningless metrics — it has no learned notion
+    of what "human-like" traffic looks like.
+    """
+    if not gan_checkpoint.exists():
+        print(
+            f"WARNING: GAN checkpoint not found at {gan_checkpoint} — "
+            "falling back to an UNTRAINED Warden. Metrics below are NOT "
+            "meaningful; run scripts/stealth/train_gan.py first."
+        )
+        warden = DeepPacketInspectionWarden(num_channels=num_channels)
+        warden.eval()
+        return warden
+
+    ckpt = torch.load(gan_checkpoint, map_location=device, weights_only=False)
+    config = ckpt.get("config")
+    if config is not None and not isinstance(config, dict):
+        hidden_dim = getattr(config, "hidden_dim", 256)
+    else:
+        hidden_dim = (config or {}).get("hidden_dim", 256)
+
+    warden = DeepPacketInspectionWarden(num_channels=num_channels, hidden_dim=hidden_dim)
+    warden.load_state_dict(ckpt["warden_state"])
+    warden.to(device)
+    warden.eval()
+    return warden
+
+
 def main():
     parser = argparse.ArgumentParser(description="Evaluate stealth quality")
     parser.add_argument("--mode", choices=["gan", "rl", "static"], default="static")
     parser.add_argument("--num-sequences", type=int, default=100)
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--human-data", type=Path,
-                        default=PROJECT_ROOT / "data" / "behavioral" / "human_traffic.json")
-    parser.add_argument("--gan-checkpoint", type=Path, default=PROJECT_ROOT / "models" / "gan" / "final.pt")
-    parser.add_argument("--rl-checkpoint", type=Path, default=PROJECT_ROOT / "models" / "rl" / "ppo_agent_final.pt")
+                        default=PROJECT_ROOT / "data" / "human_traffic.json")
+    parser.add_argument(
+        "--gan-checkpoint",
+        type=Path,
+        default=PROJECT_ROOT / "storage" / "models" / "gan_generator.pt",
+        help="Also used to load the TRAINED Warden for scoring (matches StealthScheduler's default path)",
+    )
+    parser.add_argument(
+        "--rl-checkpoint",
+        type=Path,
+        default=PROJECT_ROOT / "storage" / "models" / "rl_agent.pt",
+    )
     args = parser.parse_args()
 
-    # --- warden ----------------------------------------------------------
-    warden = DeepPacketInspectionWarden(num_channels=3)
-    warden.eval()
+    # --- warden: load the TRAINED Warden from the GAN checkpoint, not an
+    # untrained random one (previously this never loaded warden_state at all).
+    warden = load_trained_warden(args.gan_checkpoint, num_channels=3, device=args.device)
 
     # --- generate schedules ---------------------------------------------
     scheduler = StealthScheduler(num_channels=3, device=args.device)

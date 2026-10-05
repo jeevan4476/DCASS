@@ -176,6 +176,7 @@ services:
         --epochs ${GAN_EPOCHS:-50}
         --batch-size ${GAN_BATCH_SIZE:-32}
         --checkpoint-dir /app/models/gan
+        --out /app/models/gan_generator.pt
         --device cpu
     profiles:
       - training
@@ -205,8 +206,8 @@ services:
       python -u scripts/stealth/train_rl.py
         --episodes ${RL_EPISODES:-1000}
         --num-channels ${NUM_CHANNELS:-3}
-        --checkpoint-dir /app/models/rl
-        --warden-checkpoint /app/models/gan/final.pt
+        --warden-checkpoint /app/models/gan_generator.pt
+        --out /app/models/rl_agent.pt
         --device cpu
     profiles:
       - training

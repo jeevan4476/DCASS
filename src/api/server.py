@@ -15,6 +15,7 @@ import os
 import time
 import json
 import threading
+import uuid
 from pathlib import Path
 from typing import Optional, Literal
 
@@ -24,6 +25,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from src.corpus.index.unified_index import resolve_indices_base_path
+from src.api import auth as _auth
+from src.api.auth import AuthenticatedUser, get_current_user
 
 
 # ---------------------------------------------------------------------------
@@ -95,12 +98,23 @@ def _build_context_manager(bucket_seconds: int):
     return ContextKeyManager(bucket_seconds=bucket_seconds, secret=secret)
 
 
-def sanitize_packet_filename(shared_dir: Path, media_id: str, channel: int, idx: int) -> Path:
+def sanitize_packet_filename(
+    shared_dir: Path,
+    media_id: str,
+    channel: int,
+    idx: int,
+    session_id: Optional[str] = None,
+) -> Path:
     """
     Build a packet path under *shared_dir*, rejecting path traversal.
 
-    Raises ValueError when media_id contains separators, `..`, or would
-    resolve outside shared_dir.
+    When `session_id` is given (Phase F), it is prepended to the filename
+    so parallel sessions to the same recipient don't collide. The
+    session_id itself is validated the same way media_id is — no path
+    separators, no `..` — before being used in the filename.
+
+    Raises ValueError when media_id (or session_id) contains separators,
+    `..`, or would resolve outside shared_dir.
     """
     if not media_id or not isinstance(media_id, str):
         raise ValueError("media_id must be a non-empty string")
@@ -109,8 +123,23 @@ def sanitize_packet_filename(shared_dir: Path, media_id: str, channel: int, idx:
     if "/" in media_id or "\\" in media_id or media_id != Path(media_id).name:
         raise ValueError(f"invalid media_id (path characters): {media_id!r}")
 
+    if session_id is not None:
+        if (
+            not isinstance(session_id, str)
+            or not session_id
+            or session_id in (".", "..")
+            or ".." in session_id
+            or "/" in session_id
+            or "\\" in session_id
+            or session_id != Path(session_id).name
+        ):
+            raise ValueError(f"invalid session_id: {session_id!r}")
+
     shared_resolved = shared_dir.resolve()
-    filename = f"{media_id}_{channel}_{idx:04d}.json"
+    if session_id:
+        filename = f"{session_id}__{media_id}_{channel}_{idx:04d}.json"
+    else:
+        filename = f"{media_id}_{channel}_{idx:04d}.json"
     path = (shared_dir / filename).resolve()
     if not path.is_relative_to(shared_resolved):
         raise ValueError(f"packet path escapes shared_channel: {media_id!r}")
@@ -165,6 +194,21 @@ def _get_encoder():
 
 def _get_decoder():
     return _get_engine()._exact_decoder
+
+
+@app.on_event("startup")
+def _startup_init_auth() -> None:
+    """Initialize auth DB and seed demo users on API startup."""
+    _auth.init_db()
+    _auth.seed_demo_users()
+
+
+def _recipient_shared_dir(recipient_user_id: int) -> Path:
+    """Per-recipient subdirectory of the shared channel."""
+    base = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
+    sub = base / str(recipient_user_id)
+    sub.mkdir(parents=True, exist_ok=True)
+    return sub
 
 
 def warmup():
@@ -272,6 +316,77 @@ class StatusResponse(BaseModel):
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Auth routes (Phase F) — minimal demo auth, see src/api/auth.py and
+# docs/GAN_RL_INTEGRATION_PLAN.md Phase F.6 for the deployment caveats.
+# ---------------------------------------------------------------------------
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=40)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AuthUserInfo(BaseModel):
+    id: int
+    username: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: AuthUserInfo
+
+
+class UsersListResponse(BaseModel):
+    users: list[AuthUserInfo]
+
+
+@app.post("/api/auth/register", response_model=LoginResponse, status_code=201)
+def auth_register(req: RegisterRequest):
+    try:
+        user = _auth.create_user(req.username, req.password)
+    except ValueError as e:
+        # Covers both the length check and the uniqueness collision.
+        raise HTTPException(status_code=409, detail=str(e))
+    token = _auth.create_access_token(user.id, user.username)
+    return LoginResponse(
+        access_token=token,
+        user=AuthUserInfo(id=user.id, username=user.username),
+    )
+
+
+@app.post("/api/auth/login", response_model=LoginResponse)
+def auth_login(req: LoginRequest):
+    user = _auth.authenticate(req.username, req.password)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    token = _auth.create_access_token(user.id, user.username)
+    return LoginResponse(
+        access_token=token,
+        user=AuthUserInfo(id=user.id, username=user.username),
+    )
+
+
+@app.get("/api/auth/me", response_model=AuthUserInfo)
+def auth_me(current_user: AuthenticatedUser = Depends(get_current_user)):
+    return AuthUserInfo(id=current_user.id, username=current_user.username)
+
+
+@app.get("/api/users", response_model=UsersListResponse)
+def list_users(current_user: AuthenticatedUser = Depends(get_current_user)):
+    """List all users EXCEPT the current user — populates the recipient dropdown."""
+    users = _auth.list_users_excluding(current_user.id)
+    return UsersListResponse(
+        users=[AuthUserInfo(id=u.id, username=u.username) for u in users]
+    )
 
 
 @app.post("/api/encode", response_model=EncodeResponse)
@@ -708,6 +823,8 @@ class TransmitRequest(BaseModel):
     num_channels: int = 3
     message: str = ""
     speed_multiplier: float = 1.0  # 1.0 = real-time, 2.0 = 2x faster, etc.
+    # Phase F — 1-to-1 routing: packets land in storage/shared_channel/<recipient_id>/
+    recipient_username: str = Field(..., min_length=1)
 
 
 def _transmit_packets_sync(
@@ -715,10 +832,20 @@ def _transmit_packets_sync(
     shared_dir: Path,
     message: str,
     speed_multiplier: float = 1.0,
+    sender_id: Optional[int] = None,
+    sender_username: Optional[str] = None,
+    recipient_id: Optional[int] = None,
+    recipient_username: Optional[str] = None,
+    session_id: Optional[str] = None,
 ):
     """
     Synchronous function to transmit packets with real delays.
     Runs in a background thread.
+
+    When sender_id/recipient_id/session_id are given (Phase F routed path),
+    the manifest is written as `_manifest_<session_id>.json` so multiple
+    sessions can coexist in the same recipient directory, and the packet
+    filenames are prefixed with the session_id for the same reason.
     """
     global _transmission_active, _transmission_progress, _transmission_stop_requested
 
@@ -737,7 +864,9 @@ def _transmit_packets_sync(
         }
 
     try:
-        # Write manifest
+        # Write manifest. Phase F adds sender/recipient metadata and a
+        # session-specific filename so one recipient directory can hold
+        # many messages without clobbering a shared _manifest.json.
         manifest = {
             "message": message,
             "mode_requested": schedule.get("mode_requested", mode_used),
@@ -745,8 +874,16 @@ def _transmit_packets_sync(
             "total_items": len(items),
             "total_delay_seconds": round(sum(delays), 2),
             "timestamp": time.time(),
+            "sender_id": sender_id,
+            "sender_username": sender_username,
+            "recipient_id": recipient_id,
+            "recipient_username": recipient_username,
+            "session_id": session_id,
         }
-        with open(shared_dir / "_manifest.json", "w") as f:
+        manifest_name = (
+            f"_manifest_{session_id}.json" if session_id else "_manifest.json"
+        )
+        with open(shared_dir / manifest_name, "w") as f:
             json.dump(manifest, f, indent=2)
 
         # Transmit packets with real delays
@@ -763,7 +900,10 @@ def _transmit_packets_sync(
                     time.sleep(actual_delay)
                 continue
 
-            # Write packet (media_id sanitized against path traversal)
+            # Write packet (media_id sanitized against path traversal).
+            # Phase F: tag the packet with its session_id and prefix the
+            # filename with it so two sessions to the same recipient don't
+            # overwrite each other's packets.
             packet = {
                 "media_id": media_id,
                 "channel_id": channel,
@@ -771,10 +911,13 @@ def _transmit_packets_sync(
                 "delay_seconds": round(delay, 3),
                 "timestamp": time.time(),
                 "mode_used": mode_used,
+                "session_id": session_id,
             }
 
             try:
-                path = sanitize_packet_filename(shared_dir, media_id, channel, idx)
+                path = sanitize_packet_filename(
+                    shared_dir, media_id, channel, idx, session_id=session_id
+                )
             except ValueError as e:
                 raise RuntimeError(f"refusing unsafe packet write: {e}") from e
             with open(path, "w") as f:
@@ -817,13 +960,15 @@ def _transmit_packets_sync(
 def transmit_sequence(
     req: TransmitRequest,
     background_tasks: BackgroundTasks,
-    _: None = Depends(require_api_token),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
     Start transmitting a media sequence through the shared channel.
 
-    This starts a background task that writes packets with real delays,
-    simulating realistic transmission timing.
+    Phase F: the sender identity is the authenticated user; the recipient
+    is `req.recipient_username`. Packets are written to
+    `storage/shared_channel/<recipient_user_id>/` with a session_id
+    prefix so parallel sessions to the same recipient don't collide.
     """
     global _transmission_active, _transmission_progress
 
@@ -832,7 +977,20 @@ def transmit_sequence(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Atomically claim the transmitter so concurrent requests cannot double-start
+    # Resolve recipient. Reject the recipient-equals-sender case up front —
+    # the shared channel is for inter-user messages, not loopback.
+    recipient = _auth.get_user_by_username(req.recipient_username)
+    if recipient is None:
+        raise HTTPException(status_code=404, detail=f"recipient {req.recipient_username!r} does not exist")
+    if recipient.id == current_user.id:
+        raise HTTPException(status_code=400, detail="cannot send a message to yourself")
+
+    session_id = uuid.uuid4().hex[:16]
+
+    # Atomically claim the transmitter so concurrent requests cannot double-start.
+    # NOTE (Phase F.6 R7): this global lock serializes ALL concurrent transmits
+    # across users. Fine for a single-process demo; a real multi-user deployment
+    # would want per-recipient queues instead.
     with _transmission_lock:
         if _transmission_active:
             raise HTTPException(
@@ -859,9 +1017,8 @@ def transmit_sequence(
             base_delay=req.base_delay,
         )
 
-        # Prepare shared_channel directory
-        shared_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
-        shared_dir.mkdir(parents=True, exist_ok=True)
+        # Prepare per-recipient shared_channel subdirectory (Phase F routing).
+        shared_dir = _recipient_shared_dir(recipient.id)
 
         # Calculate estimated time
         total_delay = sum(schedule["delays"]) / req.speed_multiplier
@@ -869,7 +1026,17 @@ def transmit_sequence(
         # Start background transmission in a thread
         thread = threading.Thread(
             target=_transmit_packets_sync,
-            args=(schedule, shared_dir, req.message, req.speed_multiplier),
+            kwargs=dict(
+                schedule=schedule,
+                shared_dir=shared_dir,
+                message=req.message,
+                speed_multiplier=req.speed_multiplier,
+                sender_id=current_user.id,
+                sender_username=current_user.username,
+                recipient_id=recipient.id,
+                recipient_username=recipient.username,
+                session_id=session_id,
+            ),
             daemon=True,
         )
         thread.start()
@@ -877,6 +1044,9 @@ def transmit_sequence(
         return {
             "success": True,
             "status": "started",
+            "session_id": session_id,
+            "sender": current_user.username,
+            "recipient": recipient.username,
             "total_packets": len([i for i in schedule["items"] if i is not None]),
             "mode_used": schedule["mode_used"],
             "estimated_duration_seconds": round(total_delay, 2),
@@ -913,3 +1083,213 @@ def stop_transmission(_: None = Depends(require_api_token)):
             return {"success": True, "message": "Transmission stop requested"}
         else:
             return {"success": False, "message": "No active transmission"}
+
+
+# ---------------------------------------------------------------------------
+# Inbox (Phase F) — per-recipient message list + on-demand decode.
+#
+# Session_id is the primary key for a sent message: one session = one
+# transmission = one manifest + N packets. Listing the inbox returns the
+# manifests under storage/shared_channel/<current_user_id>/; decoding a
+# session reassembles its packets (sorted by sequence_number) and runs
+# the SemanticDecoder, caching the result in a sidecar JSON so repeat
+# reads don't repay the decoder cost.
+# ---------------------------------------------------------------------------
+
+
+def _inbox_dir(user_id: int) -> Path:
+    base = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
+    sub = base / str(user_id)
+    sub.mkdir(parents=True, exist_ok=True)
+    return sub
+
+
+class InboxItem(BaseModel):
+    session_id: str
+    sender_username: Optional[str] = None
+    sender_id: Optional[int] = None
+    recipient_username: Optional[str] = None
+    timestamp: float
+    mode_used: Optional[str] = None
+    total_items: int = 0
+    received_packets: int = 0
+    decoded: bool = False
+
+
+class InboxResponse(BaseModel):
+    items: list[InboxItem]
+
+
+@app.get("/api/inbox", response_model=InboxResponse)
+def inbox_list(current_user: AuthenticatedUser = Depends(get_current_user)):
+    """List all sessions addressed to the current user, newest first."""
+    inbox = _inbox_dir(current_user.id)
+    items: list[InboxItem] = []
+    for manifest_path in inbox.glob("_manifest_*.json"):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception:
+            continue
+        session_id = manifest.get("session_id") or manifest_path.stem.removeprefix("_manifest_")
+        packet_count = sum(1 for _ in inbox.glob(f"{session_id}__*.json"))
+        decoded_sidecar = inbox / f"_decoded_{session_id}.json"
+        items.append(
+            InboxItem(
+                session_id=session_id,
+                sender_username=manifest.get("sender_username"),
+                sender_id=manifest.get("sender_id"),
+                recipient_username=manifest.get("recipient_username"),
+                timestamp=manifest.get("timestamp", 0.0),
+                mode_used=manifest.get("mode_used"),
+                total_items=manifest.get("total_items", 0),
+                received_packets=packet_count,
+                decoded=decoded_sidecar.exists(),
+            )
+        )
+    items.sort(key=lambda i: i.timestamp, reverse=True)
+    return InboxResponse(items=items)
+
+
+class InboxDecodeResponse(BaseModel):
+    session_id: str
+    sender_username: Optional[str]
+    recipient_username: Optional[str]
+    mode_used: Optional[str]
+    reconstructed_meaning: str
+    verification_rate: float
+    all_verified: bool
+    ecc_success: bool
+    ecc_errors_fixed: list[int]
+    items: list[dict]
+    cached: bool
+
+
+def _validate_session_id(session_id: str) -> None:
+    if (
+        not session_id
+        or not isinstance(session_id, str)
+        or session_id in (".", "..")
+        or ".." in session_id
+        or "/" in session_id
+        or "\\" in session_id
+        or session_id != Path(session_id).name
+    ):
+        raise HTTPException(status_code=400, detail=f"invalid session_id: {session_id!r}")
+
+
+@app.post("/api/inbox/{session_id}/decode", response_model=InboxDecodeResponse)
+def inbox_decode(
+    session_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Reassemble the packets for `session_id` (sorted by sequence_number)
+    and run SemanticDecoder on them. First call decodes-and-caches; later
+    calls return the cached result from a `_decoded_<session_id>.json`
+    sidecar in the recipient's inbox directory.
+    """
+    _validate_session_id(session_id)
+    inbox = _inbox_dir(current_user.id)
+    manifest_path = inbox / f"_manifest_{session_id}.json"
+    if not manifest_path.exists():
+        raise HTTPException(status_code=404, detail="session not found in inbox")
+
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    sidecar = inbox / f"_decoded_{session_id}.json"
+    if sidecar.exists():
+        with open(sidecar, "r", encoding="utf-8") as f:
+            cached = json.load(f)
+        cached["cached"] = True
+        return InboxDecodeResponse(**cached)
+
+    # Gather packets, sort by sequence_number.
+    packets = []
+    for pkt_path in inbox.glob(f"{session_id}__*.json"):
+        try:
+            with open(pkt_path, "r", encoding="utf-8") as f:
+                packets.append(json.load(f))
+        except Exception:
+            continue
+    packets.sort(key=lambda p: p.get("sequence_number", 0))
+
+    if not packets:
+        raise HTTPException(status_code=409, detail="no packets available yet for this session")
+    expected_total = int(manifest.get("total_items") or 0)
+    if expected_total and len(packets) < expected_total:
+        raise HTTPException(
+            status_code=409,
+            detail=f"session incomplete: {len(packets)}/{expected_total} packets received",
+        )
+
+    media_ids = [p["media_id"] for p in packets]
+
+    try:
+        engine = _get_engine()
+        decode_result = engine.decode(media_ids=media_ids, mode="exact_vcp", use_ecc=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"decode failed: {e}")
+
+    items_out: list[dict] = []
+    if decode_result.exact_vcp_result is not None:
+        vcp = decode_result.exact_vcp_result
+        for d in vcp.decoded:
+            items_out.append(
+                {
+                    "media_id": d.media_id,
+                    "modality": d.modality,
+                    "content": d.content[:200],
+                    "verified": d.verified,
+                }
+            )
+        ecc_success = vcp.ecc_success
+        ecc_fixed = vcp.ecc_errors_fixed
+    else:
+        ecc_success = decode_result.success
+        ecc_fixed = decode_result.ecc_fixed_errors
+
+    body = InboxDecodeResponse(
+        session_id=session_id,
+        sender_username=manifest.get("sender_username"),
+        recipient_username=manifest.get("recipient_username"),
+        mode_used=manifest.get("mode_used"),
+        reconstructed_meaning=decode_result.reconstructed_message or "",
+        verification_rate=decode_result.verification_rate,
+        all_verified=all(i["verified"] for i in items_out) if items_out else True,
+        ecc_success=ecc_success,
+        ecc_errors_fixed=ecc_fixed,
+        items=items_out,
+        cached=False,
+    )
+
+    # Cache the result so repeat decodes don't repay the engine cost.
+    with open(sidecar, "w", encoding="utf-8") as f:
+        json.dump(body.model_dump(), f, indent=2)
+
+    return body
+
+
+@app.delete("/api/inbox/{session_id}")
+def inbox_delete(
+    session_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Purge one session's manifest, packets, and decoded sidecar."""
+    _validate_session_id(session_id)
+    inbox = _inbox_dir(current_user.id)
+    deleted = 0
+    for candidate in (
+        [inbox / f"_manifest_{session_id}.json", inbox / f"_decoded_{session_id}.json"]
+        + list(inbox.glob(f"{session_id}__*.json"))
+    ):
+        try:
+            if candidate.exists():
+                candidate.unlink()
+                deleted += 1
+        except Exception:
+            continue
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"success": True, "deleted": deleted}

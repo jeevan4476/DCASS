@@ -16,6 +16,10 @@ env/
 # Storage directory - runtime data (keep structure, ignore contents)
 storage/*
 !storage/.gitkeep
+!storage/models/
+storage/models/*
+!storage/models/gan_generator.pt
+!storage/models/rl_agent.pt
 
 # Legacy data directories (if any remain)
 data/raw/
@@ -25,8 +29,8 @@ data/processed/
 data/audio
 data/benchmarks/
 
-# Model files (now in storage/, download or train locally)
-*.pt
+# Model files (per-epoch training checkpoints, etc.)
+# Final trained models in storage/models/ are explicitly un-ignored above.
 *.pth
 *.onnx
 *.bin

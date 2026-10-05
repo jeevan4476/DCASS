@@ -1,5 +1,21 @@
 # rl
 
+> **Scope note:** the modules below (`path_agent/`, `scheduler/`, `gan/`) are
+> a **standalone, parallel design** — a WGAN-GP over absolute timestamps plus
+> a Double-DQN path selector — that predates and is **not integrated** with
+> `src/stealth/` or the API (`src/api/server.py`). It produces absolute
+> timestamps + channel choices; the integrated pipeline produces relative
+> inter-item delays + channel choices via `StealthScheduler`. Do not confuse
+> this directory's `gan/` with `src/stealth/gan/` — they are different
+> generators with different training loops.
+>
+> The files directly in THIS directory — `train_gan.py`, `train_rl.py`,
+> `eval_warden.py` — belong to the integrated pipeline instead: they train
+> and evaluate `src/stealth/gan/` + `src/analysis/adversarial/warden.py` +
+> `src/stealth/rl/`, and feed `StealthScheduler`. See
+> [docs/modules/08_INTEGRATION.md](../../docs/modules/08_INTEGRATION.md) and
+> [docs/GAN_RL_INTEGRATION_PLAN.md](../../docs/GAN_RL_INTEGRATION_PLAN.md).
+
 Congestion-aware packet routing: decide which channel to send a packet on,
 and (eventually) when, using RL.
 

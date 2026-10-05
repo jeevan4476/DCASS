@@ -4,29 +4,83 @@
  * Connects to the FastAPI backend running on localhost:8000
  */
 
-import axios from 'axios';
+import axios, { AxiosInstance } from 'axios';
 
 // Convention: NEXT_PUBLIC_API_URL is the ORIGIN (no /api suffix).
 // The /api prefix lives here so every consumer agrees.
 const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export const API_BASE = `${API_ORIGIN.replace(/\/$/, '')}/api`;
 
-const api = axios.create({
-  baseURL: API_BASE,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 30000, // 30 second default timeout
-});
+// Phase F auth: localStorage-backed JWT. See docs/GAN_RL_INTEGRATION_PLAN.md
+// Phase F.6 (R6) for the XSS caveat — fine for a research demo, not for
+// a public deployment.
+export const AUTH_TOKEN_KEY = 'dcass_token';
+
+export function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAuthToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (token) {
+      window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+    } else {
+      window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+  } catch {
+    // ignore — private mode / storage disabled
+  }
+}
+
+function _installAuthInterceptors(instance: AxiosInstance): AxiosInstance {
+  instance.interceptors.request.use((config) => {
+    const token = getAuthToken();
+    if (token) {
+      config.headers = config.headers ?? {};
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  });
+  instance.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      // On 401, clear the stale token so the auth context notices and
+      // bounces the user back to /login. Only clear for AUTHENTICATED
+      // 401s (we had a token) to avoid an infinite loop on login/register.
+      if (error?.response?.status === 401 && getAuthToken()) {
+        setAuthToken(null);
+        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+      }
+      return Promise.reject(error);
+    },
+  );
+  return instance;
+}
+
+const api = _installAuthInterceptors(
+  axios.create({
+    baseURL: API_BASE,
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 30000,
+  }),
+);
 
 // Longer timeout for encode/decode operations (model loading on first request)
-const apiLongTimeout = axios.create({
-  baseURL: API_BASE,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 90000, // 90 second timeout for heavy operations
-});
+const apiLongTimeout = _installAuthInterceptors(
+  axios.create({
+    baseURL: API_BASE,
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 90000,
+  }),
+);
 
 // ============================================================================
 // Types
@@ -190,6 +244,123 @@ export async function searchCorpus(request: SearchRequest): Promise<SearchRespon
 
 export async function getStatus(): Promise<StatusResponse> {
   const response = await api.get('/status');
+  return response.data;
+}
+
+// ============================================================================
+// Phase F — Auth, user routing, and inbox
+// ============================================================================
+
+export interface AuthUser {
+  id: number;
+  username: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  user: AuthUser;
+}
+
+export interface UsersListResponse {
+  users: AuthUser[];
+}
+
+export interface InboxItem {
+  session_id: string;
+  sender_username?: string | null;
+  sender_id?: number | null;
+  recipient_username?: string | null;
+  timestamp: number;
+  mode_used?: string | null;
+  total_items: number;
+  received_packets: number;
+  decoded: boolean;
+}
+
+export interface InboxResponse {
+  items: InboxItem[];
+}
+
+export interface InboxDecodeResponse {
+  session_id: string;
+  sender_username?: string | null;
+  recipient_username?: string | null;
+  mode_used?: string | null;
+  reconstructed_meaning: string;
+  verification_rate: number;
+  all_verified: boolean;
+  ecc_success: boolean;
+  ecc_errors_fixed: number[];
+  items: Array<{
+    media_id: string;
+    modality: string;
+    content: string;
+    verified: boolean;
+  }>;
+  cached: boolean;
+}
+
+export interface TransmitRequest {
+  media_ids: string[];
+  recipient_username: string;
+  mode?: 'static' | 'rl' | 'gan' | 'auto';
+  base_delay?: number;
+  num_channels?: number;
+  message?: string;
+  speed_multiplier?: number;
+}
+
+export interface TransmitResponse {
+  success: boolean;
+  status: string;
+  session_id?: string;
+  sender?: string;
+  recipient?: string;
+  total_packets: number;
+  mode_used: string;
+  estimated_duration_seconds: number;
+  speed_multiplier: number;
+  message: string;
+}
+
+export async function authLogin(username: string, password: string): Promise<LoginResponse> {
+  const response = await api.post('/auth/login', { username, password });
+  return response.data;
+}
+
+export async function authRegister(username: string, password: string): Promise<LoginResponse> {
+  const response = await api.post('/auth/register', { username, password });
+  return response.data;
+}
+
+export async function authMe(): Promise<AuthUser> {
+  const response = await api.get('/auth/me');
+  return response.data;
+}
+
+export async function listUsers(): Promise<UsersListResponse> {
+  const response = await api.get('/users');
+  return response.data;
+}
+
+export async function transmit(req: TransmitRequest): Promise<TransmitResponse> {
+  const response = await apiLongTimeout.post('/transmit', req);
+  return response.data;
+}
+
+export async function getInbox(): Promise<InboxResponse> {
+  const response = await api.get('/inbox');
+  return response.data;
+}
+
+export async function decodeInboxSession(sessionId: string): Promise<InboxDecodeResponse> {
+  const response = await apiLongTimeout.post(`/inbox/${sessionId}/decode`);
+  return response.data;
+}
+
+export async function deleteInboxSession(sessionId: string): Promise<{ success: boolean; deleted: number }> {
+  const response = await api.delete(`/inbox/${sessionId}`);
   return response.data;
 }
 
