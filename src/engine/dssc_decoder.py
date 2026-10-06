@@ -94,16 +94,27 @@ class DSSCDecoder:
             )
 
         # 1. Collect identical canonical candidate pool from index
-        all_ids = []
+        all_ids_by_modality: dict[Modality, list[str]] = {}
         for mod, meta_list in self.index.metadata.items():
             if modalities and mod not in modalities:
                 continue
+            ids = []
             for m in meta_list:
                 mid = m.get("id")
                 if mid:
-                    all_ids.append(mid)
+                    ids.append(mid)
+            ids.sort()
+            all_ids_by_modality[mod] = ids
 
+        # Combined sorted list for fallback
+        all_ids = []
+        for ids in all_ids_by_modality.values():
+            all_ids.extend(ids)
         all_ids.sort()
+
+        # Modality sequence for deterministic round-robin: Text -> Image -> Audio
+        MODALITY_SEQUENCE: list[Modality] = ["text", "image", "audio"]
+
         bit_writer = BitStreamWriter()
 
         verified_count = 0
@@ -123,12 +134,23 @@ class DSSCDecoder:
             family_idx = int.from_bytes(family_digest[:4], "big") % len(self.family_manager.families)
             primary_family = self.family_manager.families[family_idx]
 
+            # Modality balancing: deterministic round-robin per chunk (MUST match encoder)
+            # Chunk 0 -> text, Chunk 1 -> image, Chunk 2 -> audio, Chunk 3 -> text, etc.
+            modality_for_chunk = MODALITY_SEQUENCE[chunk_idx % len(MODALITY_SEQUENCE)]
+            modality_ids = all_ids_by_modality.get(modality_for_chunk, [])
+
             # Candidate set: all IDs whose VCP cluster in family range (mirrors encoder)
             allowed_clusters = set(primary_family.cluster_ids)
             candidates = [
-                cid for cid in all_ids
+                cid for cid in modality_ids
                 if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
             ]
+            # Fallback to all modalities if this modality has too few candidates
+            if len(candidates) < 8:
+                candidates = [
+                    cid for cid in all_ids
+                    if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
+                ]
             if len(candidates) < 8:
                 candidates = all_ids[:256]
 
@@ -166,7 +188,8 @@ class DSSCDecoder:
         success = False
         if ok:
             try:
-                reconstructed_text, _ = unframe_payload(data)
+                # Use session_key for HMAC frame validation
+                reconstructed_text, _ = unframe_payload(data, secret=session_key)
                 success = True
             except FrameError:
                 # Corruption beyond RS capacity

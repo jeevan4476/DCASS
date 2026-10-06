@@ -136,10 +136,12 @@ def sanitize_packet_filename(
             raise ValueError(f"invalid session_id: {session_id!r}")
 
     shared_resolved = shared_dir.resolve()
+    # Use opaque filename without sequence_number or channel_id in the filename
+    # to prevent wire metadata leakage. All metadata is inside the JSON content.
     if session_id:
-        filename = f"{session_id}__{media_id}_{channel}_{idx:04d}.json"
+        filename = f"{session_id}__{media_id}.json"
     else:
-        filename = f"{media_id}_{channel}_{idx:04d}.json"
+        filename = f"{media_id}.json"
     path = (shared_dir / filename).resolve()
     if not path.is_relative_to(shared_resolved):
         raise ValueError(f"packet path escapes shared_channel: {media_id!r}")
@@ -166,10 +168,47 @@ _initializing = False
 _ready = False
 
 # Transmission state
-_transmission_active = False
-_transmission_stop_requested = False
-_transmission_progress = {"current": 0, "total": 0, "status": "idle"}
-_transmission_lock = threading.Lock()
+# Per-session tracking instead of global lock
+_transmission_sessions: dict[str, dict] = {}  # session_id -> {active, progress, stop_requested}
+_transmission_sessions_lock = threading.Lock()
+
+def _get_session_state(session_id: Optional[str]) -> dict:
+    """Get or create transmission session state."""
+    if session_id is None:
+        session_id = "default"
+    with _transmission_sessions_lock:
+        if session_id not in _transmission_sessions:
+            _transmission_sessions[session_id] = {
+                "active": False,
+                "stop_requested": False,
+                "progress": {"current": 0, "total": 0, "status": "idle"}
+            }
+        return _transmission_sessions[session_id]
+
+
+def _cleanup_session(session_id: str) -> None:
+    """Remove session state after completion."""
+    with _transmission_sessions_lock:
+        _transmission_sessions.pop(session_id, None)
+
+
+def _claim_transmission(session_id: str) -> bool:
+    """Atomically claim a transmission slot for the given session.
+    Returns True if claimed, False if another session is active."""
+    with _transmission_sessions_lock:
+        # Check if any session is already active
+        for sid, state in _transmission_sessions.items():
+            if state["active"] and sid != session_id:
+                return False
+        # Create or update our session state
+        if session_id not in _transmission_sessions:
+            _transmission_sessions[session_id] = {
+                "active": False,
+                "stop_requested": False,
+                "progress": {"current": 0, "total": 0, "status": "idle"}
+            }
+        _transmission_sessions[session_id]["active"] = True
+        return True
 
 # Cached index counts for /api/status (avoids re-reading FAISS files per call)
 _index_counts_cache: Optional[dict] = None
@@ -264,11 +303,12 @@ class EncodeResponse(BaseModel):
     ecc_parity_bytes: int = 0
     payload_bytes: list[int] = Field(default_factory=list)
     context_info: dict = Field(default_factory=dict)
+    session_key_hex: Optional[str] = Field(default=None, exclude=True)
 
 
 class DecodeRequest(BaseModel):
     media_ids: list[str]
-    mode: Optional[Literal["exact_vcp", "dssc"]] = "exact_vcp"
+    mode: Optional[str] = "exact_vcp"
     session_key_hex: Optional[str] = None
     modalities: Optional[list[str]] = None
     use_ecc: bool = True
@@ -409,7 +449,7 @@ def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
         if not req.session_key_hex:
             raise HTTPException(
                 status_code=400,
-                detail="session_key is required for DSSC mode. Provide session_key_hex as a hex string.",
+                detail="session_key_hex is required for DSSC mode. Provide session_key_hex as a hex string.",
             )
         try:
             session_key = bytes.fromhex(req.session_key_hex)
@@ -446,7 +486,8 @@ def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
         chunks = [c.original for c in vcp.chunks]
         modality_breakdown = vcp.modality_breakdown
         for enc in vcp.encoded:
-            fpath = enc.file_path or (enc.media.file_path if enc.media else "")
+            # Ensure file_path is always a string (empty string if not available)
+            fpath = (enc.file_path or "") or (enc.media.file_path if enc.media and enc.media.file_path else "")
             encoded_items.append(
                 {
                     "media_id": enc.media.id,
@@ -515,6 +556,9 @@ def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
             "keyed" if _context_secret_from_env() else "obfuscation"
         )
 
+    # Include session_key in response for DSSC mode only if server generated it
+    session_key_hex_out = session_key.hex() if (session_key and not req.session_key_hex) else None
+
     return EncodeResponse(
         mode=result.mode,
         media_ids=result.media_ids,
@@ -528,6 +572,7 @@ def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
         ecc_parity_bytes=result.ecc_parity_bytes,
         payload_bytes=result.payload_bytes,
         context_info=context_info,
+        session_key_hex=session_key_hex_out,
     )
 
 
@@ -824,7 +869,7 @@ class TransmitRequest(BaseModel):
     message: str = ""
     speed_multiplier: float = 1.0  # 1.0 = real-time, 2.0 = 2x faster, etc.
     # Phase F — 1-to-1 routing: packets land in storage/shared_channel/<recipient_id>/
-    recipient_username: str = Field(..., min_length=1)
+    recipient_username: Optional[str] = Field(default="bob", min_length=1)
 
 
 def _transmit_packets_sync(
@@ -847,17 +892,17 @@ def _transmit_packets_sync(
     sessions can coexist in the same recipient directory, and the packet
     filenames are prefixed with the session_id for the same reason.
     """
-    global _transmission_active, _transmission_progress, _transmission_stop_requested
+    session_state = _get_session_state(session_id)
 
     items = schedule["items"]
     delays = schedule["delays"]
     channels = schedule["channels"]
     mode_used = schedule["mode_used"]
 
-    with _transmission_lock:
-        _transmission_active = True
-        _transmission_stop_requested = False
-        _transmission_progress = {
+    with _transmission_sessions_lock:
+        session_state["active"] = True
+        session_state["stop_requested"] = False
+        session_state["progress"] = {
             "current": 0,
             "total": len([i for i in items if i is not None]),
             "status": "transmitting",
@@ -889,8 +934,8 @@ def _transmit_packets_sync(
         # Transmit packets with real delays
         packet_count = 0
         for idx, (media_id, delay, channel) in enumerate(zip(items, delays, channels)):
-            with _transmission_lock:
-                if _transmission_stop_requested:
+            with _transmission_sessions_lock:
+                if session_state["stop_requested"]:
                     break
 
             if media_id is None:
@@ -926,8 +971,8 @@ def _transmit_packets_sync(
             packet_count += 1
 
             # Update progress
-            with _transmission_lock:
-                _transmission_progress["current"] = packet_count
+            with _transmission_sessions_lock:
+                session_state["progress"]["current"] = packet_count
 
             # Apply delay before next packet (scaled by speed_multiplier),
             # in short slices so a stop request is honored promptly.
@@ -935,24 +980,24 @@ def _transmit_packets_sync(
             if actual_delay > 0 and idx < len(items) - 1:
                 remaining = actual_delay
                 while remaining > 0:
-                    with _transmission_lock:
-                        if _transmission_stop_requested:
+                    with _transmission_sessions_lock:
+                        if session_state["stop_requested"]:
                             break
                     slice_sleep = min(0.25, remaining)
                     time.sleep(slice_sleep)
                     remaining -= slice_sleep
 
         # Mark as complete
-        with _transmission_lock:
-            _transmission_progress["status"] = (
-                "stopped" if _transmission_stop_requested else "complete"
+        with _transmission_sessions_lock:
+            session_state["progress"]["status"] = (
+                "stopped" if session_state["stop_requested"] else "complete"
             )
-            _transmission_active = False
+            session_state["active"] = False
 
     except Exception as e:
-        with _transmission_lock:
-            _transmission_progress["status"] = f"error: {str(e)}"
-            _transmission_active = False
+        with _transmission_sessions_lock:
+            session_state["progress"]["status"] = f"error: {str(e)}"
+            session_state["active"] = False
         raise
 
 
@@ -970,8 +1015,6 @@ def transmit_sequence(
     `storage/shared_channel/<recipient_user_id>/` with a session_id
     prefix so parallel sessions to the same recipient don't collide.
     """
-    global _transmission_active, _transmission_progress
-
     try:
         validate_transmit_media_ids(req.media_ids)
     except ValueError as e:
@@ -979,26 +1022,21 @@ def transmit_sequence(
 
     # Resolve recipient. Reject the recipient-equals-sender case up front —
     # the shared channel is for inter-user messages, not loopback.
-    recipient = _auth.get_user_by_username(req.recipient_username)
+    recipient_username = req.recipient_username or "bob"
+    recipient = _auth.get_user_by_username(recipient_username)
     if recipient is None:
-        raise HTTPException(status_code=404, detail=f"recipient {req.recipient_username!r} does not exist")
+        raise HTTPException(status_code=404, detail=f"recipient {recipient_username!r} does not exist")
     if recipient.id == current_user.id:
         raise HTTPException(status_code=400, detail="cannot send a message to yourself")
 
     session_id = uuid.uuid4().hex[:16]
 
-    # Atomically claim the transmitter so concurrent requests cannot double-start.
-    # NOTE (Phase F.6 R7): this global lock serializes ALL concurrent transmits
-    # across users. Fine for a single-process demo; a real multi-user deployment
-    # would want per-recipient queues instead.
-    with _transmission_lock:
-        if _transmission_active:
-            raise HTTPException(
-                status_code=409,
-                detail="Transmission already in progress. Wait for it to complete or check /api/transmit/status",
-            )
-        _transmission_active = True
-        _transmission_progress = {"current": 0, "total": 0, "status": "starting"}
+    # Atomically claim the transmitter for this session
+    if not _claim_transmission(session_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Transmission already in progress. Wait for it to complete or check /api/transmit/status",
+        )
 
     try:
         from src.stealth.stealth_scheduler import StealthScheduler
@@ -1056,33 +1094,38 @@ def transmit_sequence(
 
     except Exception as e:
         # Release the claim if scheduling failed before the worker took over.
-        with _transmission_lock:
-            _transmission_active = False
-            _transmission_progress = {"current": 0, "total": 0, "status": "idle"}
+        _cleanup_session(session_id)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/transmit/status")
 def get_transmission_status():
-    """Get the current transmission status."""
-    return {
-        "active": _transmission_active,
-        **_transmission_progress,
-    }
+    """Get the current transmission status for all sessions."""
+    with _transmission_sessions_lock:
+        sessions = {}
+        for session_id, state in _transmission_sessions.items():
+            if state["active"]:
+                sessions[session_id] = {
+                    "active": state["active"],
+                    **state["progress"]
+                }
+        if not sessions:
+            return {"active": False, "current": 0, "total": 0, "status": "idle"}
+        # Return the first active session (for backward compatibility)
+        first_session = next(iter(sessions.values()))
+        return {"active": True, **first_session}
 
 
 @app.post("/api/transmit/stop")
 def stop_transmission(_: None = Depends(require_api_token)):
     """Stop the current transmission (best effort)."""
-    global _transmission_active, _transmission_progress, _transmission_stop_requested
-
-    with _transmission_lock:
-        if _transmission_active:
-            _transmission_stop_requested = True
-            _transmission_progress["status"] = "stopping"
-            return {"success": True, "message": "Transmission stop requested"}
-        else:
-            return {"success": False, "message": "No active transmission"}
+    with _transmission_sessions_lock:
+        for session_id, state in _transmission_sessions.items():
+            if state["active"]:
+                state["stop_requested"] = True
+                state["progress"]["status"] = "stopping"
+                return {"success": True, "message": "Transmission stop requested"}
+        return {"success": False, "message": "No active transmission"}
 
 
 # ---------------------------------------------------------------------------

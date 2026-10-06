@@ -67,7 +67,7 @@ class TestTransmitPathSanitization:
         shared.mkdir()
         path = sanitize_packet_filename(shared, "media_abc", channel=0, idx=1)
         assert path.is_relative_to(shared.resolve())
-        assert path.name == "media_abc_0_0001.json"
+        assert path.name == "media_abc.json"
 
         with pytest.raises(ValueError):
             sanitize_packet_filename(shared, "../escape", channel=0, idx=0)
@@ -235,21 +235,20 @@ class TestKeyedRoundtripWithHmac:
         return encoder, decoder
 
     def test_hmac_keyed_roundtrip(self, codec):
-        from src.engine.context import ContextKeyManager
+            from src.engine.context import ContextKeyManager
 
-        encoder, decoder = codec
-        mgr = ContextKeyManager(bucket_seconds=3600, secret=b"roundtrip-secret")
-        msg = "HMAC keyed channel"
-        result = encoder.encode(
-            msg, payload_mode="exact_vcp", use_ecc=True, context_manager=mgr
-        )
-        assert result.context_info.get("context_mode") == "keyed"
-        decoded = decoder.decode(
-            result.media_ids,
-            payload_mode="exact_vcp",
-            use_ecc=True,
-            context_manager=mgr,
-            context_epoch_hint=result.context_info["epoch_id"],
-        )
-        assert decoded.ecc_success
-        assert decoded.reconstructed_meaning == msg
+            encoder, decoder = codec
+            mgr = ContextKeyManager(bucket_seconds=3600, secret=b"roundtrip-secret")
+            msg = "HMAC keyed channel"
+            result = encoder.encode(
+                msg, use_ecc=True, context_manager=mgr
+            )
+            assert result.context_info.get("context_mode") == "keyed"
+            decoded = decoder.decode(
+                result.media_ids,
+                use_ecc=True,
+                context_manager=mgr,
+                context_epoch_hint=result.context_info["epoch_id"],
+            )
+            assert decoded.ecc_success
+            assert decoded.reconstructed_meaning == msg

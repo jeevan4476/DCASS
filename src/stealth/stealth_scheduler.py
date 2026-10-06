@@ -9,6 +9,7 @@ the system falls back to static NoiseController scheduling.
 
 from __future__ import annotations
 
+import threading
 import torch
 import numpy as np
 from pathlib import Path
@@ -62,6 +63,9 @@ class StealthScheduler:
         self.profile = profile
         self.seed = seed
 
+        # Thread-safety for concurrent schedule() calls
+        self._schedule_lock = threading.Lock()
+
         # Lazy-loaded models
         self._generator = None
         self._rl_agent = None
@@ -93,6 +97,45 @@ class StealthScheduler:
             channels – list[int]  channel index per item
             mode_used – str  actual mode that ran (may differ from *mode* on fallback)
         """
+        # Thread-safe scheduling: serialize concurrent calls
+        with self._schedule_lock:
+            return self._schedule_unlocked(media_ids, mode, base_delay, gan_checkpoint, rl_checkpoint)
+
+    @staticmethod
+    def _validate_schedule(schedule: dict, media_ids: list[str]) -> dict:
+        """
+        Enforce the payload contract: the schedule must carry exactly one
+        (delay, channel) per media ID the caller asked to send (media IDs
+        already encode the RS-ECC'd payload via SemanticEncoder — dropping
+        or duplicating one here would corrupt the message), and no delay
+        may be negative.
+        """
+        n = len(media_ids)
+        if len(schedule["items"]) != n or len(schedule["delays"]) != n or len(
+            schedule["channels"]
+        ) != n:
+            raise ValueError(
+                f"StealthScheduler produced a schedule of length "
+                f"{len(schedule['delays'])} for {n} media_ids "
+                f"(mode_used={schedule['mode_used']}) — refusing to transmit "
+                f"a schedule that doesn't match the encoded payload length."
+            )
+        if any(d < 0 for d in schedule["delays"]):
+            raise ValueError(
+                f"StealthScheduler produced a negative delay "
+                f"(mode_used={schedule['mode_used']})."
+            )
+        return schedule
+
+    def _schedule_unlocked(
+        self,
+        media_ids: list[str],
+        mode: Literal["static", "gan", "rl", "auto"],
+        base_delay: float,
+        gan_checkpoint: Optional[Path],
+        rl_checkpoint: Optional[Path],
+    ) -> dict:
+        """Internal scheduling logic (called under lock)."""
         if mode == "auto":
             schedule = self._schedule_rl(
                 media_ids,
@@ -121,32 +164,6 @@ class StealthScheduler:
             schedule = self._schedule_static(media_ids, base_delay)
 
         return self._validate_schedule(schedule, media_ids)
-
-    @staticmethod
-    def _validate_schedule(schedule: dict, media_ids: list[str]) -> dict:
-        """
-        Enforce the payload contract: the schedule must carry exactly one
-        (delay, channel) per media ID the caller asked to send (media IDs
-        already encode the RS-ECC'd payload via SemanticEncoder — dropping
-        or duplicating one here would corrupt the message), and no delay
-        may be negative.
-        """
-        n = len(media_ids)
-        if len(schedule["items"]) != n or len(schedule["delays"]) != n or len(
-            schedule["channels"]
-        ) != n:
-            raise ValueError(
-                f"StealthScheduler produced a schedule of length "
-                f"{len(schedule['delays'])} for {n} media_ids "
-                f"(mode_used={schedule['mode_used']}) — refusing to transmit "
-                f"a schedule that doesn't match the encoded payload length."
-            )
-        if any(d < 0 for d in schedule["delays"]):
-            raise ValueError(
-                f"StealthScheduler produced a negative delay "
-                f"(mode_used={schedule['mode_used']})."
-            )
-        return schedule
 
     @staticmethod
     def _resolve_checkpoint(explicit: Optional[Path], default: Path) -> Optional[Path]:
@@ -188,6 +205,11 @@ class StealthScheduler:
             return False
 
         from src.stealth.gan.generator import TemporalPatternGenerator
+
+        # Compatibility shim for Python 3.12 + PyTorch 2.14: pathlib._local module
+        # missing when unpickling checkpoints saved with older Python/PyTorch.
+        import sys, pathlib
+        sys.modules.setdefault("pathlib._local", pathlib)
 
         ckpt = torch.load(checkpoint, map_location=self.device, weights_only=False)
         # Prefer dimensions stored in the checkpoint; fall back to the
@@ -269,6 +291,9 @@ class StealthScheduler:
         warden = DeepPacketInspectionWarden(num_channels=self.num_channels)
         if DEFAULT_GAN_CHECKPOINT.exists():
             try:
+                # Compatibility shim for Python 3.12 + PyTorch 2.14
+                import sys, pathlib
+                sys.modules.setdefault("pathlib._local", pathlib)
                 gan_ckpt = torch.load(
                     DEFAULT_GAN_CHECKPOINT, map_location=self.device, weights_only=False
                 )

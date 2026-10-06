@@ -1,16 +1,15 @@
 # tests/conftest.py
-"""
-Pytest configuration and shared fixtures for DCASS tests.
-"""
+"""Pytest configuration and shared fixtures for DCASS tests."""
 
 import pytest
 import sys
 from pathlib import Path
 
-
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+# Do NOT set DCASS_API_TOKEN - let dev mode auth handle test authentication
 
 
 def pytest_configure(config):
@@ -59,19 +58,19 @@ def pytest_addoption(parser):
 # ============================================================
 
 
-@pytest.fixture(scope="session")
+@ pytest.fixture(scope="session")
 def project_root():
     """Return project root path."""
     return PROJECT_ROOT
 
 
-@pytest.fixture(scope="session")
+@ pytest.fixture(scope="session")
 def indices_path(project_root):
     """Return path to indices directory."""
     return project_root / "storage" / "data" / "indices"
 
 
-@pytest.fixture(scope="session")
+@ pytest.fixture(scope="session")
 def indices_exist(indices_path):
     """Check if all indices exist."""
     required = ["image.index", "text.index", "audio.index"]

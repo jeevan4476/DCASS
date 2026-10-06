@@ -115,7 +115,7 @@ class DSSCEncoder:
         self,
         message: str,
         session_key: bytes,
-        ecc_parity_bytes: int = 8,
+        ecc_parity_bytes: int | None = None,
         modalities: list[Modality] = None,
     ) -> DSSCEncodingResult:
         if not message:
@@ -124,8 +124,18 @@ class DSSCEncoder:
             raise ValueError("Session key required for DSSC")
 
         # 1. Framing and Reed-Solomon error correction
-        framed = frame_payload(message)
-        rs = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
+        # Use session_key as secret for HMAC-authenticated framing
+        framed = frame_payload(message, secret=session_key)
+
+        # Adaptive ECC: scale parity bytes to ~12% of framed payload length
+        # t = ceil(0.06 * L), parity = 2t, clamped to even [4, 254]
+        # This yields ~12% overhead for typical message sizes
+        framed_len = len(framed)
+        adaptive_parity = 2 * max(2, min(127, math.ceil(0.06 * framed_len)))
+        # Use provided ecc_parity_bytes if explicitly set, else adaptive
+        effective_parity = ecc_parity_bytes if ecc_parity_bytes is not None else adaptive_parity
+
+        rs = RSErrorCorrection(parity_bytes=effective_parity)
         codeword = rs.encode(framed)
         bitstream = BitStreamReader(codeword)
         total_bits = len(codeword) * 8
@@ -136,18 +146,28 @@ class DSSCEncoder:
             chunks = [SemanticChunk(text=message, original=message, index=0)]
 
         # Collect candidate pool from index
-        all_ids = []
+        all_ids_by_modality: dict[Modality, list[str]] = {}
         for mod, meta_list in self.index.metadata.items():
             if modalities and mod not in modalities:
                 continue
+            ids = []
             for m in meta_list:
                 mid = m.get("id")
                 if mid:
-                    all_ids.append(mid)
+                    ids.append(mid)
+            ids.sort()
+            all_ids_by_modality[mod] = ids
 
+        # Combined sorted list for fallback
+        all_ids = []
+        for ids in all_ids_by_modality.values():
+            all_ids.extend(ids)
         all_ids.sort()
         if len(all_ids) < 16:
             raise RuntimeError(f"Corpus too small for DSSC ({len(all_ids)} items available)")
+
+        # Modality sequence for deterministic round-robin: Text -> Image -> Audio
+        MODALITY_SEQUENCE: list[Modality] = ["text", "image", "audio"]
 
         encoded_carriers: list[DSSCEncodedCarrier] = []
         chunk_idx = 0
@@ -162,13 +182,24 @@ class DSSCEncoder:
             family_idx = int.from_bytes(family_digest[:4], "big") % len(self.family_manager.families)
             primary_family = self.family_manager.families[family_idx]
 
-            # Build candidate set: all corpus IDs whose VCP cluster falls in
-            # the family's cluster range. This replaces the modulo-hash partition.
+            # Modality balancing: deterministic round-robin per chunk
+            # Chunk 0 -> text, Chunk 1 -> image, Chunk 2 -> audio, Chunk 3 -> text, etc.
+            modality_for_chunk = MODALITY_SEQUENCE[chunk_idx % len(MODALITY_SEQUENCE)]
+            modality_ids = all_ids_by_modality.get(modality_for_chunk, [])
+
+            # Build candidate set from this modality: all corpus IDs whose VCP cluster falls in
+            # the family's cluster range.
             allowed_clusters = set(primary_family.cluster_ids)
             candidates = [
-                cid for cid in all_ids
+                cid for cid in modality_ids
                 if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
             ]
+            # Fallback to all modalities if this modality has too few candidates
+            if len(candidates) < 8:
+                candidates = [
+                    cid for cid in all_ids
+                    if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
+                ]
             if len(candidates) < 8:
                 candidates = all_ids[:256]
 

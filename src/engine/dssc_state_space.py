@@ -93,20 +93,22 @@ def family_for_cluster(
 def derive_session_permutation(num_candidates: int, session_key: bytes, context_salt: str = "") -> np.ndarray:
     """
     Derive a deterministic, cryptographically keyed permutation of [0, num_candidates-1].
-    Uses HMAC-SHA256 in counter mode to generate pseudo-random ranking weights.
+    Uses HMAC-SHA256 to derive a seed, then expands via NumPy's DRBG for O(N) speed.
     """
     if num_candidates <= 1:
         return np.arange(num_candidates)
 
-    scores = []
-    for i in range(num_candidates):
-        msg = f"{context_salt}:{i}".encode("utf-8")
-        h = hmac.new(session_key, msg, hashlib.sha256).digest()
-        score = int.from_bytes(h[:8], "big")
-        scores.append((score, i))
+    # Derive a single 32-byte seed from session_key + context_salt
+    seed_material = hmac.new(
+        session_key,
+        context_salt.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
 
-    scores.sort(key=lambda x: x[0])
-    return np.array([idx for _, idx in scores], dtype=np.int32)
+    # Use NumPy's PCG64 DRBG for fast, deterministic permutation
+    seed = int.from_bytes(seed_material[:8], "big")
+    rng = np.random.default_rng(seed)
+    return rng.permutation(num_candidates)
 
 
 @dataclass

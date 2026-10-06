@@ -153,9 +153,9 @@ def _write_packet(
     mode_used: str,
 ) -> None:
     """Write one packet JSON into the recipient's shared-channel subdir."""
-    # Filename format must match the API transmitter so the inbox endpoints
-    # can pick it up: `<session_id>__<media_id>_<channel>_<seq>.json`.
-    filename = f"{session_id}__{media_id}_{channel}_{sequence_number:04d}.json"
+    # Use opaque filename without sequence_number or channel_id in the filename
+    # to prevent wire metadata leakage. All metadata is inside the JSON content.
+    filename = f"{session_id}__{media_id}.json"
     packet = {
         "media_id": media_id,
         "channel_id": channel,
@@ -264,6 +264,8 @@ def run_pipeline(
     num_channels: int = 3,
     base_delay: float = 3.0,
     cleanup: bool = True,
+    codec_mode: Literal["dssc", "exact_vcp"] = "dssc",
+    session_key: Optional[bytes] = None,
 ) -> PipelineResult:
     """
     Run one message end-to-end through the real transport.
@@ -291,11 +293,16 @@ def run_pipeline(
             don't accumulate state. The decoded sidecar (if any) is NOT
             written in this programmatic path — this function returns the
             decoded message directly in PipelineResult.
+        codec_mode: encoding mode. "dssc" (default) uses session-keyed DSSC;
+            "exact_vcp" uses the baseline Voronoi codebook codec.
+        session_key: 32-byte session key for DSSC mode. If None and codec_mode="dssc",
+            a random key is generated. Must be provided for decoding to succeed.
 
     Returns:
         PipelineResult. decoded_ok is True iff decoded == original message.
     """
     from src.stealth.stealth_scheduler import StealthScheduler
+    import os
 
     t0 = time.perf_counter()
 
@@ -308,10 +315,22 @@ def run_pipeline(
     recipient_id = _resolve_user_id(recipient)
     session_id = uuid.uuid4().hex[:16]
 
+    # Generate session key for DSSC if needed
+    if codec_mode == "dssc" and session_key is None:
+        session_key = os.urandom(32)
+
     # 1. Encode message -> media_ids
     engine = _get_engine()
     try:
-        encode_result = engine.encode(message, use_ecc=True)
+        if codec_mode == "dssc":
+            encode_result = engine.encode(
+                message=message,
+                mode=codec_mode,
+                session_key=session_key,
+                use_ecc=True,
+            )
+        else:
+            encode_result = engine.encode(message, use_ecc=True)
     except Exception as e:
         return PipelineResult(
             original_message=message,
@@ -399,9 +418,16 @@ def run_pipeline(
 
     # 5. Decode
     try:
-        decode_result = engine.decode(
-            media_ids=received_media_ids, mode="exact_vcp", use_ecc=True
-        )
+        if codec_mode == "dssc":
+            # session_key is guaranteed to be non-None here (generated above if needed)
+            assert session_key is not None
+            decode_result = engine.decode(
+                media_ids=received_media_ids, mode=codec_mode, session_key=session_key, use_ecc=True
+            )
+        else:
+            decode_result = engine.decode(
+                media_ids=received_media_ids, mode=codec_mode, use_ecc=True
+            )
     except Exception as e:
         decoded_message = ""
         verification_rate = 0.0
