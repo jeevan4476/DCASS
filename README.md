@@ -106,11 +106,20 @@ All documentation lives in the [`docs/`](./docs/) folder:
 ### User Guides
 | Guide | Description |
 |---|---|
+| [System Quickstart](./docs/QUICKSTART.md) | End-to-end setup (Backend, Frontend, GAN, RL, Pipeline) |
 | [Getting Started](./docs/guides/GETTING_STARTED.md) | Install, configure, and run for the first time |
-| [Quick Start](./docs/guides/QUICK_START.md) | Fast track to running DCASS |
+| [Quick Start Guide](./docs/guides/QUICK_START.md) | Fast track to running DCASS |
 | [Script Execution Guide](./docs/guides/SCRIPT_EXECUTION_GUIDE.md) | Complete Docker & local execution reference |
 | [Scripts Reference](./docs/guides/SCRIPTS.md) | How to run every script with examples |
 | [Docker Setup](./docs/guides/DOCKER_SETUP.md) | Full Docker reference |
+
+### Research & Benchmarking
+| Document | Description |
+|---|---|
+| [Benchmarking Report](./docs/benchmarking/BENCHMARKING_REPORT.md) | 5-component empirical benchmarks & SOTA comparisons |
+| [Benchmark Paper Writeup](./docs/benchmarking/BENCHMARK_PAPER_WRITEUP.md) | Formal academic conference paper writeup |
+| [Core Research Concept](./docs/research/IDEA.md) | Theoretical foundation and threat models |
+| [Semantic Steganography](./docs/research/RESEARCH_PAPER_SEMANTIC_STEGANOGRAPHY.md) | Academic background on semantic steganography |
 
 ### Project Documentation
 | Document | Description |

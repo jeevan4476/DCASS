@@ -16,7 +16,7 @@ Everything you need to run the full system: backend API, frontend UI, GAN+RL tra
 
 ```bash
 # From the project root
-cd /home/karash1/projects/DCASS
+cd DCASS
 
 # Create a virtual environment (skip if you already have one)
 python -m venv venv
