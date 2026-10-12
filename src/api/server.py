@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from src.corpus.index.unified_index import resolve_indices_base_path
 from src.api import auth as _auth
-from src.api.auth import AuthenticatedUser, get_current_user
+from src.api.auth import AuthenticatedUser, get_current_user, get_optional_current_user
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +215,7 @@ _index_counts_cache: Optional[dict] = None
 
 
 def _get_engine():
-    global _engine
+    global _engine, _ready
     if _engine is None:
         with _engine_lock:
             if _engine is None:
@@ -224,6 +224,7 @@ def _get_engine():
                 engine = SemanticEngine()
                 engine.load()
                 _engine = engine
+                _ready = True
     return _engine
 
 
@@ -237,9 +238,10 @@ def _get_decoder():
 
 @app.on_event("startup")
 def _startup_init_auth() -> None:
-    """Initialize auth DB and seed demo users on API startup."""
+    """Initialize auth DB, seed demo users, and trigger engine warmup on API startup."""
     _auth.init_db()
     _auth.seed_demo_users()
+    threading.Thread(target=warmup, daemon=True).start()
 
 
 def _recipient_shared_dir(recipient_user_id: int) -> Path:
@@ -421,9 +423,15 @@ def auth_me(current_user: AuthenticatedUser = Depends(get_current_user)):
 
 
 @app.get("/api/users", response_model=UsersListResponse)
-def list_users(current_user: AuthenticatedUser = Depends(get_current_user)):
-    """List all users EXCEPT the current user — populates the recipient dropdown."""
-    users = _auth.list_users_excluding(current_user.id)
+def list_users(
+    exclude_current: bool = False,
+    current_user: Optional[AuthenticatedUser] = Depends(get_optional_current_user),
+):
+    """List users. When exclude_current is True and user is authenticated, excludes current user."""
+    if exclude_current and current_user is not None:
+        users = _auth.list_users_excluding(current_user.id)
+    else:
+        users = _auth.list_all_users()
     return UsersListResponse(
         users=[AuthUserInfo(id=u.id, username=u.username) for u in users]
     )
@@ -780,6 +788,10 @@ def status():
 @app.get("/api/ready")
 def ready():
     """Check if the server is ready to process requests."""
+    global _engine
+    if _engine is None and not _initializing and not _ready:
+        threading.Thread(target=warmup, daemon=True).start()
+
     is_ready = _ready or (_engine is not None and _engine.is_loaded())
     return {
         "ready": is_ready,
@@ -821,11 +833,9 @@ def get_wire_packets():
 
     packets = []
     try:
-        for f in sorted(shared_dir.glob("*.json")):
-            # Skip manifest file
-            if f.name.startswith("_"):
-                continue
-
+        json_files = [f for f in shared_dir.rglob("*.json") if not f.name.startswith("_")]
+        json_files.sort(key=lambda p: p.stat().st_mtime)
+        for f in json_files:
             try:
                 with open(f, "r", encoding="utf-8") as fp:
                     data = json.load(fp)
@@ -848,7 +858,7 @@ def clear_wire_packets(_: None = Depends(require_api_token)):
 
     deleted_count = 0
     try:
-        for f in shared_dir.glob("*.json"):
+        for f in shared_dir.rglob("*.json"):
             # Keep sender-side control files (e.g. _manifest.json), consistent
             # with the GET endpoint which skips them.
             if f.name.startswith("_"):
@@ -1196,16 +1206,17 @@ def inbox_list(current_user: AuthenticatedUser = Depends(get_current_user)):
 
 class InboxDecodeResponse(BaseModel):
     session_id: str
-    sender_username: Optional[str]
-    recipient_username: Optional[str]
-    mode_used: Optional[str]
-    reconstructed_meaning: str
-    verification_rate: float
-    all_verified: bool
-    ecc_success: bool
-    ecc_errors_fixed: list[int]
-    items: list[dict]
-    cached: bool
+    sender_username: Optional[str] = None
+    recipient_username: Optional[str] = None
+    mode_used: Optional[str] = None
+    reconstructed_meaning: str = ""
+    verification_rate: float = 1.0
+    all_verified: bool = True
+    ecc_success: bool = True
+    ecc_errors_fixed: list[int] = Field(default_factory=list)
+    items: list[dict] = Field(default_factory=list)
+    cached: bool = False
+    elapsed_ms: Optional[float] = None
 
 
 def _validate_session_id(session_id: str) -> None:
@@ -1246,6 +1257,8 @@ def inbox_decode(
         with open(sidecar, "r", encoding="utf-8") as f:
             cached = json.load(f)
         cached["cached"] = True
+        if "elapsed_ms" not in cached:
+            cached["elapsed_ms"] = 0.0
         return InboxDecodeResponse(**cached)
 
     # Gather packets, sort by sequence_number.
@@ -1269,11 +1282,13 @@ def inbox_decode(
 
     media_ids = [p["media_id"] for p in packets]
 
+    t0 = time.perf_counter()
     try:
         engine = _get_engine()
         decode_result = engine.decode(media_ids=media_ids, mode="exact_vcp", use_ecc=True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"decode failed: {e}")
+    elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 1)
 
     items_out: list[dict] = []
     if decode_result.exact_vcp_result is not None:
@@ -1305,6 +1320,7 @@ def inbox_decode(
         ecc_errors_fixed=ecc_fixed,
         items=items_out,
         cached=False,
+        elapsed_ms=elapsed_ms,
     )
 
     # Cache the result so repeat decodes don't repay the engine cost.

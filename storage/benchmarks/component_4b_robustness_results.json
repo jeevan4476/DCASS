@@ -1,0 +1,121 @@
+{
+  "permutation_benchmarks": [
+    {
+      "candidate_size": 1000,
+      "num_trials": 100,
+      "total_time_ms": 4.279065004084259,
+      "time_per_permutation_ms": 0.04279065004084259,
+      "determinism_passed": true,
+      "key_sensitivity_rho": 0.043504903504903505
+    },
+    {
+      "candidate_size": 5000,
+      "num_trials": 100,
+      "total_time_ms": 10.879511988605373,
+      "time_per_permutation_ms": 0.10879511988605373,
+      "determinism_passed": true,
+      "key_sensitivity_rho": -0.0167757775670311
+    },
+    {
+      "candidate_size": 10000,
+      "num_trials": 100,
+      "total_time_ms": 19.226622011046857,
+      "time_per_permutation_ms": 0.19226622011046857,
+      "determinism_passed": true,
+      "key_sensitivity_rho": 0.004497900008979001
+    },
+    {
+      "candidate_size": 20000,
+      "num_trials": 100,
+      "total_time_ms": 36.157006994471885,
+      "time_per_permutation_ms": 0.36157006994471885,
+      "determinism_passed": true,
+      "key_sensitivity_rho": -0.0023274405658186012
+    },
+    {
+      "candidate_size": 35000,
+      "num_trials": 100,
+      "total_time_ms": 64.7891380067449,
+      "time_per_permutation_ms": 0.6478913800674491,
+      "determinism_passed": true,
+      "key_sensitivity_rho": -0.0019819569339094697
+    }
+  ],
+  "ecc_recovery_benchmarks": [
+    {
+      "carrier_error_rate": 0.0,
+      "num_trials": 20,
+      "num_recovered": 20,
+      "recovery_rate_pct": 100.0,
+      "mean_ber_pct": 0.0,
+      "mean_fixed_errors": 0.0,
+      "mean_latency_ms": 677.4003139478737
+    },
+    {
+      "carrier_error_rate": 0.05,
+      "num_trials": 20,
+      "num_recovered": 14,
+      "recovery_rate_pct": 70.0,
+      "mean_ber_pct": 30.0,
+      "mean_fixed_errors": 2.7,
+      "mean_latency_ms": 635.3343652990588
+    },
+    {
+      "carrier_error_rate": 0.1,
+      "num_trials": 20,
+      "num_recovered": 0,
+      "recovery_rate_pct": 0.0,
+      "mean_ber_pct": 100.0,
+      "mean_fixed_errors": 0.0,
+      "mean_latency_ms": 628.6669667977549
+    },
+    {
+      "carrier_error_rate": 0.15,
+      "num_trials": 20,
+      "num_recovered": 0,
+      "recovery_rate_pct": 0.0,
+      "mean_ber_pct": 100.0,
+      "mean_fixed_errors": 0.0,
+      "mean_latency_ms": 631.4325931503845
+    },
+    {
+      "carrier_error_rate": 0.2,
+      "num_trials": 20,
+      "num_recovered": 0,
+      "recovery_rate_pct": 0.0,
+      "mean_ber_pct": 100.0,
+      "mean_fixed_errors": 0.0,
+      "mean_latency_ms": 625.5164916015929
+    },
+    {
+      "carrier_error_rate": 0.25,
+      "num_trials": 20,
+      "num_recovered": 0,
+      "recovery_rate_pct": 0.0,
+      "mean_ber_pct": 100.0,
+      "mean_fixed_errors": 0.0,
+      "mean_latency_ms": 630.5696454510326
+    }
+  ],
+  "key_separation_benchmarks": [
+    {
+      "test_type": "random_wrong_keys",
+      "num_trials": 100,
+      "num_false_acceptances": 0,
+      "false_acceptance_rate": 0.0,
+      "rejection_rate_pct": 100.0
+    },
+    {
+      "test_type": "single_bit_flipped_keys",
+      "num_trials": 256,
+      "num_false_acceptances": 0,
+      "false_acceptance_rate": 0.0,
+      "rejection_rate_pct": 100.0
+    }
+  ],
+  "plot_paths": {
+    "permutation_scaling": "/home/img1/projects/DCASS/storage/benchmarks/plots/fig_4b_permutation_scaling.png",
+    "ecc_recovery_curve": "/home/img1/projects/DCASS/storage/benchmarks/plots/fig_4b_ecc_recovery_curve.png",
+    "key_separation": "/home/img1/projects/DCASS/storage/benchmarks/plots/fig_4b_key_separation.png"
+  }
+}

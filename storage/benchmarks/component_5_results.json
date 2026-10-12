@@ -1,0 +1,144 @@
+{
+  "component": "Component 5: Computational Latency, Speed & Concurrency Benchmark",
+  "device": "cuda",
+  "payload_scaling": [
+    {
+      "payload_bytes": 32,
+      "carrier_count": 27,
+      "encode_latency_ms": 94.59136874647811,
+      "encode_latency_std": 1.994812656962538,
+      "decode_latency_ms": 216.00759099965217,
+      "decode_latency_std": 8.964765962357404,
+      "total_latency_ms": 310.5989597461303,
+      "encode_throughput_kbps": 0.33036840902213416,
+      "decode_throughput_kbps": 0.1446708416837551,
+      "carrier_speed_per_sec": 86.928816574494,
+      "stage_breakdown": {
+        "enc_ecc_framing_ms": 0.022205000277608633,
+        "enc_permutation_ms": 0.06623599620070308,
+        "enc_faiss_search_ms": 96.21001400228124,
+        "dec_centroid_lookup_ms": 212.49978299601935,
+        "dec_inv_permutation_ms": 0.06623599620070308,
+        "dec_ecc_syndrome_ms": 0.041036008042283356
+      }
+    },
+    {
+      "payload_bytes": 64,
+      "carrier_count": 46,
+      "encode_latency_ms": 99.14541299804114,
+      "encode_latency_std": 1.8603365464489032,
+      "decode_latency_ms": 298.1361218753591,
+      "decode_latency_std": 5.410790402027067,
+      "total_latency_ms": 397.28153487340023,
+      "encode_throughput_kbps": 0.6303872071341802,
+      "decode_throughput_kbps": 0.20963578518046597,
+      "carrier_speed_per_sec": 115.78690666974641,
+      "stage_breakdown": {
+        "enc_ecc_framing_ms": 0.036842000554315746,
+        "enc_permutation_ms": 0.16635899373795837,
+        "enc_faiss_search_ms": 99.39472199766897,
+        "dec_centroid_lookup_ms": 296.30026999802794,
+        "dec_inv_permutation_ms": 0.16635899373795837,
+        "dec_ecc_syndrome_ms": 0.08634199912194163
+      }
+    },
+    {
+      "payload_bytes": 128,
+      "carrier_count": 83,
+      "encode_latency_ms": 117.73782474483596,
+      "encode_latency_std": 8.108206097091502,
+      "decode_latency_ms": 462.49812275164004,
+      "decode_latency_std": 19.404738424085494,
+      "total_latency_ms": 580.235947496476,
+      "encode_throughput_kbps": 1.061680902215603,
+      "decode_throughput_kbps": 0.2702713672788778,
+      "carrier_speed_per_sec": 143.0452566031409,
+      "stage_breakdown": {
+        "enc_ecc_framing_ms": 0.06231300358194858,
+        "enc_permutation_ms": 0.07257200195454061,
+        "enc_faiss_search_ms": 114.63217399432324,
+        "dec_centroid_lookup_ms": 465.58730900869705,
+        "dec_inv_permutation_ms": 0.07257200195454061,
+        "dec_ecc_syndrome_ms": 0.0825649913167581
+      }
+    },
+    {
+      "payload_bytes": 256,
+      "carrier_count": 163,
+      "encode_latency_ms": 136.0367707475234,
+      "encode_latency_std": 2.2057070991106733,
+      "decode_latency_ms": 787.648619250831,
+      "decode_latency_std": 20.475555128049955,
+      "total_latency_ms": 923.6853899983544,
+      "encode_throughput_kbps": 1.83773841900427,
+      "decode_throughput_kbps": 0.3174004167464758,
+      "carrier_speed_per_sec": 176.46701113275202,
+      "stage_breakdown": {
+        "enc_ecc_framing_ms": 0.13687800674233586,
+        "enc_permutation_ms": 0.07424199429806322,
+        "enc_faiss_search_ms": 133.06896098947618,
+        "dec_centroid_lookup_ms": 779.8973120079609,
+        "dec_inv_permutation_ms": 0.07424199429806322,
+        "dec_ecc_syndrome_ms": 0.14956400264054537
+      }
+    },
+    {
+      "payload_bytes": 512,
+      "carrier_count": 317,
+      "encode_latency_ms": 191.56525987636996,
+      "encode_latency_std": 10.178652787430623,
+      "decode_latency_ms": 1442.0999462508917,
+      "decode_latency_std": 25.185992775545603,
+      "total_latency_ms": 1633.6652061272616,
+      "encode_throughput_kbps": 2.610076588639735,
+      "decode_throughput_kbps": 0.3467166067788007,
+      "carrier_speed_per_sec": 194.0422057169686,
+      "stage_breakdown": {
+        "enc_ecc_framing_ms": 0.23326301015913486,
+        "enc_permutation_ms": 0.07371000538114458,
+        "enc_faiss_search_ms": 184.44397397979628,
+        "dec_centroid_lookup_ms": 1433.6243989964714,
+        "dec_inv_permutation_ms": 0.07371000538114458,
+        "dec_ecc_syndrome_ms": 0.29301599715836346
+      }
+    }
+  ],
+  "concurrency_stress": [
+    {
+      "num_threads": 10,
+      "total_requests": 100,
+      "duration_sec": 36.67056326499733,
+      "requests_per_sec": 2.726982928441999,
+      "p50_latency_ms": 3632.050985492242,
+      "p90_latency_ms": 4088.1634671997745,
+      "p95_latency_ms": 4129.494360314857,
+      "p99_latency_ms": 4326.1412459136045,
+      "success_rate_pct": 100.0,
+      "cross_talk_rate_pct": 0.0
+    },
+    {
+      "num_threads": 20,
+      "total_requests": 100,
+      "duration_sec": 38.239181406010175,
+      "requests_per_sec": 2.615118742690519,
+      "p50_latency_ms": 7228.846314988914,
+      "p90_latency_ms": 8526.732592997723,
+      "p95_latency_ms": 8969.214907707646,
+      "p99_latency_ms": 9424.245776871105,
+      "success_rate_pct": 100.0,
+      "cross_talk_rate_pct": 0.0
+    },
+    {
+      "num_threads": 50,
+      "total_requests": 100,
+      "duration_sec": 38.89547303199652,
+      "requests_per_sec": 2.570993285458623,
+      "p50_latency_ms": 17668.064284494903,
+      "p90_latency_ms": 19915.882685109682,
+      "p95_latency_ms": 20573.45645174646,
+      "p99_latency_ms": 22707.717938864957,
+      "success_rate_pct": 100.0,
+      "cross_talk_rate_pct": 0.0
+    }
+  ]
+}

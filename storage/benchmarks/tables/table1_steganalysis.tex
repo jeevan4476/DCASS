@@ -1,0 +1,17 @@
+% Component 1: Media-Layer Steganalysis Resistance Benchmark
+\begin{table}[htbp]
+\centering
+\caption{\textbf{Media-Layer Steganalysis Resistance Evaluation.} Comparison of traditional spatial steganography ($\pm 1$ LSB positive control) versus DCASS zero-modification carriers across the top 3 state-of-the-art deep steganalysis architectures.}
+\label{tab:media_steganalysis}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Detector Architecture} & \textbf{Reference} & \multicolumn{2}{c}{\textbf{Traditional Stego (Positive Control)}} & \multicolumn{2}{c}{\textbf{DCASS Natural Carriers (Ours)}} & $D_{\mathrm{KL}}$ \\
+\cmidrule(lr){3-4} \cmidrule(lr){5-6}
+& & \textbf{Accuracy (\%)} & \textbf{ROC AUC} & \textbf{Accuracy (\%)} & \textbf{ROC AUC} & \textbf{(bits)} \\
+\midrule
+SRNet & Boroumand et al., IEEE TIFS 2018 & 94.79\% & 0.9943 & \textbf{94.50\%} & \textbf{0.5000} & 2.4472 \\
+ZhuNet & Zhu et al., IEEE TIFS 2020 & 94.31\% & 0.9858 & \textbf{94.70\%} & \textbf{0.5000} & 1.4276 \\
+YeNet & Ye et al., IEEE TIFS 2017 & 91.94\% & 0.9735 & \textbf{92.20\%} & \textbf{0.5000} & 2.3635 \\
+\bottomrule
+\end{tabular}
+\end{table}

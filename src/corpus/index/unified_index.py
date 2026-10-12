@@ -190,10 +190,20 @@ class MediaItem:
             )
             if cand8k.exists():
                 return str(cand8k.resolve())
+
+            # Try matching by numeric ID prefix (before underscore) for Flickr30k images
+            # e.g., id="1000268201_693b08cb0e" -> "1000268201.jpg" in storage/data/raw/flickr30k/images/
+            if '_' in self.id:
+                numeric_id = self.id.split('_')[0]
+                cand30k_flat = (
+                    project_root / "storage" / "data" / "raw" / "flickr30k" / "images" / f"{numeric_id}.jpg"
+                )
+                if cand30k_flat.exists():
+                    return str(cand30k_flat.resolve())
+
             # Honest fallback: the carrier is not on disk. Do NOT return a
             # metadata JSON as if it were the image.
-            # Return expected path for API response consistency
-            return str(project_root / "storage" / "data" / "raw" / "flickr30k" / "flickr30k" / "images" / f"{self.id}.jpg")
+            return None
 
         elif self.modality == "audio":
             raw_path = (

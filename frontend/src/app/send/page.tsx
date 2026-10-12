@@ -1,32 +1,26 @@
 'use client';
 
-/**
- * Phase F — Send page.
- *
- * Combines encode + transmit into one authenticated flow:
- *   1. Pick a recipient from the dropdown (populated via GET /api/users).
- *   2. Enter the plaintext message.
- *   3. Submit — the page calls /api/encode, then /api/transmit with
- *      the resulting media_ids and the chosen recipient_username.
- *   4. The response's session_id is shown so the sender can watch for it
- *      in the recipient's inbox (as a different logged-in user).
- */
-
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { Send, Mail, Loader2, CheckCircle, AlertCircle, Users, Zap, Brain, Eye, ChevronDown, Shield } from 'lucide-react';
 
 import { useRequireAuth } from '@/lib/auth';
-import {
-  AuthUser,
-  encodeMessage,
-  listUsers,
-  transmit,
-} from '@/lib/api';
+import { AuthUser, encodeMessage, listUsers, transmit, getErrorMessage } from '@/lib/api';
+import { PageWrapper, Card, Badge, LoadingSpinner, useToastHelpers } from '@/components';
 
 type Mode = 'static' | 'rl' | 'gan' | 'auto';
 
+const modeOptions = [
+  { value: 'auto', label: 'Auto (RL → GAN → Static)', icon: Zap, description: 'Automatically selects best available model' },
+  { value: 'rl', label: 'RL (PPO Policy)', icon: Brain, description: 'Reinforcement learning optimized scheduling' },
+  { value: 'gan', label: 'GAN (WGAN-GP)', icon: Eye, description: 'Generative adversarial temporal patterns' },
+  { value: 'static', label: 'Static (NoiseController)', icon: Shield, description: 'Mathematical noise injection fallback' },
+];
+
 export default function SendPage() {
   const { user, loading: authLoading, logout } = useRequireAuth();
+  const { success, error: showError } = useToastHelpers();
 
   const [recipients, setRecipients] = useState<AuthUser[]>([]);
   const [recipient, setRecipient] = useState<string>('');
@@ -36,20 +30,18 @@ export default function SendPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<{ session_id?: string; mode_used: string; total_packets: number } | null>(null);
+  const [recipientMenuOpen, setRecipientMenuOpen] = useState(false);
 
   const loadRecipients = useCallback(async () => {
     if (!user) return;
     try {
-      const resp = await listUsers();
+      const resp = await listUsers(true);
       setRecipients(resp.users);
       if (resp.users.length > 0 && !recipient) {
         setRecipient(resp.users[0].username);
       }
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        (err as Error)?.message ||
-        'Failed to load recipients';
+      const detail = getErrorMessage(err, 'Failed to load recipients');
       setError(detail);
     }
   }, [user, recipient]);
@@ -63,11 +55,11 @@ export default function SendPage() {
     setError(null);
     setSent(null);
     if (!recipient) {
-      setError('select a recipient');
+      setError('Select a recipient');
       return;
     }
     if (!message.trim()) {
-      setError('message cannot be empty');
+      setError('Message cannot be empty');
       return;
     }
     setBusy(true);
@@ -91,12 +83,11 @@ export default function SendPage() {
         mode_used: txResp.mode_used,
         total_packets: txResp.total_packets,
       });
+      success('Message sent!', `Transmission started with ${txResp.mode_used.toUpperCase()} mode (${txResp.total_packets} packets)`);
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        (err as Error)?.message ||
-        'Send failed';
+      const detail = getErrorMessage(err, 'Send failed');
       setError(detail);
+      showError('Send failed', detail);
     } finally {
       setBusy(false);
     }
@@ -104,137 +95,221 @@ export default function SendPage() {
 
   if (authLoading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-500">
-        Loading…
-      </div>
+      <PageWrapper fullWidth>
+        <LoadingSpinner size="lg" />
+      </PageWrapper>
     );
   }
 
+  const selectedMode = modeOptions.find(m => m.value === mode);
+
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-2xl mx-auto">
-        <header className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Send a message</h1>
-            <p className="text-sm text-gray-500">
-              Signed in as <span className="font-medium">{user.username}</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link href="/inbox" className="text-sm text-blue-600 hover:underline">
-              Inbox
+    <PageWrapper
+      title="Send Message"
+      description="Encode and transmit a secret message through the stealth pipeline"
+      action={
+        <Link href="/inbox" className="btn-secondary btn-sm">
+          <Mail className="w-4 h-4" />
+          Inbox
+        </Link>
+      }
+    >
+      <div className="max-w-3xl mx-auto">
+        <Card className="mb-6">
+          <div className="flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                <Send className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-semibold text-foreground truncate">Signed in as {user.username}</h2>
+                <p className="text-body-sm text-muted">Your messages are encoded with Reed-Solomon ECC and transmitted via stealth scheduler</p>
+              </div>
+            </div>
+            <Link href="/inbox" className="btn-ghost btn-sm shrink-0">
+              <Mail className="w-4 h-4" />
+              View Inbox
             </Link>
-            <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-700">
-              Sign out
-            </button>
           </div>
-        </header>
+        </Card>
 
-        <form onSubmit={onSubmit} className="bg-white border border-gray-200 rounded p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="recipient">
-              Recipient
-            </label>
-            <select
-              id="recipient"
-              value={recipient}
-              onChange={(e) => setRecipient(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2"
-              required
-            >
-              {recipients.length === 0 && <option value="">(no other users yet)</option>}
-              {recipients.map((u) => (
-                <option key={u.id} value={u.username}>
-                  {u.username}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="message">
-              Message
-            </label>
-            <textarea
-              id="message"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={4}
-              className="w-full border border-gray-300 rounded px-3 py-2 font-mono text-sm"
-              placeholder="Meet at the cafe at noon"
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Encoded exact-byte-per-item with Reed-Solomon error correction.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="mode">
-                Stealth mode
-              </label>
+        <form onSubmit={onSubmit} className="space-y-6">
+          {/* Recipient */}
+          <Card>
+            <h3 className="text-heading-sm font-semibold mb-4">Recipient</h3>
+            <div className="relative">
               <select
-                id="mode"
-                value={mode}
-                onChange={(e) => setMode(e.target.value as Mode)}
-                className="w-full border border-gray-300 rounded px-3 py-2"
+                id="recipient"
+                value={recipient}
+                onChange={(e) => { setRecipient(e.target.value); setRecipientMenuOpen(false); }}
+                className="input w-full appearance-none pr-10"
+                required
+                disabled={busy}
               >
-                <option value="auto">auto (RL → GAN → static)</option>
-                <option value="rl">RL (PPO policy)</option>
-                <option value="gan">GAN (WGAN-GP)</option>
-                <option value="static">static (NoiseController)</option>
+                {recipients.length === 0 && <option value="">No other users registered</option>}
+                {recipients.map((u) => (
+                  <option key={u.id} value={u.username}>{u.username}</option>
+                ))}
               </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted pointer-events-none" />
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="speed">
-                Speed multiplier
-              </label>
-              <input
-                id="speed"
-                type="number"
-                min={1}
-                max={10000}
-                step={1}
-                value={speed}
-                onChange={(e) => setSpeed(Number(e.target.value) || 1)}
-                className="w-full border border-gray-300 rounded px-3 py-2"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                1 = real wall clock; 100 = 100× faster (demo).
+            {recipients.length === 0 && (
+              <p className="text-body-sm text-warning mt-2 flex items-center gap-1">
+                <Users className="w-4 h-4" />
+                No recipients available. Ask another user to register, or create a test account.
               </p>
-            </div>
-          </div>
+            )}
+          </Card>
 
-          {error && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-              {error}
+          {/* Message */}
+          <Card>
+            <h3 className="text-heading-sm font-semibold mb-4">Message</h3>
+            <div className="relative">
+              <textarea
+                id="message"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={5}
+                className="input font-mono text-body-sm resize-none"
+                placeholder="Meet at the cafe at noon..."
+                required
+                disabled={busy}
+              />
+              <div className="absolute bottom-2 right-2 text-body-xs text-muted">
+                {message.length} / 1000 chars
+              </div>
             </div>
+            <p className="text-body-xs text-muted mt-2 flex items-center gap-1">
+              <Shield className="w-3.5 h-3.5" />
+              Encoded exact-byte-per-item with Reed-Solomon error correction (0% BER)
+            </p>
+          </Card>
+
+          {/* Options Grid */}
+          <Card>
+            <h3 className="text-heading-sm font-semibold mb-4">Transmission Settings</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Stealth Mode */}
+              <div>
+                <label className="label" htmlFor="mode">Stealth Mode</label>
+                <div className="relative">
+                  <select
+                    id="mode"
+                    value={mode}
+                    onChange={(e) => setMode(e.target.value as Mode)}
+                    className="input appearance-none pr-10"
+                    disabled={busy}
+                  >
+                    {modeOptions.map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted pointer-events-none" />
+                </div>
+                {selectedMode && (
+                  <p className="text-body-xs text-muted mt-2 flex items-center gap-1">
+                    <selectedMode.icon className="w-3.5 h-3.5" />
+                    {selectedMode.description}
+                  </p>
+                )}
+              </div>
+
+              {/* Speed Multiplier */}
+              <div>
+                <label className="label" htmlFor="speed">Speed Multiplier</label>
+                <div className="relative">
+                  <input
+                    id="speed"
+                    type="number"
+                    min={1}
+                    max={10000}
+                    step={1}
+                    value={speed}
+                    onChange={(e) => setSpeed(Number(e.target.value) || 1)}
+                    className="input pr-20"
+                    disabled={busy}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-body-sm text-muted">×</span>
+                </div>
+                <p className="text-body-xs text-muted mt-2">
+                  1 = real-time; 100 = 100× faster (demo). Higher values compress delays.
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Error / Success */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start gap-3 p-4 bg-error/10 border border-error/20 rounded-xl text-error"
+              role="alert"
+            >
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Send failed</p>
+                <p className="text-body-sm mt-1">{error}</p>
+              </div>
+            </motion.div>
           )}
 
           {sent && (
-            <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-              Transmission started in background. mode_used={' '}
-              <code>{sent.mode_used}</code> · {sent.total_packets} packets · session{' '}
-              <code>{sent.session_id}</code>
-              <div className="mt-1 text-xs text-green-700/80">
-                Sign in as{' '}
-                <strong>{recipient}</strong> in another window to see it arrive in their
-                inbox.
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start gap-3 p-4 bg-success/10 border border-success/20 rounded-xl text-success"
+            >
+              <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Transmission started</p>
+                <div className="text-body-sm mt-1 flex flex-wrap gap-4">
+                  <span><strong>Mode:</strong> <code className="bg-surface px-1.5 py-0.5 rounded">{sent.mode_used}</code></span>
+                  <span><strong>Packets:</strong> {sent.total_packets}</span>
+                  <span><strong>Session:</strong> <code className="bg-surface px-1.5 py-0.5 rounded">{sent.session_id}</code></span>
+                </div>
+                <p className="text-body-xs mt-2">
+                  Sign in as <strong>{recipient}</strong> in another window to see it arrive in their inbox.
+                </p>
               </div>
-            </div>
+            </motion.div>
           )}
 
+          {/* Submit */}
           <button
             type="submit"
             disabled={busy || recipients.length === 0}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 rounded transition"
+            className="btn-primary btn-lg w-full justify-center gap-2"
           >
-            {busy ? 'Encoding + transmitting…' : 'Send'}
+            {busy ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Encoding + transmitting…
+              </>
+            ) : (
+              <>
+                <Send className="w-5 h-5" />
+                Send Message
+              </>
+            )}
           </button>
         </form>
+
+        {/* Info */}
+        <Card className="bg-primary/5 border-primary/20 mt-8">
+          <h4 className="font-semibold text-primary mb-3 flex items-center gap-2">
+            <Zap className="w-4 h-4" />
+            How it works
+          </h4>
+          <ol className="space-y-2 text-body-sm text-muted">
+            <li className="flex items-start gap-2"><span className="text-primary font-mono">1.</span> Message is chunked and encoded via VCP (Voronoi Codebook Partitioning)</li>
+            <li className="flex items-start gap-2"><span className="text-primary font-mono">2.</span> Reed-Solomon ECC adds parity bytes for error correction</li>
+            <li className="flex items-start gap-2"><span className="text-primary font-mono">3.</span> Stealth scheduler (RL/GAN/Static) determines packet timing & channels</li>
+            <li className="flex items-start gap-2"><span className="text-primary font-mono">4.</span> Packets written to recipient's shared_channel directory</li>
+            <li className="flex items-start gap-2"><span className="text-primary font-mono">5.</span> Recipient decodes on-demand from their inbox</li>
+          </ol>
+        </Card>
       </div>
-    </div>
+    </PageWrapper>
   );
 }

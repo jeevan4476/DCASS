@@ -20,6 +20,11 @@ storage/*
 storage/models/*
 !storage/models/gan_generator.pt
 !storage/models/rl_agent.pt
+!storage/models/warden.pt
+
+# Benchmark Results, Publication Tables, and Plots (explicitly tracked)
+!storage/benchmarks/
+!storage/benchmarks/**
 
 # Legacy data directories (if any remain)
 data/raw/
@@ -157,4 +162,6 @@ scripts/scratch/
 scratch/
 tmp/
 
-
+# Benchmark reference implementations and papers
+docs/benchmarking/papers/
+docs/benchmarking/official_impls/

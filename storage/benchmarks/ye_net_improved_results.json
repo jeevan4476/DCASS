@@ -1,0 +1,10 @@
+{
+  "name": "ye_net_improved",
+  "citation": "Ye et al., \"Deep Learning Hierarchical Representations\", TIFS 2017 (Improved)",
+  "traditional_accuracy": 0.919431279620853,
+  "traditional_auc": 0.9734848484848485,
+  "dcass_accuracy": 0.922,
+  "dcass_auc": 0.5,
+  "d_kl": 2.363478289453129,
+  "converged": true
+}

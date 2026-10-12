@@ -16,6 +16,34 @@ export const API_BASE = `${API_ORIGIN.replace(/\/$/, '')}/api`;
 // a public deployment.
 export const AUTH_TOKEN_KEY = 'dcass_token';
 
+export function getErrorMessage(err: unknown, fallback: string = 'Operation failed'): string {
+  if (!err) return fallback;
+  const anyErr = err as any;
+  const detail = anyErr?.response?.data?.detail;
+  if (typeof detail === 'string') {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object') {
+          return item.msg || JSON.stringify(item);
+        }
+        return String(item);
+      })
+      .join(', ');
+  }
+  if (detail && typeof detail === 'object') {
+    return detail.msg || JSON.stringify(detail);
+  }
+  if (anyErr?.message && typeof anyErr.message === 'string') {
+    return anyErr.message;
+  }
+  return fallback;
+}
+
+
 export function getAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -172,6 +200,7 @@ export interface DecodeResponse {
   ecc_errors_fixed?: number[];
   payload_bytes?: number[];
   context_epoch_id?: string;
+  cached?: boolean;
 }
 
 export interface SearchRequest {
@@ -298,7 +327,8 @@ export interface InboxDecodeResponse {
     content: string;
     verified: boolean;
   }>;
-  cached: boolean;
+  cached?: boolean;
+  elapsed_ms?: number | null;
 }
 
 export interface TransmitRequest {
@@ -339,8 +369,10 @@ export async function authMe(): Promise<AuthUser> {
   return response.data;
 }
 
-export async function listUsers(): Promise<UsersListResponse> {
-  const response = await api.get('/users');
+export async function listUsers(excludeCurrent: boolean = false): Promise<UsersListResponse> {
+  const response = await api.get('/users', {
+    params: excludeCurrent ? { exclude_current: true } : undefined,
+  });
   return response.data;
 }
 
@@ -361,6 +393,47 @@ export async function decodeInboxSession(sessionId: string): Promise<InboxDecode
 
 export async function deleteInboxSession(sessionId: string): Promise<{ success: boolean; deleted: number }> {
   const response = await api.delete(`/inbox/${sessionId}`);
+  return response.data;
+}
+
+// ============================================================================
+// Wire / Telemetry
+// ============================================================================
+
+export interface WirePacket {
+  media_id: string;
+  channel_id: number;
+  sequence_number: number;
+  delay_seconds: number;
+  timestamp: number;
+  mode_used: string;
+  filename: string;
+}
+
+export interface WirePacketsResponse {
+  packets: WirePacket[];
+  count: number;
+}
+
+export interface TransmissionStatus {
+  active: boolean;
+  current: number;
+  total: number;
+  status: string;
+}
+
+export async function getWirePackets(): Promise<WirePacketsResponse> {
+  const response = await api.get('/wire/packets');
+  return response.data;
+}
+
+export async function clearWirePackets(): Promise<{ success: boolean; deleted: number }> {
+  const response = await api.delete('/wire/packets');
+  return response.data;
+}
+
+export async function getTransmissionStatus(): Promise<TransmissionStatus> {
+  const response = await api.get('/transmit/status');
   return response.data;
 }
 

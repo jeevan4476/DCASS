@@ -124,19 +124,22 @@ class DSSCEncoder:
             raise ValueError("Session key required for DSSC")
 
         # 1. Framing and Reed-Solomon error correction
-        # Use session_key as secret for HMAC-authenticated framing
-        framed = frame_payload(message, secret=session_key)
+        # Use standard CRC-16 framing (version 0x01, 5-byte header) to avoid redundant 32-byte HMAC tag
+        framed = frame_payload(message)
 
         # Adaptive ECC: scale parity bytes to ~12% of framed payload length
         # t = ceil(0.06 * L), parity = 2t, clamped to even [4, 254]
-        # This yields ~12% overhead for typical message sizes
         framed_len = len(framed)
         adaptive_parity = 2 * max(2, min(127, math.ceil(0.06 * framed_len)))
         # Use provided ecc_parity_bytes if explicitly set, else adaptive
         effective_parity = ecc_parity_bytes if ecc_parity_bytes is not None else adaptive_parity
 
-        rs = RSErrorCorrection(parity_bytes=effective_parity)
-        codeword = rs.encode(framed)
+        if effective_parity > 0:
+            rs = RSErrorCorrection(parity_bytes=effective_parity)
+            codeword = rs.encode(framed)
+        else:
+            codeword = framed
+
         bitstream = BitStreamReader(codeword)
         total_bits = len(codeword) * 8
 
@@ -166,11 +169,25 @@ class DSSCEncoder:
         if len(all_ids) < 16:
             raise RuntimeError(f"Corpus too small for DSSC ({len(all_ids)} items available)")
 
-        # Modality sequence for deterministic round-robin: Text -> Image -> Audio
-        MODALITY_SEQUENCE: list[Modality] = ["text", "image", "audio"]
+        # Available modalities present in the index
+        available_modalities = [m for m in ["text", "image", "audio"] if all_ids_by_modality.get(m)]
+        if not available_modalities:
+            available_modalities = [m for m in all_ids_by_modality.keys() if all_ids_by_modality[m]]
+        if not available_modalities:
+            available_modalities = ["image"]
+
+        # Modality-conditioned family mapping (2 families per modality)
+        # This ensures each modality only picks from its native semantic families
+        MODALITY_FAMILY_MAP: dict[Modality, list[str]] = {
+            "image": ["nature_outdoor", "urban_architecture"],
+            "text":  ["people_interaction", "objects_indoor"],
+            "audio": ["technology_science", "sound_atmosphere"],
+        }
 
         encoded_carriers: list[DSSCEncodedCarrier] = []
         chunk_idx = 0
+
+        candidate_pool_cache: dict[tuple[str, str], list[str]] = {}
 
         while bitstream.has_bits:
             # Deterministic, HMAC-keyed family selection (topic-safe: never derives from message text)
@@ -179,29 +196,40 @@ class DSSCEncoder:
                 f"family:{chunk_idx}".encode("utf-8"),
                 hashlib.sha256,
             ).digest()
-            family_idx = int.from_bytes(family_digest[:4], "big") % len(self.family_manager.families)
-            primary_family = self.family_manager.families[family_idx]
 
-            # Modality balancing: deterministic round-robin per chunk
-            # Chunk 0 -> text, Chunk 1 -> image, Chunk 2 -> audio, Chunk 3 -> text, etc.
-            modality_for_chunk = MODALITY_SEQUENCE[chunk_idx % len(MODALITY_SEQUENCE)]
+            # Modality balancing: deterministic round-robin across available modalities
+            modality_for_chunk = available_modalities[chunk_idx % len(available_modalities)]
             modality_ids = all_ids_by_modality.get(modality_for_chunk, [])
 
-            # Build candidate set from this modality: all corpus IDs whose VCP cluster falls in
-            # the family's cluster range.
-            allowed_clusters = set(primary_family.cluster_ids)
-            candidates = [
-                cid for cid in modality_ids
-                if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
-            ]
-            # Fallback to all modalities if this modality has too few candidates
-            if len(candidates) < 8:
-                candidates = [
-                    cid for cid in all_ids
+            # Modality-conditioned family selection: pick from families native to this modality
+            native_names = MODALITY_FAMILY_MAP.get(modality_for_chunk, [])
+            matching_families = [fam for fam in self.family_manager.families if fam.name in native_names]
+            if matching_families:
+                admissible_families = matching_families
+            else:
+                admissible_families = self.family_manager.families
+
+            family_idx = int.from_bytes(family_digest[:4], "big") % len(admissible_families)
+            primary_family = admissible_families[family_idx]
+
+            # Build candidate set with caching per (modality, family) to avoid 100M+ redundant lookups
+            cache_key = (modality_for_chunk, primary_family.name)
+            if cache_key not in candidate_pool_cache:
+                allowed_clusters = set(primary_family.cluster_ids)
+                cand = [
+                    cid for cid in modality_ids
                     if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
                 ]
-            if len(candidates) < 8:
-                candidates = all_ids[:256]
+                if len(cand) < 8:
+                    cand = [
+                        cid for cid in all_ids
+                        if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
+                    ]
+                if len(cand) < 8:
+                    cand = all_ids[:256]  # Ultimate safety fallback
+                candidate_pool_cache[cache_key] = cand
+
+            candidates = candidate_pool_cache[cache_key]
 
             # Capacity
             bits_per_carrier = max(2, min(16, int(math.floor(math.log2(len(candidates))))))
@@ -243,6 +271,6 @@ class DSSCEncoder:
             carrier_ids=[c.media_id for c in encoded_carriers],
             encoded_carriers=encoded_carriers,
             total_bits=total_bits,
-            parity_bytes=ecc_parity_bytes,
+            parity_bytes=effective_parity,  # Return the actual parity used
             session_key_id=key_id,
         )

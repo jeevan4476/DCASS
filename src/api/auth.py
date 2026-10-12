@@ -173,10 +173,18 @@ def get_user_by_id(user_id: int) -> Optional[User]:
     return User(**dict(row)) if row else None
 
 
+def list_all_users() -> list[User]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, username, password_hash, created_at FROM users ORDER BY id"
+        ).fetchall()
+    return [User(**dict(r)) for r in rows]
+
+
 def list_users_excluding(exclude_user_id: int) -> list[User]:
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, username, password_hash, created_at FROM users WHERE id != ? ORDER BY username",
+            "SELECT id, username, password_hash, created_at FROM users WHERE id != ? ORDER BY id",
             (exclude_user_id,),
         ).fetchall()
     return [User(**dict(r)) for r in rows]
@@ -224,31 +232,45 @@ class AuthenticatedUser:
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
 ) -> AuthenticatedUser:
-    # In dev mode (no DCASS_API_TOKEN), allow anonymous access for testing
-    if not os.environ.get("DCASS_API_TOKEN"):
-        # Return a default test user
-        from src.api import auth as _auth
-        _auth.init_db()
-        user = _auth.get_user_by_username("alice")
-        if user:
-            return AuthenticatedUser(id=user.id, username=user.username)
-        # If alice doesn't exist, check for test_user or create one
-        user = _auth.get_user_by_username("test_user")
-        if user:
-            return AuthenticatedUser(id=user.id, username=user.username)
-        # Create a temporary test user
-        user = _auth.create_user("test_user", "test123456")
-        return AuthenticatedUser(id=user.id, username=user.username)
-    
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Missing bearer token")
-    try:
-        payload = decode_access_token(credentials.credentials)
-    except JWTError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
+    # 1. If a Bearer token is provided, always decode and validate it first
+    if credentials is not None and credentials.scheme.lower() == "bearer" and credentials.credentials:
+        try:
+            payload = decode_access_token(credentials.credentials)
+            user_id = int(payload["sub"])
+            user = get_user_by_id(user_id)
+            if user is not None:
+                return AuthenticatedUser(id=user.id, username=user.username)
+        except JWTError as e:
+            # Explicit invalid token sent -> reject with 401
+            raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
 
-    user_id = int(payload["sub"])
-    user = get_user_by_id(user_id)
-    if user is None:
-        raise HTTPException(status_code=401, detail="User no longer exists")
+    # 2. In production or when DCASS_API_TOKEN is set, require valid auth
+    if os.environ.get("DCASS_API_TOKEN"):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+
+    # 3. In dev mode without a token provided, return default test user
+    from src.api import auth as _auth
+    _auth.init_db()
+    user = _auth.get_user_by_username("alice")
+    if user:
+        return AuthenticatedUser(id=user.id, username=user.username)
+    user = _auth.get_user_by_username("test_user")
+    if user:
+        return AuthenticatedUser(id=user.id, username=user.username)
+    user = _auth.create_user("test_user", "test123456")
     return AuthenticatedUser(id=user.id, username=user.username)
+
+
+def get_optional_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> Optional[AuthenticatedUser]:
+    if credentials is not None and credentials.scheme.lower() == "bearer" and credentials.credentials:
+        try:
+            payload = decode_access_token(credentials.credentials)
+            user_id = int(payload["sub"])
+            user = get_user_by_id(user_id)
+            if user is not None:
+                return AuthenticatedUser(id=user.id, username=user.username)
+        except JWTError:
+            return None
+    return None

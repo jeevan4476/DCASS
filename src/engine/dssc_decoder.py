@@ -112,12 +112,26 @@ class DSSCDecoder:
             all_ids.extend(ids)
         all_ids.sort()
 
-        # Modality sequence for deterministic round-robin: Text -> Image -> Audio
-        MODALITY_SEQUENCE: list[Modality] = ["text", "image", "audio"]
+        # Available modalities present in the index
+        available_modalities = [m for m in ["text", "image", "audio"] if all_ids_by_modality.get(m)]
+        if not available_modalities:
+            available_modalities = [m for m in all_ids_by_modality.keys() if all_ids_by_modality[m]]
+        if not available_modalities:
+            available_modalities = ["image"]
+
+        # Modality-conditioned family mapping (2 families per modality)
+        # This ensures each modality only picks from its native semantic families
+        MODALITY_FAMILY_MAP: dict[Modality, list[str]] = {
+            "image": ["nature_outdoor", "urban_architecture"],
+            "text":  ["people_interaction", "objects_indoor"],
+            "audio": ["technology_science", "sound_atmosphere"],
+        }
 
         bit_writer = BitStreamWriter()
 
         verified_count = 0
+
+        candidate_pool_cache: dict[tuple[str, str], list[str]] = {}
 
         for chunk_idx, carrier_id in enumerate(carrier_ids):
             # Check if item exists in corpus
@@ -131,28 +145,40 @@ class DSSCDecoder:
                 f"family:{chunk_idx}".encode("utf-8"),
                 hashlib.sha256,
             ).digest()
-            family_idx = int.from_bytes(family_digest[:4], "big") % len(self.family_manager.families)
-            primary_family = self.family_manager.families[family_idx]
 
-            # Modality balancing: deterministic round-robin per chunk (MUST match encoder)
-            # Chunk 0 -> text, Chunk 1 -> image, Chunk 2 -> audio, Chunk 3 -> text, etc.
-            modality_for_chunk = MODALITY_SEQUENCE[chunk_idx % len(MODALITY_SEQUENCE)]
+            # Modality balancing: deterministic round-robin across available modalities
+            modality_for_chunk = available_modalities[chunk_idx % len(available_modalities)]
             modality_ids = all_ids_by_modality.get(modality_for_chunk, [])
 
-            # Candidate set: all IDs whose VCP cluster in family range (mirrors encoder)
-            allowed_clusters = set(primary_family.cluster_ids)
-            candidates = [
-                cid for cid in modality_ids
-                if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
-            ]
-            # Fallback to all modalities if this modality has too few candidates
-            if len(candidates) < 8:
-                candidates = [
-                    cid for cid in all_ids
+            # Modality-conditioned family selection: pick from families native to this modality
+            native_names = MODALITY_FAMILY_MAP.get(modality_for_chunk, [])
+            matching_families = [fam for fam in self.family_manager.families if fam.name in native_names]
+            if matching_families:
+                admissible_families = matching_families
+            else:
+                admissible_families = self.family_manager.families
+
+            family_idx = int.from_bytes(family_digest[:4], "big") % len(admissible_families)
+            primary_family = admissible_families[family_idx]
+
+            # Candidate set: all IDs whose VCP cluster in family range (cached per pool)
+            cache_key = (modality_for_chunk, primary_family.name)
+            if cache_key not in candidate_pool_cache:
+                allowed_clusters = set(primary_family.cluster_ids)
+                cand = [
+                    cid for cid in modality_ids
                     if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
                 ]
-            if len(candidates) < 8:
-                candidates = all_ids[:256]
+                if len(cand) < 8:
+                    cand = [
+                        cid for cid in all_ids
+                        if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
+                    ]
+                if len(cand) < 8:
+                    cand = all_ids[:256]  # Ultimate safety fallback
+                candidate_pool_cache[cache_key] = cand
+
+            candidates = candidate_pool_cache[cache_key]
 
             bits_per_carrier = max(2, min(16, int(math.floor(math.log2(len(candidates))))))
             perm = derive_session_permutation(
@@ -177,18 +203,22 @@ class DSSCDecoder:
             bit_writer.append_bits(symbol, bits_per_carrier)
 
         codeword = bit_writer.to_bytes()
-        rs = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
-
-        fixed_errors = []
-        data, ok, fixed = rs.decode_bytes(codeword)
-        if ok:
-            fixed_errors = fixed
+        if ecc_parity_bytes > 0:
+            rs = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
+            fixed_errors = []
+            data, ok, fixed = rs.decode_bytes(codeword)
+            if ok:
+                fixed_errors = fixed
+        else:
+            data = codeword
+            ok = True
+            fixed_errors = []
 
         reconstructed_text = None
         success = False
         if ok:
             try:
-                # Use session_key for HMAC frame validation
+                # unframe_payload validates CRC-16 frame (or HMAC frame if present)
                 reconstructed_text, _ = unframe_payload(data, secret=session_key)
                 success = True
             except FrameError:

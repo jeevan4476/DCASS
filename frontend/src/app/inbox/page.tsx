@@ -1,28 +1,17 @@
 'use client';
 
-/**
- * Phase F — Inbox page.
- *
- * Lists sessions addressed to the current user (GET /api/inbox) and lets
- * them decode or delete each one. Decode is on-demand because it costs a
- * SemanticDecoder call; the result is cached server-side after the first
- * decode so repeat clicks are fast.
- */
-
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { Mail, Send, Loader2, RefreshCw, LogOut, MessageSquare, Trash2, Eye, Shield, CheckCircle, AlertCircle, Clock, User, X } from 'lucide-react';
 
 import { useRequireAuth } from '@/lib/auth';
-import {
-  InboxItem,
-  InboxDecodeResponse,
-  decodeInboxSession,
-  deleteInboxSession,
-  getInbox,
-} from '@/lib/api';
+import { InboxItem, InboxDecodeResponse, decodeInboxSession, deleteInboxSession, getInbox, getErrorMessage } from '@/lib/api';
+import { PageWrapper, Card, Badge, LoadingSpinner, EmptyState, useToastHelpers, Tooltip } from '@/components';
 
 export default function InboxPage() {
   const { user, loading: authLoading, logout } = useRequireAuth();
+  const { success, error: showError } = useToastHelpers();
 
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -38,10 +27,7 @@ export default function InboxPage() {
       const resp = await getInbox();
       setItems(resp.items);
     } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        (err as Error)?.message ||
-        'Failed to load inbox';
+      const message = getErrorMessage(err, 'Failed to load inbox');
       setError(message);
     } finally {
       setLoading(false);
@@ -57,18 +43,15 @@ export default function InboxPage() {
     try {
       const resp = await decodeInboxSession(sessionId);
       setDecoded((prev) => ({ ...prev, [sessionId]: resp }));
-      // Reflect the new decoded status in the list without a full refresh.
       setItems((prev) =>
-        prev.map((it) =>
-          it.session_id === sessionId ? { ...it, decoded: true } : it,
-        ),
+        prev.map((it) => (it.session_id === sessionId ? { ...it, decoded: true } : it)),
       );
+      const rate = typeof resp.verification_rate === 'number' ? (resp.verification_rate * 100).toFixed(1) : '100.0';
+      success('Decoded', `Message recovered with ${rate}% verification`);
     } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        (err as Error)?.message ||
-        'decode failed';
+      const message = getErrorMessage(err, 'Decode failed');
       setError(message);
+      showError('Decode failed', message);
     } finally {
       setBusySession(null);
     }
@@ -84,12 +67,11 @@ export default function InboxPage() {
         const { [sessionId]: _, ...rest } = prev;
         return rest;
       });
+      success('Deleted', 'Message removed from inbox');
     } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        (err as Error)?.message ||
-        'delete failed';
+      const message = getErrorMessage(err, 'Delete failed');
       setError(message);
+      showError('Delete failed', message);
     } finally {
       setBusySession(null);
     }
@@ -97,130 +79,207 @@ export default function InboxPage() {
 
   if (authLoading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-500">
-        Loading…
-      </div>
+      <PageWrapper fullWidth>
+        <LoadingSpinner size="lg" />
+      </PageWrapper>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-4xl mx-auto">
-        <header className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Inbox</h1>
-            <p className="text-sm text-gray-500">
-              Messages addressed to <span className="font-medium">{user.username}</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/send"
-              className="text-sm text-blue-600 hover:underline"
-            >
-              Send a message
-            </Link>
-            <button
-              onClick={logout}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              Sign out
-            </button>
-            <button
-              onClick={refresh}
-              disabled={loading}
-              className="text-sm bg-white border border-gray-300 rounded px-3 py-1 hover:bg-gray-50"
-            >
-              {loading ? 'Refreshing…' : 'Refresh'}
-            </button>
-          </div>
-        </header>
+  const getModeColor = (mode?: string | null) => {
+    switch (mode?.toLowerCase()) {
+      case 'rl': return 'success';
+      case 'gan': return 'info';
+      case 'static': return 'warning';
+      default: return 'neutral';
+    }
+  };
 
+  return (
+    <PageWrapper
+      title="Inbox"
+      description={`Messages addressed to ${user.username}`}
+      action={
+        <div className="flex items-center gap-2">
+          <Link href="/send" className="btn-secondary btn-sm">
+            <Send className="w-4 h-4" />
+            Send
+          </Link>
+          <button onClick={refresh} disabled={loading} className="btn-ghost btn-sm">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+      }
+    >
+      <div className="max-w-4xl mx-auto">
         {error && (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-4">
-            {error}
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 flex items-start gap-3 p-4 bg-error/10 border border-error/20 rounded-xl text-error"
+            role="alert"
+          >
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">Failed to load inbox</p>
+              <p className="text-body-sm mt-1">{error}</p>
+              <button onClick={refresh} className="mt-2 text-body-sm text-primary hover:underline">Retry</button>
+            </div>
+          </motion.div>
         )}
 
         {items.length === 0 && !loading ? (
-          <div className="bg-white border border-gray-200 rounded p-8 text-center text-gray-500">
-            Nothing in your inbox yet.{' '}
-            <Link href="/send" className="text-blue-600 hover:underline">
-              Send a test message
-            </Link>
-            .
-          </div>
+          <Card className="text-center py-16">
+            <EmptyState
+              icon={<Mail className="w-12 h-12" />}
+              title="Inbox is empty"
+              description="No messages have been sent to you yet. Send a test message to yourself or ask another user to transmit."
+              action={
+                <Link href="/send" className="btn-primary">
+                  <Send className="w-4 h-4" />
+                  Send a Message
+                </Link>
+              }
+            />
+          </Card>
         ) : (
-          <ul className="space-y-3">
+          <div className="space-y-3">
             {items.map((item) => {
               const complete = item.received_packets >= item.total_items;
               const detail = decoded[item.session_id];
-              return (
-                <li
-                  key={item.session_id}
-                  className="bg-white border border-gray-200 rounded p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-gray-900">
-                        From {item.sender_username || '(unknown)'}
-                        <span className="text-gray-400 font-normal">
-                          {' '}· mode: {item.mode_used || 'unknown'}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        session <code>{item.session_id}</code> ·{' '}
-                        {new Date(item.timestamp * 1000).toLocaleString()} ·{' '}
-                        {item.received_packets}/{item.total_items} packets
-                        {!complete && (
-                          <span className="text-amber-600"> (incomplete)</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-2 shrink-0">
-                      <button
-                        onClick={() => onDecode(item.session_id)}
-                        disabled={!complete || busySession === item.session_id}
-                        className="text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded px-3 py-1"
-                      >
-                        {busySession === item.session_id
-                          ? 'Decoding…'
-                          : item.decoded
-                          ? 'Show decoded'
-                          : 'Decode'}
-                      </button>
-                      <button
-                        onClick={() => onDelete(item.session_id)}
-                        disabled={busySession === item.session_id}
-                        className="text-sm bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded px-3 py-1"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
+              const isDecoding = busySession === item.session_id;
 
-                  {detail && (
-                    <div className="mt-3 border-t border-gray-100 pt-3 text-sm">
-                      <div className="font-medium text-gray-900">Decoded message</div>
-                      <div className="mt-1 text-gray-800 whitespace-pre-wrap">
-                        {detail.reconstructed_meaning}
+              return (
+                <motion.article
+                  key={item.session_id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <Card className="overflow-hidden">
+                      <div className="flex items-start justify-between gap-4 p-4 flex-wrap sm:flex-nowrap">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <User className="w-5 h-5 text-muted" />
+                            <span className="font-medium text-foreground">
+                              {item.sender_username || '(unknown)'}
+                            </span>
+                          </div>
+                          {item.mode_used && (
+                            <Tooltip content={`Transmission mode: ${item.mode_used.toUpperCase()}`}>
+                              <Badge variant={getModeColor(item.mode_used)} dot size="sm">
+                                {item.mode_used.toUpperCase()}
+                              </Badge>
+                            </Tooltip>
+                          )}
+                          <span className="text-body-xs text-muted px-2 py-0.5 bg-surface rounded">
+                            #{item.session_id.slice(0, 8)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 mt-2 text-body-sm text-muted flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5" />
+                            {new Date(item.timestamp * 1000).toLocaleString()}
+                          </span>
+                          <span className="flex items-center gap-1 font-mono tabular-nums">
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            {item.received_packets}/{item.total_items} packets
+                          </span>
+                          {!complete && (
+                            <span className="flex items-center gap-1 text-warning">
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              Incomplete
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="mt-2 text-xs text-gray-500">
-                        verification {(detail.verification_rate * 100).toFixed(1)}% ·
-                        ECC {detail.ecc_success ? 'OK' : 'FAILED'}
-                        {detail.ecc_errors_fixed.length > 0 && (
-                          <> · fixed {detail.ecc_errors_fixed.length} errors</>
-                        )}
-                        {detail.cached && <> · (cached)</>}
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Tooltip content="Decode message">
+                          <button
+                            onClick={() => onDecode(item.session_id)}
+                            disabled={!complete || isDecoding}
+                            className="btn-primary btn-sm gap-2"
+                          >
+                            {isDecoding ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Decoding…
+                              </>
+                            ) : detail ? (
+                              <>
+                                <Eye className="w-4 h-4" />
+                                View
+                              </>
+                            ) : (
+                              <>
+                                <Shield className="w-4 h-4" />
+                                Decode
+                              </>
+                            )}
+                          </button>
+                        </Tooltip>
+                        <Tooltip content="Delete message">
+                          <button
+                            onClick={() => onDelete(item.session_id)}
+                            disabled={isDecoding}
+                            className="btn-ghost btn-sm text-error hover:text-error hover:bg-error/10"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
-                  )}
-                </li>
+
+                    {detail && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="border-t border-border bg-surface/50"
+                      >
+                        <div className="p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <h4 className="font-semibold text-foreground">Decoded Message</h4>
+                            <div className="flex items-center gap-2 text-body-xs flex-wrap">
+                              <Badge variant={detail.ecc_success ? 'success' : 'error'} dot size="sm">
+                                {detail.ecc_success ? 'ECC OK' : 'ECC FAILED'}
+                              </Badge>
+                              <Badge variant="info" size="sm">
+                                {(typeof detail.verification_rate === 'number' ? (detail.verification_rate * 100).toFixed(1) : '100.0')}% verified
+                              </Badge>
+                              {Array.isArray(detail.ecc_errors_fixed) && detail.ecc_errors_fixed.length > 0 && (
+                                <Badge variant="warning" size="sm">
+                                  Fixed {detail.ecc_errors_fixed.length} errors
+                                </Badge>
+                              )}
+                              {detail.cached && (
+                                <Badge variant="neutral" size="sm">Cached</Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="bg-background border border-border rounded-lg p-4 font-mono text-body-sm text-foreground whitespace-pre-wrap max-h-60 overflow-y-auto">
+                            {detail.reconstructed_meaning || '(empty)'}
+                          </div>
+                          <div className="flex items-center gap-4 text-body-xs text-muted flex-wrap">
+                            {typeof detail.elapsed_ms === 'number' && (
+                              <span>Decoded in {detail.elapsed_ms.toFixed(1)}ms</span>
+                            )}
+                            {Array.isArray(detail.ecc_errors_fixed) && detail.ecc_errors_fixed.length > 0 && (
+                              <span>Corrected errors: {detail.ecc_errors_fixed.join(', ')}</span>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </Card>
+                </motion.article>
               );
             })}
-          </ul>
+          </div>
         )}
       </div>
-    </div>
+    </PageWrapper>
   );
 }

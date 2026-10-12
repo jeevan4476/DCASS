@@ -1,3 +1,4 @@
+# src/engine/dssc_state_space.py
 """
 DSSC State Space and Semantic Family Management.
 
@@ -10,11 +11,8 @@ Implements the Dynamic Semantic State-Space Coding (DSSC) state space:
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 from dataclasses import dataclass, field
-from typing import Optional
-
+from typing import Optional, Union, List, Dict
 import numpy as np
 
 
@@ -89,7 +87,6 @@ def family_for_cluster(
     return families[0]
 
 
-
 def derive_session_permutation(num_candidates: int, session_key: bytes, context_salt: str = "") -> np.ndarray:
     """
     Derive a deterministic, cryptographically keyed permutation of [0, num_candidates-1].
@@ -99,6 +96,8 @@ def derive_session_permutation(num_candidates: int, session_key: bytes, context_
         return np.arange(num_candidates)
 
     # Derive a single 32-byte seed from session_key + context_salt
+    import hmac
+    import hashlib
     seed_material = hmac.new(
         session_key,
         context_salt.encode("utf-8"),
@@ -139,26 +138,39 @@ class DSSCStateSpace:
         carrier_idx = int(self.permuted_indices[symbol])
         return self.candidate_media_ids[carrier_idx]
 
+    _id_to_idx: dict[str, int] = field(default=None, repr=False, compare=False)
+    _inv_perm: np.ndarray = field(default=None, repr=False, compare=False)
+
     def media_id_to_symbol(self, media_id: str) -> Optional[int]:
-        """Map a carrier media ID back to its payload integer symbol."""
-        try:
-            carrier_idx = self.candidate_media_ids.index(media_id)
-        except ValueError:
+        """Map a carrier media ID back to its payload integer symbol in O(1) time."""
+        if self._id_to_idx is None:
+            self._id_to_idx = {cid: idx for idx, cid in enumerate(self.candidate_media_ids)}
+        carrier_idx = self._id_to_idx.get(media_id)
+        if carrier_idx is None:
             return None
 
-        # Invert permutation: find symbol where permuted_indices[symbol] == carrier_idx
-        where = np.where(self.permuted_indices == carrier_idx)[0]
-        if len(where) == 0 or where[0] >= self.state_count:
+        # Fast O(1) inverse permutation
+        if self._inv_perm is None:
+            self._inv_perm = np.empty_like(self.permuted_indices)
+            self._inv_perm[self.permuted_indices] = np.arange(len(self.permuted_indices))
+
+        sym = int(self._inv_perm[carrier_idx])
+        if sym >= self.state_count:
             return None
-        return int(where[0])
+        return sym
 
 
 class SemanticFamilyManager:
-    """
-    Manages semantic family definitions and selects families for input text.
-    """
+    """Manages semantic family definitions and selects families for input text."""
     def __init__(self, families: list[SemanticFamily] = None):
         self.families = families or DEFAULT_SEMANTIC_FAMILIES
+
+    def get_family(self, name: str) -> SemanticFamily:
+        """Get a semantic family by name."""
+        for fam in self.families:
+            if fam.name == name:
+                return fam
+        raise ValueError(f"Semantic family not found: {name}")
 
     def match_families(self, text: str) -> list[SemanticFamily]:
         """Match text against semantic families using lexical keyword scoring."""

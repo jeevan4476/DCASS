@@ -78,7 +78,7 @@ class StealthScheduler:
     def schedule(
         self,
         media_ids: list[str],
-        mode: Literal["static", "gan", "rl", "auto"] = "static",
+        mode: Literal["static", "gan", "rl", "hybrid", "auto"] = "static",
         base_delay: float = 3.0,
         gan_checkpoint: Optional[Path] = None,
         rl_checkpoint: Optional[Path] = None,
@@ -88,6 +88,8 @@ class StealthScheduler:
 
         mode="auto" runs the rl -> gan -> static cascade, matching the
         documented behaviour in scripts/runtime/run_sender.py.
+        mode="hybrid" combines WGAN timing pauses with closed-loop channel
+        cooldown tracking to guarantee zero rate-limit violations.
 
         Returns
         -------
@@ -130,7 +132,7 @@ class StealthScheduler:
     def _schedule_unlocked(
         self,
         media_ids: list[str],
-        mode: Literal["static", "gan", "rl", "auto"],
+        mode: Literal["static", "gan", "rl", "hybrid", "auto"],
         base_delay: float,
         gan_checkpoint: Optional[Path],
         rl_checkpoint: Optional[Path],
@@ -152,7 +154,12 @@ class StealthScheduler:
                 schedule = self._schedule_static(media_ids, base_delay)
             return self._validate_schedule(schedule, media_ids)
 
-        if mode == "gan":
+        if mode == "hybrid":
+            checkpoint = self._resolve_checkpoint(
+                gan_checkpoint, DEFAULT_GAN_CHECKPOINT
+            )
+            schedule = self._schedule_hybrid(media_ids, base_delay, checkpoint)
+        elif mode == "gan":
             checkpoint = self._resolve_checkpoint(
                 gan_checkpoint, DEFAULT_GAN_CHECKPOINT
             )
@@ -267,6 +274,68 @@ class StealthScheduler:
         }
 
     # ------------------------------------------------------------------
+    # Hybrid WGAN + Action-Masked Channel Scheduling
+    # ------------------------------------------------------------------
+
+    def _schedule_hybrid(
+        self, media_ids: list[str], base_delay: float, checkpoint: Optional[Path]
+    ) -> dict:
+        """
+        Hybrid Mode: Combines WGAN generative temporal pauses with closed-loop
+        action-masked channel routing to guarantee zero rate-limit cooldown violations.
+        """
+        if not self._load_generator(checkpoint):
+            print("[StealthScheduler] GAN checkpoint not found for hybrid — falling back to static")
+            return self._schedule_static(media_ids, base_delay)
+
+        import torch
+        seq_len = len(media_ids)
+        time_of_day = torch.tensor([float(np.random.randint(0, 24))], device=self.device)
+
+        with torch.no_grad():
+            schedule = self._generator.generate(
+                batch_size=1,
+                sequence_length=seq_len,
+                time_of_day=time_of_day,
+                device=self.device,
+            )
+
+        raw_delays = schedule.delays[0].cpu().numpy()
+        delays = np.clip((raw_delays - 0.5) * 1500.0 + 1.5, 0.5, 30.0).tolist()
+        channel_logits = schedule.channel_logits[0].cpu().numpy()
+
+        # Closed-loop channel cooldown routing
+        # Enterprise cooldowns: ch0 = 6.0s (10/min), ch1 = 12.0s (5/min), ch2 = 4.0s (15/min)
+        cooldowns = {0: 6.0, 1: 12.0, 2: 4.0}
+        t_last = {c: -100.0 for c in range(self.num_channels)}
+        t_current = 0.0
+        routed_channels = []
+
+        for i in range(seq_len):
+            t_current += delays[i]
+            avail = [c for c in range(self.num_channels) if (t_current - t_last[c]) >= cooldowns.get(c, 6.0)]
+            if avail:
+                probs = np.exp(channel_logits[i]) / np.sum(np.exp(channel_logits[i]))
+                avail_probs = [probs[c] for c in avail]
+                chosen_c = avail[int(np.argmax(avail_probs))]
+            else:
+                earliest_c = min(range(self.num_channels), key=lambda c: t_last[c] + cooldowns.get(c, 6.0))
+                wait = (t_last[earliest_c] + cooldowns.get(earliest_c, 6.0)) - t_current
+                delays[i] += wait
+                t_current += wait
+                chosen_c = earliest_c
+
+            t_last[chosen_c] = t_current
+            routed_channels.append(chosen_c)
+
+        return {
+            "items": media_ids,
+            "delays": [float(d) for d in delays],
+            "channels": routed_channels,
+            "mode_used": "hybrid",
+        }
+
+    # ------------------------------------------------------------------
     # RL-based scheduling
     # ------------------------------------------------------------------
 
@@ -346,7 +415,9 @@ class StealthScheduler:
                 state = next_state
                 continue
 
-            delays.append(max(0.5, float(action["delay"])))
+            raw_d = float(action["delay"])
+            # Calibrate delay pacing to channel cooldown constraints (7s to 20s)
+            delays.append(float(np.clip(raw_d * 0.35, 7.0, 20.0)))
             channels.append(int(action["channel"]) % self.num_channels)
             state = next_state
             if done:
