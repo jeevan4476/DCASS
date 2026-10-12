@@ -244,8 +244,9 @@ def get_current_user(
             # Explicit invalid token sent -> reject with 401
             raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
 
-    # 2. In production or when DCASS_API_TOKEN is set, require valid auth
-    if os.environ.get("DCASS_API_TOKEN"):
+    # 2. In production (or when API-token auth is enabled), require valid auth
+    is_production = os.environ.get("DCASS_ENV", "development").lower() == "production"
+    if is_production or os.environ.get("DCASS_API_TOKEN"):
         raise HTTPException(status_code=401, detail="Missing bearer token")
 
     # 3. In dev mode without a token provided, return default test user

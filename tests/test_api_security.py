@@ -51,6 +51,19 @@ class TestApiAuth:
         with patch.dict(os.environ, {"DCASS_API_TOKEN": "test-token-xyz"}, clear=False):
             assert client.get("/api/health").status_code == 200
 
+    def test_production_requires_bearer_without_api_token(self, client):
+        with patch.dict(
+            os.environ,
+            {
+                "DCASS_ENV": "production",
+                "DCASS_JWT_SECRET": "test-jwt-secret",
+            },
+            clear=False,
+        ):
+            os.environ.pop("DCASS_API_TOKEN", None)
+            assert client.get("/api/auth/me").status_code == 401
+            assert client.get("/api/wire/packets").status_code == 401
+
 
 class TestTransmitPathSanitization:
     def test_validate_rejects_traversal(self):
@@ -85,6 +98,16 @@ class TestTransmitPathSanitization:
         assert "invalid media_id" in res.json()["detail"].lower() or "path" in res.json()[
             "detail"
         ].lower()
+
+    def test_transmit_rejects_non_positive_speed_multiplier(self, client):
+        res = client.post(
+            "/api/transmit",
+            json={
+                "media_ids": ["ok_id"],
+                "speed_multiplier": 0,
+            },
+        )
+        assert res.status_code == 422
 
 
 class TestDoctorPublicDict:

@@ -820,20 +820,20 @@ def benchmark_latest():
 
 
 @app.get("/api/wire/packets")
-def get_wire_packets():
-    """List all packets in shared_channel directory."""
-    shared_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
+def get_wire_packets(current_user: AuthenticatedUser = Depends(get_current_user)):
+    """List packets routed to the authenticated user's inbox."""
+    base_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
+    shared_dir = base_dir / str(current_user.id)
 
-    if not shared_dir.exists():
+    if not base_dir.exists() or not shared_dir.exists():
         return {
             "packets": [],
             "count": 0,
-            "error": "shared_channel directory not found",
         }
 
     packets = []
     try:
-        json_files = [f for f in shared_dir.rglob("*.json") if not f.name.startswith("_")]
+        json_files = [f for f in shared_dir.glob("*.json") if not f.name.startswith("_")]
         json_files.sort(key=lambda p: p.stat().st_mtime)
         for f in json_files:
             try:
@@ -877,7 +877,7 @@ class TransmitRequest(BaseModel):
     base_delay: float = 1.0  # Reduced default for faster demo
     num_channels: int = 3
     message: str = ""
-    speed_multiplier: float = 1.0  # 1.0 = real-time, 2.0 = 2x faster, etc.
+    speed_multiplier: float = Field(default=1.0, gt=0.0)  # 1.0 = real-time, 2.0 = 2x faster, etc.
     # Phase F — 1-to-1 routing: packets land in storage/shared_channel/<recipient_id>/
     recipient_username: Optional[str] = Field(default="bob", min_length=1)
 
