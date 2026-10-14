@@ -157,10 +157,15 @@ class TestContextEpochHint:
     def test_decode_api_returns_400_on_bad_hint(self, client):
         from src.engine.decoder import SemanticDecoder
         from tests.test_engine.test_exact_vcp_recovery import FakeIndex
+        from src.engine.semantic_engine import SemanticEngine
 
         decoder = SemanticDecoder(index=FakeIndex())
         decoder._loaded = True
-        with patch("src.api.server._get_decoder", return_value=decoder):
+        engine = SemanticEngine()
+        engine._loaded = True
+        engine._exact_decoder = decoder
+
+        with patch("src.api.server._get_engine", return_value=engine):
             res = client.post(
                 "/api/decode",
                 json={

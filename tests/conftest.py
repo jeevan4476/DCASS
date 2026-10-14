@@ -10,6 +10,13 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Do NOT set DCASS_API_TOKEN - let dev mode auth handle test authentication
+try:
+    from src.api import auth as _auth
+
+    _auth.init_db()
+    _auth.seed_demo_users()
+except Exception as e:
+    print(f"Warning initializing test auth DB: {e}")
 
 
 def pytest_configure(config):
