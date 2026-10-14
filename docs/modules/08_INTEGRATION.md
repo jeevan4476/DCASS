@@ -1,16 +1,9 @@
 # Module 08 — GAN + RL Integration
 
-This is the single-page spec of the integrated stealth-scheduling pipeline:
-GAN (WGAN-GP) pretrains a Warden, the Warden is frozen and reused as the RL
+This is the single-page specification of the integrated stealth-scheduling pipeline:
+the GAN (WGAN-GP) pretrains a Warden, the Warden is frozen and reused as the RL
 reward model, and `StealthScheduler` serves whichever trained policy is
-available at inference. See [docs/GAN_RL_INTEGRATION_PLAN.md](../GAN_RL_INTEGRATION_PLAN.md)
-for the build plan this module implements.
-
-**Out of scope:** the standalone subsystem under [scripts/stealth/](../../scripts/stealth/)
-that predates this integration (its own WGAN-GP over timestamps,
-`gan/gan.py`, plus a separate Double-DQN path selector under `path_agent/`)
-is a parallel design and is **not** part of this pipeline. See the notice at
-the top of [scripts/stealth/README.md](../../scripts/stealth/README.md).
+available at inference.
 
 ## 1. Convention table
 
@@ -92,7 +85,7 @@ Receiver (run_receiver.py) — ReassemblyBuffer sorts by sequence_number
 >
 > **Inference.** The scheduler loads $(G_\phi^\ast, \pi_\theta^\ast)$ and dispatches media IDs with the policy's $(\delta_t, c_t)$ masked to legal channels by the environment's per-channel rate limits; the GAN serves as a fallback and a runtime stealth monitor via $D_\psi^\ast$. A static handcrafted noise profile is a terminal fallback when no checkpoint is present.
 
-## 5. Open risks (see docs/GAN_RL_INTEGRATION_PLAN.md for full detail)
+## 5. Open risks
 
 - **R1/R3** — the Warden is trained on batches up to `max_sequence_length=100`
   (masked/padded correctly as of this integration) but evaluated by the RL
