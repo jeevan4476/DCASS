@@ -15,8 +15,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import Optional, List, Tuple
-from dataclasses import dataclass
+from typing import List
 
 
 # =============================================================================
@@ -56,10 +55,10 @@ class SRMFilterBank(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        
+
         # 30 SRM filters as defined in the paper
         filters = []
-        
+
         # 1st order differences (4 filters)
         f1 = np.array([[0, 0, 0, 0, 0],
                        [0, -1, 2, -1, 0],
@@ -70,7 +69,7 @@ class SRMFilterBank(nn.Module):
         filters.append(f1.T)
         filters.append(np.rot90(f1))
         filters.append(np.rot90(f1, 3))
-        
+
         # 2nd order differences (4 filters)
         f2 = np.array([[0, 0, 0, 0, 0],
                        [0, 0, 0, 0, 0],
@@ -81,7 +80,7 @@ class SRMFilterBank(nn.Module):
         filters.append(f2.T)
         filters.append(np.rot90(f2))
         filters.append(np.rot90(f2, 3))
-        
+
         # 3rd order differences (4 filters)
         f3 = np.array([[0, 0, 0, 0, 0],
                        [0, 0, 0, 0, 0],
@@ -92,7 +91,7 @@ class SRMFilterBank(nn.Module):
         filters.append(f3.T)
         filters.append(np.rot90(f3))
         filters.append(np.rot90(f3, 3))
-        
+
         # 4th order differences (4 filters)
         f4 = np.array([[0, 0, 0, 0, 0],
                        [0, 1, -4, 6, -4],
@@ -103,7 +102,7 @@ class SRMFilterBank(nn.Module):
         filters.append(f4.T)
         filters.append(np.rot90(f4))
         filters.append(np.rot90(f4, 3))
-        
+
         # Edge detectors (4 filters)
         f5 = np.array([[0, 0, 0, 0, 0],
                        [0, 0, 0, 0, 0],
@@ -114,7 +113,7 @@ class SRMFilterBank(nn.Module):
         filters.append(f5.T)
         filters.append(np.rot90(f5))
         filters.append(np.rot90(f5, 3))
-        
+
         # SQUARE 5x5 (4 filters) - add 2 more variants
         f6 = np.array([[-1, 2, -2, 2, -1],
                        [2, -6, 8, -6, 2],
@@ -131,7 +130,7 @@ class SRMFilterBank(nn.Module):
                         [0, 0, 0, 0, 0]], dtype=np.float32) / 4.0
         filters.append(f6b)
         filters.append(f6b.T)
-        
+
         # EDGE 5x5 (4 filters) - add 2 more
         f7 = np.array([[0, 0, 0, 0, 0],
                        [0, 0, 0, 0, 0],
@@ -148,7 +147,7 @@ class SRMFilterBank(nn.Module):
                         [0, 0, 0, 0, 0]], dtype=np.float32)
         filters.append(f7b)
         filters.append(f7b.T)
-        
+
         # Add 2 more filters to reach exactly 30
         # Additional min/max non-linear filters (as per SRM paper)
         f8 = np.array([[0, 0, 0, 0, 0],
@@ -158,10 +157,10 @@ class SRMFilterBank(nn.Module):
                        [0, 0, 0, 0, 0]], dtype=np.float32)
         filters.append(f8)
         filters.append(f8.T)
-        
+
         # Ensure exactly 30 filters
         filters = filters[:30]
-        
+
         # Stack: (30, 1, 5, 5)
         filters = np.stack([f[:5, :5] for f in filters])[:, np.newaxis, :, :]
         self.register_buffer('filters', torch.tensor(filters, dtype=torch.float32))
@@ -203,18 +202,19 @@ class SRMFLDA(nn.Module):
     def fit_flda(self, features: torch.Tensor, labels: torch.Tensor):
             """Fit FLDA on extracted features (offline)."""
             from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-        
+
             X = features.cpu().numpy()
             y = labels.cpu().numpy()
-        
+
             # Use more regularization for stability
             self.flda = LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto')
             self.flda.fit(X, y)
             self.is_fitted = True
-        
+
             # Store as linear layer for inference
-            self.flda_weight = torch.tensor(self.flda.coef_, dtype=torch.float32).to(DEVICE)
-            self.flda_intercept = torch.tensor(self.flda.intercept_, dtype=torch.float32).to(DEVICE)
+            device = features.device
+            self.flda_weight = torch.tensor(self.flda.coef_, dtype=torch.float32).to(device)
+            self.flda_intercept = torch.tensor(self.flda.intercept_, dtype=torch.float32).to(device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.extract_features(x)  # (B, 3000)
@@ -250,15 +250,15 @@ class CooccurrenceFeatures(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, 30, H, W) quantized residuals in [-T, T]
         B, F, H, W = x.shape
-        
+
         # Shift to 0-indexed bins
         x = x + self.T  # Now in [0, 2T]
-        
+
         features = []
-        
+
         for f in range(F):
             res = x[:, f]  # (B, H, W)
-            
+
             # Four directional co-occurrences
             for dh, dw in [(0, 1), (1, 0), (1, 1), (1, -1)]:
                 if dh == 0 and dw == 1:
@@ -273,7 +273,7 @@ class CooccurrenceFeatures(nn.Module):
                 else:  # (1, -1)
                     a = res[:, :-1, 1:]
                     b = res[:, 1:, :-1]
-                
+
                 # Joint histogram: (B, 5, 5) -> (B, 25)
                 for i in range(B):
                     flat_a = a[i].flatten().long()
@@ -281,7 +281,7 @@ class CooccurrenceFeatures(nn.Module):
                     indices = flat_a * self.num_bins + flat_b
                     hist = torch.bincount(indices, minlength=self.num_bins**2)
                     features.append(hist.float())
-        
+
         # Stack: (B, 30 * 4 * 25) = (B, 3000)
         return torch.stack(features, dim=0).view(B, -1)
 
@@ -299,68 +299,78 @@ class XuNet(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        
+
         # Fixed SRM filter bank (30 diverse high-pass filters)
         self.register_buffer('srm', self._create_srm_filters())
-        
+
         # Stage 1: 30 -> 64
         self.conv1 = nn.Conv2d(30, 64, kernel_size=3, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.pool1 = nn.AvgPool2d(5, stride=2, padding=2)
-        
+
         # Stage 2: 64 -> 128
         self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(128)
         self.pool2 = nn.AvgPool2d(5, stride=2, padding=2)
-        
+
         # Stage 3: 128 -> 256
         self.conv3 = nn.Conv2d(128, 256, kernel_size=3, padding=1, bias=False)
         self.bn3 = nn.BatchNorm2d(256)
         self.pool3 = nn.AvgPool2d(5, stride=2, padding=2)
-        
+
         # Stage 4: 256 -> 256
         self.conv4 = nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False)
         self.bn4 = nn.BatchNorm2d(256)
-        
+
         # Stage 5: 256 -> 256
         self.conv5 = nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False)
         self.bn5 = nn.BatchNorm2d(256)
-        
+
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = nn.Dropout(0.3)
         self.fc = nn.Linear(256, 2)
-        
+
         self._initialize_weights()
 
     def _create_srm_filters(self):
         """Create 30 SRM-like high-pass filters."""
         kernels = []
-        
+
         # 1. First-order derivatives (4)
         kernels.append(torch.tensor([[0,0,0,0,0],[0,0,0,0,0],[0,-1,0,1,0],[0,0,0,0,0],[0,0,0,0,0]], dtype=torch.float32))
         kernels.append(torch.tensor([[0,0,0,0,0],[0,0,-1,0,0],[0,0,0,0,0],[0,0,1,0,0],[0,0,0,0,0]], dtype=torch.float32))
         kernels.append(torch.tensor([[0,0,0,0,0],[0,0,0,0,0],[0,0,-1,0,0],[0,0,0,1,0],[0,0,0,0,0]], dtype=torch.float32))
         kernels.append(torch.tensor([[0,0,0,0,0],[0,0,0,0,0],[0,0,-1,0,0],[0,0,1,0,0],[0,0,0,0,0]], dtype=torch.float32))
-        
+
         # 2. Second-order derivatives (8)
         for i in range(8):
             k = torch.zeros(5, 5)
-            if i == 0: k[2] = torch.tensor([1, -2, 1, 0, 0])
-            elif i == 1: k[2, 1:4] = torch.tensor([1, -2, 1])
+            if i == 0:
+                k[2] = torch.tensor([1, -2, 1, 0, 0])
+            elif i == 1:
+                k[2, 1:4] = torch.tensor([1, -2, 1])
             elif i == 2:
-                k[:, 2] = 1; k[2, 2] = -2
+                k[:, 2] = 1
+                k[2, 2] = -2
             elif i == 3:
-                k[1:4, 2] = 1; k[2, 2] = -2
+                k[1:4, 2] = 1
+                k[2, 2] = -2
             elif i == 4:  # cross
-                k[2, 2] = -4; k[1, 2] = k[3, 2] = k[2, 1] = k[2, 3] = 1
+                k[2, 2] = -4
+                k[1, 2] = k[3, 2] = k[2, 1] = k[2, 3] = 1
             elif i == 5:  # diagonal
-                k[2, 2] = -2; k[1, 1] = 1; k[3, 3] = 1
+                k[2, 2] = -2
+                k[1, 1] = 1
+                k[3, 3] = 1
             elif i == 6:  # anti-diagonal
-                k[2, 2] = -2; k[1, 3] = 1; k[3, 1] = 1
+                k[2, 2] = -2
+                k[1, 3] = 1
+                k[3, 1] = 1
             elif i == 7:  # laplacian
-                k[2, 2] = -4; k[1, 2] = k[3, 2] = k[2, 1] = k[2, 3] = 1
+                k[2, 2] = -4
+                k[1, 2] = k[3, 2] = k[2, 1] = k[2, 3] = 1
             kernels.append(k)
-        
+
         # 3. SRM-like kernels (12)
         srm_kernels = [
             torch.tensor([[0,0,0,0,0],[0,-1,2,-1,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]], dtype=torch.float32),
@@ -377,7 +387,7 @@ class XuNet(nn.Module):
             torch.tensor([[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,1,0,0],[0,0,-2,0,0]], dtype=torch.float32),
         ]
         kernels.extend(srm_kernels)
-        
+
         # 4. Fill remaining with variations (6 more)
         for i in range(6):
             k = torch.zeros(5, 5)
@@ -388,13 +398,13 @@ class XuNet(nn.Module):
             else:
                 k[1:4, 1:4] = torch.tensor([[-1, 2, -1], [2, -4, 2], [-1, 2, -1]], dtype=torch.float32)
             kernels.append(k)
-        
+
         # Normalize and stack
         weight = torch.zeros(30, 1, 5, 5)
         for i, k in enumerate(kernels[:30]):
             k = k / (k.abs().sum() + 1e-8)
             weight[i, 0] = k
-        
+
         return weight
 
     def _initialize_weights(self):
@@ -412,10 +422,10 @@ class XuNet(nn.Module):
         # x: (B, 1, H, W)
         # Apply fixed SRM filter bank
         x = F.conv2d(x, self.srm, padding=2)
-        
+
         # ABS + tanh - CRITICAL: preserves sign information for LSB detection (original XuNet design)
         x = torch.tanh(torch.abs(x))
-        
+
         x = self.pool1(F.tanh(self.bn1(self.conv1(x))))
         x = self.pool2(F.tanh(self.bn2(self.conv2(x))))
         x = self.pool3(F.relu(self.bn3(self.conv3(x))))
@@ -423,7 +433,7 @@ class XuNet(nn.Module):
         x = self.dropout(x)
         x = F.relu(self.bn5(self.conv5(x)))
         x = self.dropout(x)
-        
+
         x = self.global_pool(x)
         x = x.flatten(1)
         return self.fc(x)
@@ -441,40 +451,40 @@ class YeNet(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        
+
         # Layer 1: 30 SRM filters (trainable)
         self.srm = SRMFilterBank()
         self.tlu1 = TLU(3.0)
-        
+
         # Layer 2: 30 -> 64 (was 32)
         self.conv2 = nn.Conv2d(30, 64, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(64)
         self.pool2 = nn.AvgPool2d(3, stride=2, padding=1)
-        
+
         # Layer 3: 64 -> 64 (was 32 -> 32)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.bn3 = nn.BatchNorm2d(64)
         self.pool3 = nn.AvgPool2d(3, stride=2, padding=1)
-        
+
         # Layer 4: 64 -> 128 (was 32 -> 64)
         self.conv4 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.bn4 = nn.BatchNorm2d(128)
         self.pool4 = nn.AvgPool2d(3, stride=2, padding=1)
-        
+
         # Layer 5: 128 -> 256 (was 64 -> 128)
         self.conv5 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
         self.bn5 = nn.BatchNorm2d(256)
-        
+
         # NEW: Layer 6: 256 -> 256
         self.conv6 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
         self.bn6 = nn.BatchNorm2d(256)
-        
+
         # NEW: Layer 7: 256 -> 256
         self.conv7 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
         self.bn7 = nn.BatchNorm2d(256)
-        
+
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
-        
+
         # Classifier: 256 features (was 128)
         self.fc = nn.Linear(256, 2)
 
@@ -482,16 +492,16 @@ class YeNet(nn.Module):
         # x: (B, 1, H, W)
         x = self.srm(x)
         x = self.tlu1(x)
-        
+
         x = self.pool2(F.relu(self.bn2(self.conv2(x))))
         x = self.pool3(F.relu(self.bn3(self.conv3(x))))
         x = self.pool4(F.relu(self.bn4(self.conv4(x))))
         x = F.relu(self.bn5(self.conv5(x)))
-        
+
         # NEW layers
         x = F.relu(self.bn6(self.conv6(x)))
         x = F.relu(self.bn7(self.conv7(x)))
-        
+
         x = self.global_pool(x)
         x = x.flatten(1)
         return self.fc(x)
@@ -541,39 +551,39 @@ class ZhuNet(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        
+
         # Layer 1: SRM initialization
         self.srm = SRMFilterBank()
         self.conv1 = nn.Conv2d(30, 32, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
-        
+
         # Separable convolution blocks
         self.sep1 = SeparableConv2d(32, 32, 3)
         self.sep2 = SeparableConv2d(32, 64, 3)
         self.sep3 = SeparableConv2d(64, 128, 3)
-        
+
         # NEW: Additional separable conv blocks for increased capacity (160 channels)
         self.sep4 = SeparableConv2d(128, 160, 3)
         self.sep5 = SeparableConv2d(160, 160, 3)
-        
+
         # SPP
         self.spp = SpatialPyramidPooling([1, 2, 4])
-        
+
         # Classifier: SPP output = 160 * (1 + 4 + 16) = 3360
         self.fc = nn.Linear(160 * (1 + 4 + 16), 2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.srm(x)
         x = F.relu(self.bn1(self.conv1(x)))
-        
+
         x = F.relu(self.sep1(x))
         x = F.relu(self.sep2(x))
         x = F.relu(self.sep3(x))
-        
+
         # NEW layers
         x = F.relu(self.sep4(x))
         x = F.relu(self.sep5(x))
-        
+
         x = self.spp(x)
         return self.fc(x)
 
@@ -703,7 +713,7 @@ class SRNet(nn.Module):
         x = self.type4(x)
         x = x.view(x.size(0), -1)
         return self.dense(x)
-        
+
         return x
 
 
@@ -719,7 +729,7 @@ class MSRNet(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        
+
         # Multi-scale feature extraction (parallel)
         self.scale1 = nn.Conv2d(1, 32, 3, padding=1, bias=False)
         self.scale2 = nn.Conv2d(1, 32, 5, padding=2, bias=False)
@@ -727,15 +737,15 @@ class MSRNet(nn.Module):
         self.bn_scale = nn.BatchNorm2d(96)
         self.fuse = nn.Conv2d(96, 64, 1, bias=False)
         self.bn_fuse = nn.BatchNorm2d(64)
-        
+
         # Residual blocks with SE attention
         self.res_blocks = nn.Sequential(*[MSRNetBlock(64) for _ in range(6)])
-        
+
         # Final processing
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = nn.Dropout(0.3)
         self.fc = nn.Linear(64, 2)
-        
+
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -755,14 +765,14 @@ class MSRNet(nn.Module):
         s1 = F.relu(self.scale1(x))
         s2 = F.relu(self.scale2(x))
         s3 = F.relu(self.scale3(x))
-        
+
         # Concatenate and fuse
         x = torch.cat([s1, s2, s3], dim=1)  # (B, 96, H, W)
         x = F.relu(self.bn_fuse(self.fuse(x)))  # (B, 64, H, W)
-        
+
         # Residual blocks with attention
         x = self.res_blocks(x)
-        
+
         # Classification
         x = self.global_pool(x).flatten(1)
         x = self.dropout(x)
@@ -775,7 +785,7 @@ class SEBlock(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(channels, channels // reduction, bias=False)
         self.fc2 = nn.Linear(channels // reduction, channels, bias=False)
-    
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, c, _, _ = x.size()
         y = F.adaptive_avg_pool2d(x, (1, 1)).view(b, c)
@@ -793,7 +803,7 @@ class MSRNetBlock(nn.Module):
         self.conv2 = nn.Conv2d(channels, channels, 3, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(channels)
         self.se = SEBlock(channels)
-    
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         identity = x
         out = F.relu(self.bn1(self.conv1(x)))
@@ -815,14 +825,14 @@ class EfficientNetStega(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        
+
         # SRM preprocessing (optional but helps)
         self.register_buffer('srm', self._create_srm_filters())
-        
+
         # Stem: modified for steganalysis (stride=1, no initial pooling)
         self.stem = nn.Conv2d(30, 32, 3, stride=1, padding=1, bias=False)
         self.bn_stem = nn.BatchNorm2d(32)
-        
+
         # MBConv blocks (EfficientNet-B0 configuration)
         # (expansion, out_channels, repeats, stride, kernel_size)
         mbconv_config = [
@@ -834,7 +844,7 @@ class EfficientNetStega(nn.Module):
             (6, 192, 4, 2, 5),
             (6, 320, 1, 1, 3),
         ]
-        
+
         blocks = []
         in_channels = 32
         for exp, out_c, repeats, stride, k in mbconv_config:
@@ -842,45 +852,55 @@ class EfficientNetStega(nn.Module):
                 s = stride if i == 0 else 1
                 blocks.append(MBConvBlock(in_channels, out_c, exp, s, k))
                 in_channels = out_c
-        
+
         self.blocks = nn.Sequential(*blocks)
-        
+
         # Head
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = nn.Dropout(0.3)
         self.fc = nn.Linear(320, 2)
-        
+
         self._initialize_weights()
 
     def _create_srm_filters(self):
         """Create 30 SRM-like high-pass filters (same as XuNet)."""
         kernels = []
-        
+
         # First-order derivatives (4)
         kernels.append(torch.tensor([[0,0,0,0,0],[0,0,0,0,0],[0,-1,0,1,0],[0,0,0,0,0],[0,0,0,0,0]], dtype=torch.float32))
         kernels.append(torch.tensor([[0,0,0,0,0],[0,0,-1,0,0],[0,0,0,0,0],[0,0,1,0,0],[0,0,0,0,0]], dtype=torch.float32))
         kernels.append(torch.tensor([[0,0,0,0,0],[0,0,0,0,0],[0,0,-1,0,0],[0,0,0,1,0],[0,0,0,0,0]], dtype=torch.float32))
         kernels.append(torch.tensor([[0,0,0,0,0],[0,0,0,0,0],[0,0,-1,0,0],[0,0,1,0,0],[0,0,0,0,0]], dtype=torch.float32))
-        
+
         # Second-order derivatives (8)
         for i in range(8):
             k = torch.zeros(5, 5)
-            if i == 0: k[2] = torch.tensor([1, -2, 1, 0, 0])
-            elif i == 1: k[2, 1:4] = torch.tensor([1, -2, 1])
+            if i == 0:
+                k[2] = torch.tensor([1, -2, 1, 0, 0])
+            elif i == 1:
+                k[2, 1:4] = torch.tensor([1, -2, 1])
             elif i == 2:
-                k[:, 2] = 1; k[2, 2] = -2
+                k[:, 2] = 1
+                k[2, 2] = -2
             elif i == 3:
-                k[1:4, 2] = 1; k[2, 2] = -2
+                k[1:4, 2] = 1
+                k[2, 2] = -2
             elif i == 4:  # cross
-                k[2, 2] = -4; k[1, 2] = k[3, 2] = k[2, 1] = k[2, 3] = 1
+                k[2, 2] = -4
+                k[1, 2] = k[3, 2] = k[2, 1] = k[2, 3] = 1
             elif i == 5:  # diagonal
-                k[2, 2] = -2; k[1, 1] = 1; k[3, 3] = 1
+                k[2, 2] = -2
+                k[1, 1] = 1
+                k[3, 3] = 1
             elif i == 6:  # anti-diagonal
-                k[2, 2] = -2; k[1, 3] = 1; k[3, 1] = 1
+                k[2, 2] = -2
+                k[1, 3] = 1
+                k[3, 1] = 1
             elif i == 7:  # laplacian
-                k[2, 2] = -4; k[1, 2] = k[3, 2] = k[2, 1] = k[2, 3] = 1
+                k[2, 2] = -4
+                k[1, 2] = k[3, 2] = k[2, 1] = k[2, 3] = 1
             kernels.append(k)
-        
+
         # SRM-like kernels (12)
         srm_kernels = [
             torch.tensor([[0,0,0,0,0],[0,-1,2,-1,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]], dtype=torch.float32),
@@ -897,16 +917,17 @@ class EfficientNetStega(nn.Module):
             torch.tensor([[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,1,0,0],[0,0,-2,0,0]], dtype=torch.float32),
         ]
         kernels.extend(srm_kernels)
-        
+
         # Fill remaining (6)
         for i in range(6):
             k = torch.zeros(5, 5)
             if i % 2 == 0:
-                k[2, 2] = -4; k[1, 2] = k[3, 2] = k[2, 1] = k[2, 3] = 1
+                k[2, 2] = -4
+                k[1, 2] = k[3, 2] = k[2, 1] = k[2, 3] = 1
             else:
                 k[1:4, 1:4] = torch.tensor([[-1, 2, -1], [2, -4, 2], [-1, 2, -1]], dtype=torch.float32)
             kernels.append(k)
-        
+
         weight = torch.zeros(30, 1, 5, 5)
         for i, k in enumerate(kernels[:30]):
             k = k / (k.abs().sum() + 1e-8)
@@ -930,13 +951,13 @@ class EfficientNetStega(nn.Module):
         srm_weight: torch.Tensor = self.srm  # type: ignore
         x = F.conv2d(x, srm_weight, padding=2)
         x = torch.tanh(torch.abs(x))  # XuNet-style ABS+tanh
-        
+
         # Stem
         x = F.relu(self.bn_stem(self.stem(x)))
-        
+
         # MBConv blocks
         x = self.blocks(x)
-        
+
         # Head
         x = self.global_pool(x).flatten(1)
         x = self.dropout(x)
@@ -950,48 +971,48 @@ class MBConvBlock(nn.Module):
         super().__init__()
         self.stride = stride
         self.use_residual = (stride == 1 and in_channels == out_channels)
-        
+
         hidden_dim = in_channels * expand_ratio
-        
+
         if expand_ratio != 1:
             # Expansion
             self.expand_conv = nn.Conv2d(in_channels, hidden_dim, 1, bias=False)
             self.bn_expand = nn.BatchNorm2d(hidden_dim)
         else:
             self.expand_conv = None
-        
+
         # Depthwise
         self.dw_conv = nn.Conv2d(hidden_dim, hidden_dim, kernel_size,
                                   stride=stride, padding=kernel_size//2,
                                   groups=hidden_dim, bias=False)
         self.bn_dw = nn.BatchNorm2d(hidden_dim)
-        
+
         # SE
         self.se = SEBlock(hidden_dim)
-        
+
         # Projection
         self.project_conv = nn.Conv2d(hidden_dim, out_channels, 1, bias=False)
         self.bn_project = nn.BatchNorm2d(out_channels)
-    
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         identity = x
-        
+
         # Expansion
         if self.expand_conv is not None:
             x = F.relu(self.bn_expand(self.expand_conv(x)))
-        
+
         # Depthwise
         x = F.relu(self.bn_dw(self.dw_conv(x)))
-        
+
         # SE
         x = self.se(x)
-        
+
         # Projection
         x = self.bn_project(self.project_conv(x))
-        
+
         if self.use_residual:
             x = x + identity
-        
+
         return x
 
 
@@ -1028,7 +1049,7 @@ def get_detector(name: str) -> nn.Module:
 if __name__ == "__main__":
     # Quick sanity check
     print("Testing all 5 detectors...")
-    
+
     for name, cls in DETECTORS.items():
         model = cls()
         # Test with random grayscale image
@@ -1038,5 +1059,5 @@ if __name__ == "__main__":
             print(f"✓ {name}: output shape {out.shape}")
         except Exception as e:
             print(f"✗ {name}: {e}")
-    
+
     print("\nAll detectors instantiated successfully!")

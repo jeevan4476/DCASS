@@ -215,7 +215,8 @@ class StealthScheduler:
 
         # Compatibility shim for Python 3.12 + PyTorch 2.14: pathlib._local module
         # missing when unpickling checkpoints saved with older Python/PyTorch.
-        import sys, pathlib
+        import sys
+        import pathlib
         sys.modules.setdefault("pathlib._local", pathlib)
 
         ckpt = torch.load(checkpoint, map_location=self.device, weights_only=False)
@@ -361,7 +362,8 @@ class StealthScheduler:
         if DEFAULT_GAN_CHECKPOINT.exists():
             try:
                 # Compatibility shim for Python 3.12 + PyTorch 2.14
-                import sys, pathlib
+                import sys
+                import pathlib
                 sys.modules.setdefault("pathlib._local", pathlib)
                 gan_ckpt = torch.load(
                     DEFAULT_GAN_CHECKPOINT, map_location=self.device, weights_only=False

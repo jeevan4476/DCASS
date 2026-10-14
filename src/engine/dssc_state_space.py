@@ -12,7 +12,7 @@ Implements the Dynamic Semantic State-Space Coding (DSSC) state space:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Union, List, Dict
+from typing import Optional
 import numpy as np
 
 

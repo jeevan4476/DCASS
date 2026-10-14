@@ -30,13 +30,18 @@ def pytest_collection_modifyitems(config, items):
     skip_integration = pytest.mark.skip(reason="--no-integration flag passed")
 
     for item in items:
+        is_integration = (
+            "integration" in item.keywords
+            or any("integration" in str(m) for m in item.iter_markers())
+            or "test_integration" in item.nodeid
+        )
         # Mark integration tests as slow
-        if "integration" in item.keywords:
+        if is_integration:
             item.add_marker(pytest.mark.slow)
 
         # Skip integration tests if flag passed
         if config.getoption("--no-integration", default=False):
-            if "integration" in item.keywords:
+            if is_integration:
                 item.add_marker(skip_integration)
 
 

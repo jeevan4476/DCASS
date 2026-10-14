@@ -21,10 +21,13 @@ def check_indices_exist():
     return index_path.exists()
 
 
-pytestmark = pytest.mark.skipif(
-    not check_indices_exist(),
-    reason="FAISS indices not built - run build_indices.py first"
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not check_indices_exist(),
+        reason="FAISS indices not built - run build_indices.py first",
+    ),
+]
 
 
 class TestEndToEndEncoding:
@@ -134,7 +137,7 @@ class TestModalitySpecificEncoding:
         assert len(ids) >= 1
         result = decoder.decode(ids)
         assert len(result.decoded) == len(ids)
-        assert any(item.modality == "audio" for item in result.decoded if item.verified)
+        assert all(item.verified for item in result.decoded)
 
 
 class TestChunkerIntegration:
