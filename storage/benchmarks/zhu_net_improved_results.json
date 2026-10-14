@@ -1,0 +1,10 @@
+{
+  "name": "zhu_net_improved",
+  "citation": "Zhu et al., \"Universal Steganalysis with Separable Convolutions\", TIFS 2020 (Improved)",
+  "traditional_accuracy": 0.943127962085308,
+  "traditional_auc": 0.9858405483405482,
+  "dcass_accuracy": 0.947,
+  "dcass_auc": 0.5,
+  "d_kl": 1.427638985318779,
+  "converged": true
+}

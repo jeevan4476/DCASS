@@ -181,10 +181,11 @@ class SemanticEngine:
                 )
             if self._dssc_encoder is None:
                 self.load()
+            effective_parity = ecc_parity_bytes if use_ecc else 0
             result = self._dssc_encoder.encode(
                 message=message,
                 session_key=session_key,
-                ecc_parity_bytes=ecc_parity_bytes,
+                ecc_parity_bytes=effective_parity,
                 modalities=modalities,
             )
             avg_bits = result.bits_per_carrier_avg
@@ -245,10 +246,11 @@ class SemanticEngine:
                 )
             if self._dssc_decoder is None:
                 self.load()
+            effective_parity = ecc_parity_bytes if use_ecc else 0
             result = self._dssc_decoder.decode(
                 carrier_ids=media_ids,
                 session_key=session_key,
-                ecc_parity_bytes=ecc_parity_bytes,
+                ecc_parity_bytes=effective_parity,
                 modalities=modalities,
             )
             return UnifiedDecodingResult(

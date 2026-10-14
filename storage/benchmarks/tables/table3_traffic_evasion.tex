@@ -1,0 +1,23 @@
+% Component 3: Traffic Timing & DPI Evasion Benchmark Results
+\begin{table}[htbp]
+\centering
+\caption{Traffic Timing Evasion: Warden Interception Rates and Timing Fidelity}
+\label{tab:traffic_evasion}
+\begin{tabular}{lcccccc}
+\toprule
+Scheduler & Interception Rate (\%) & Evasion Rate (\%) & Delay Entropy (bits) & KS Distance & KS $p$-value & Mean Latency (s) \\
+\midrule
+Static Cadence & 100.0 & 0.0 & 0.0000 & 0.5814 & 0.0000 & 3.00 \\
+Stochastic Poisson & 60.0 & 40.0 & 4.2609 & 0.2889 & 0.0023 & 2.95 \\
+DCASS Temporal WGAN & 0.0 & 100.0 & 3.3807 & 0.3916 & 0.0000 & 3.93 \\
+DCASS Hybrid Engine & 0.0 & 100.0 & 3.4349 & 0.3933 & 0.0000 & 3.92 \\
+DCASS PPO RL Agent & 30.0 & 70.0 & 4.5704 & 0.7219 & 0.0000 & 15.22 \\
+\midrule
+\multicolumn{7}{l}{\textbf{Circadian Diurnal Rhythm Adaptation (WGAN):}} \\
+~~	\textendash~Daytime Peak (14:00) & 0.0 & 100.0 & 3.6161 & 0.4507 & -- & 3.19 \\
+~~	\textendash~Night Dormancy (03:00) & 0.0 & 100.0 & 3.4076 & 0.7487 & -- & 13.07 \\
+\midrule
+Human Baseline & -- & -- & 0.8618 & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}

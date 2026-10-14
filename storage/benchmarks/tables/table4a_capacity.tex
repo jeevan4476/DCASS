@@ -1,0 +1,27 @@
+% Component 4a: Codec Capacity - DSSC vs exact_vcp
+\begin{table}[htbp]
+\centering
+\caption{Codec Capacity: DSSC vs exact_vcp (matched framing and Reed-Solomon ECC)}
+\label{tab:codec_capacity}
+\begin{tabular}{lcccccc}
+\toprule
+Mode & Payload (B) & Carriers & Bits/Carrier & Reduction (\%) & Encode (ms) & Decode (ms) \\
+\midrule
+DSSC (multi-modal) & 14 & 16 & 13.50 & 40.7\% & 167.2 & 302.7 \\
+DSSC (text-only) & 14 & 14 & 15.43 & 48.1\% & 153.0 & 406.5 \\
+exact_vcp (text) & 14 & 27 & 8.00 & -- & 4576.2 & 4.0 \\
+DSSC (multi-modal) & 50 & 37 & 13.62 & 41.3\% & 235.3 & 518.0 \\
+DSSC (text-only) & 50 & 32 & 15.75 & 49.2\% & 221.1 & 855.4 \\
+exact_vcp (text) & 50 & 63 & 8.00 & -- & 9279.9 & 9.4 \\
+DSSC (multi-modal) & 150 & 96 & 13.58 & 41.1\% & 221.9 & 881.0 \\
+DSSC (text-only) & 150 & 82 & 15.90 & 49.7\% & 264.1 & 1654.7 \\
+exact_vcp (text) & 150 & 163 & 8.00 & -- & 26614.9 & 23.7 \\
+DSSC (multi-modal) & 300 & 188 & 13.66 & 41.4\% & 283.5 & 1573.2 \\
+DSSC (text-only) & 300 & 161 & 15.95 & 49.8\% & 391.5 & 3070.3 \\
+exact_vcp (text) & 300 & 321 & 8.00 & -- & 51430.6 & 46.3 \\
+DSSC (multi-modal) & 500 & 310 & 13.65 & 41.4\% & 396.3 & 2833.0 \\
+DSSC (text-only) & 500 & 265 & 15.97 & 49.9\% & 574.1 & 5136.7 \\
+exact_vcp (text) & 500 & 529 & 8.00 & -- & 83344.3 & 75.6 \\
+\bottomrule
+\end{tabular}
+\end{table}

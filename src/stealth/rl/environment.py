@@ -69,6 +69,16 @@ class StealthEnvironment:
         - Warden_Score penalizes suspicious patterns
         - λ controls stealth vs. speed trade-off
 
+    Delay convention:
+        `delay_from_previous` / the exported `delays[i]` is the pause AFTER
+        item i is sent (matches NoiseController and the API transmitter —
+        see src/distribution/noise.py and src/api/server.py). step() sends
+        the item at the CURRENT time, then advances current_time by `delay`
+        for the next step. Rate-limit checks look ahead to the time the
+        channel will next be free (current_time + delay), not the current
+        time, since the item is sent now and the cooldown is what happens
+        after.
+
     Args:
         num_channels: Number of distribution channels available
         warden: Pre-trained Warden for evaluation
@@ -263,12 +273,12 @@ class StealthEnvironment:
         delay = float(action["delay"])
         channel_id = int(action["channel"]) % self.num_channels  # Ensure valid channel
 
-        # Advance time
-        self.current_time += delay
-
-        # Check episode timeout
-        if self.current_time >= self.max_episode_time:
+        # Check episode timeout against the time this item would land at
+        # (we haven't advanced current_time yet — see Delay convention above).
+        projected_time = self.current_time + delay
+        if projected_time >= self.max_episode_time:
             self.is_done = True
+            self.current_time = projected_time
             return self._get_state(), -50.0, True, {"reason": "timeout"}
 
         # Check if queue is empty
@@ -276,18 +286,20 @@ class StealthEnvironment:
             self.is_done = True
             return self._get_state(), 0.0, True, {"reason": "queue_empty"}
 
-        # Check channel rate limit
+        # Check channel rate limit against the time the channel will next be
+        # free (current_time + delay), since the item is sent NOW and the
+        # delay is the cooldown that follows.
         channel = self.channels[channel_id]
-        if not channel.can_send(self.current_time):
-            # Penalize for violating rate limit
+        if not channel.can_send(projected_time):
+            # Penalize for violating rate limit. Time does not advance and
+            # nothing is sent, so this step does not appear in the exported
+            # schedule.
             reward = -10.0
             return self._get_state(), reward, False, {"reason": "rate_limit_violation"}
 
-        # Send media item
+        # Send media item NOW, at the current time.
         media_id = self.media_queue.popleft()
 
-        # Record transmission. The first item has no predecessor, so the
-        # action delay is recorded as-is.
         record = TransmissionRecord(
             media_id=media_id,
             channel_id=channel_id,
@@ -296,9 +308,10 @@ class StealthEnvironment:
         )
         self.transmission_history.append(record)
 
-        # Update channel state
+        # Update channel state and advance time by the post-send delay.
         channel.last_transmission_time = self.current_time
         channel.transmission_count += 1
+        self.current_time += delay
 
         # Compute reward
         reward = self._compute_reward()
@@ -339,33 +352,37 @@ class StealthEnvironment:
         else:
             throughput = 0.0
 
-        # Warden detection penalty
-        warden_penalty = 0.0
+        # Warden detection penalty. Evaluated from the FIRST transmission
+        # onward (not gated behind warden_window_size), with short histories
+        # padded using the running mean delay — the same technique
+        # get_warden_score() already uses — rather than skipping the penalty
+        # entirely. Gating it behind a length threshold left ~2/3 of short
+        # training episodes (10-29 items) with zero stealth signal, so the
+        # agent never learned to avoid detection early in a sequence.
+        recent = self.transmission_history[-self.warden_window_size :]
+        delays = [r.delay_from_previous for r in recent]
+        channels = [r.channel_id for r in recent]
 
-        # Evaluate recent transmission window
-        if len(self.transmission_history) >= self.warden_window_size:
-            recent = self.transmission_history[-self.warden_window_size :]
+        if len(delays) < self.warden_window_size:
+            mean_delay = float(np.mean(delays)) if delays else 5.0
+            pad_n = self.warden_window_size - len(delays)
+            delays = delays + [mean_delay] * pad_n
+            channels = channels + [0] * pad_n
 
-            # Extract delays and channels
-            delays = [r.delay_from_previous for r in recent]
-            channels = [r.channel_id for r in recent]
+        device = next(self.warden.parameters()).device
+        delays_tensor = torch.tensor([delays], dtype=torch.float32, device=device)
+        channels_tensor = torch.tensor([channels], dtype=torch.long, device=device)
 
-            # Convert to tensors
-            device = next(self.warden.parameters()).device
-            delays_tensor = torch.tensor([delays], dtype=torch.float32, device=device)
-            channels_tensor = torch.tensor([channels], dtype=torch.long, device=device)
+        with torch.no_grad():
+            verdict = self.warden(delays_tensor, channels_tensor)
+            bot_probability = float(
+                verdict.bot_probability[0].item()
+                if verdict.bot_probability.dim() > 0
+                else verdict.bot_probability.item()
+            )
 
-            # Get Warden verdict
-            with torch.no_grad():
-                verdict = self.warden(delays_tensor, channels_tensor)
-                bot_probability = float(
-                    verdict.bot_probability[0].item()
-                    if verdict.bot_probability.dim() > 0
-                    else verdict.bot_probability.item()
-                )
-
-            # Penalty scales with detection probability
-            warden_penalty = bot_probability * self.lambda_stealth
+        # Penalty scales with detection probability
+        warden_penalty = bot_probability * self.lambda_stealth
 
         # Path diversity & entropy reward
         diversity_bonus = 0.0

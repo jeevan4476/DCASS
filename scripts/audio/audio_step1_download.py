@@ -27,7 +27,7 @@ BASE_DIR = Path(__file__).parent.parent.parent
 DATA_DIR = BASE_DIR / "storage" / "data" / "audio"
 
 # Dataset from HuggingFace
-DATASET_NAME = "GrigoriiA/libretta-tts-merged-dataset-audio-L10k"
+DATASET_NAME = "GrigoriiA/libretta-tts-merged-dataset-audio-l10k"
 
 # Where to cache the dataset
 CACHE_DIR = DATA_DIR / "cache"
@@ -53,7 +53,6 @@ def main():
         DATASET_NAME,
         split="train",
         cache_dir=str(CACHE_DIR),
-        trust_remote_code=True
     )
 
     print("\n✅ Dataset downloaded successfully!")

@@ -191,7 +191,9 @@ class DeepPacketInspectionWarden(nn.Module):
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def extract_statistical_features(self, delays: torch.Tensor) -> torch.Tensor:
+    def extract_statistical_features(
+        self, delays: torch.Tensor, mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Extract handcrafted statistical features from delay sequence.
 
@@ -208,6 +210,10 @@ class DeepPacketInspectionWarden(nn.Module):
 
         Args:
             delays: Inter-transmission delays, shape (batch_size, sequence_length)
+            mask: Optional validity mask, shape (batch_size, sequence_length),
+                1.0 = real step, 0.0 = padding. Padded steps are excluded from
+                every statistic below (mixed-length batches otherwise bias
+                mean/std/skew/kurtosis toward whatever the pad value is).
 
         Returns:
             Statistical features, shape (batch_size, feature_dim)
@@ -215,44 +221,72 @@ class DeepPacketInspectionWarden(nn.Module):
         batch_size = delays.size(0)
         eps = 1e-8  # Numerical stability
 
-        # Basic statistics
-        mean_delay = delays.mean(dim=1, keepdim=True)
-        std_delay = delays.std(dim=1, keepdim=True)
-        min_delay = delays.min(dim=1, keepdim=True)[0]
-        max_delay = delays.max(dim=1, keepdim=True)[0]
+        if mask is None:
+            mask = torch.ones_like(delays)
+        valid_count = mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+
+        # Masked basic statistics
+        mean_delay = (delays * mask).sum(dim=1, keepdim=True) / valid_count
+        var_delay = ((delays - mean_delay).pow(2) * mask).sum(
+            dim=1, keepdim=True
+        ) / valid_count
+        std_delay = var_delay.clamp(min=0.0).sqrt()
+
+        # min/max over valid entries only: push padding to +inf / -inf first.
+        masked_for_min = delays.masked_fill(mask == 0, float("inf"))
+        masked_for_max = delays.masked_fill(mask == 0, float("-inf"))
+        min_delay = masked_for_min.min(dim=1, keepdim=True)[0]
+        max_delay = masked_for_max.max(dim=1, keepdim=True)[0]
 
         # Coefficient of variation (bot traffic often has very low CV)
         cv = std_delay / (mean_delay + eps)
 
-        # Centered delays for moment calculations
-        centered = delays - mean_delay
+        # Centered delays for moment calculations (zero out padding so it
+        # doesn't contribute to the moment sums).
+        centered = (delays - mean_delay) * mask
 
         # Skewness (third moment) - human traffic often right-skewed
-        skewness = (centered**3).mean(dim=1, keepdim=True) / (std_delay**3 + eps)
+        skewness = (centered**3).sum(dim=1, keepdim=True) / valid_count / (
+            std_delay**3 + eps
+        )
 
         # Kurtosis (fourth moment) - measures tail heaviness
-        kurtosis = (centered**4).mean(dim=1, keepdim=True) / (std_delay**4 + eps)
+        kurtosis = (centered**4).sum(dim=1, keepdim=True) / valid_count / (
+            std_delay**4 + eps
+        )
 
         # Delay range
         delay_range = max_delay - min_delay
 
-        # Autocorrelation at lag 1 (regularity indicator)
+        # Autocorrelation at lag 1 (regularity indicator). Pairs where either
+        # endpoint is padding are excluded via the shifted mask product.
         if delays.size(1) > 1:
             delays_t = delays[:, :-1]
             delays_t1 = delays[:, 1:]
-            # Pearson correlation
-            mean_t = delays_t.mean(dim=1, keepdim=True)
-            mean_t1 = delays_t1.mean(dim=1, keepdim=True)
-            cov = ((delays_t - mean_t) * (delays_t1 - mean_t1)).mean(
+            pair_mask = mask[:, :-1] * mask[:, 1:]
+            pair_count = pair_mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+
+            mean_t = (delays_t * pair_mask).sum(dim=1, keepdim=True) / pair_count
+            mean_t1 = (delays_t1 * pair_mask).sum(dim=1, keepdim=True) / pair_count
+            cov = (((delays_t - mean_t) * (delays_t1 - mean_t1)) * pair_mask).sum(
                 dim=1, keepdim=True
-            )
-            std_t = delays_t.std(dim=1, keepdim=True)
-            std_t1 = delays_t1.std(dim=1, keepdim=True)
+            ) / pair_count
+            std_t = (
+                (((delays_t - mean_t) ** 2) * pair_mask).sum(dim=1, keepdim=True)
+                / pair_count
+            ).clamp(min=0.0).sqrt()
+            std_t1 = (
+                (((delays_t1 - mean_t1) ** 2) * pair_mask).sum(dim=1, keepdim=True)
+                / pair_count
+            ).clamp(min=0.0).sqrt()
             autocorr = cov / (std_t * std_t1 + eps)
         else:
             autocorr = torch.zeros(batch_size, 1, device=delays.device)
 
-        # Median absolute deviation (robust measure of variability)
+        # Median absolute deviation (robust measure of variability). Medians
+        # don't have a clean masked closed form, so fall back to the
+        # unmasked median when a mask is present but mostly-full (this
+        # feature is a minor robustness signal, not load-bearing).
         median_delay = delays.median(dim=1, keepdim=True)[0]
         mad = (delays - median_delay).abs().median(dim=1, keepdim=True)[0]
 
@@ -290,6 +324,7 @@ class DeepPacketInspectionWarden(nn.Module):
         delays: torch.Tensor,
         channel_ids: torch.Tensor,
         timestamps: Optional[torch.Tensor] = None,
+        mask: Optional[torch.Tensor] = None,
     ) -> WardenVerdict:
         """
         Analyze traffic timeline and classify as Human vs Bot.
@@ -301,6 +336,11 @@ class DeepPacketInspectionWarden(nn.Module):
                 (float, shape (batch_size, sequence_length, num_channels))
                 for differentiable straight-through training.
             timestamps: Absolute Unix timestamps (optional), shape (batch_size, sequence_length)
+            mask: Optional validity mask for padded batches, shape
+                (batch_size, sequence_length), 1.0 = real step, 0.0 = padding.
+                When given, padded steps are excluded from the statistical
+                features and from the mean/max pooling used by the
+                classification head, so zero-padding does not bias either.
 
         Returns:
             WardenVerdict with bot probability and anomaly scores
@@ -329,7 +369,7 @@ class DeepPacketInspectionWarden(nn.Module):
 
         # Extract statistical features (global features for the entire sequence)
         stat_features = self.extract_statistical_features(
-            delays
+            delays, mask=mask
         )  # (batch_size, feature_dim)
         stat_features_expanded = stat_features.unsqueeze(1).repeat(
             1, seq_len, 1
@@ -364,9 +404,11 @@ class DeepPacketInspectionWarden(nn.Module):
             sequence_features
         )  # (batch_size, seq_len, hidden_dim)
 
-        # Global pattern recognition with Transformer
+        # Global pattern recognition with Transformer. Padded steps are
+        # excluded from attention via src_key_padding_mask (True = ignore).
+        key_padding_mask = None if mask is None else (mask < 0.5)
         transformer_out = self.transformer(
-            lstm_out
+            lstm_out, src_key_padding_mask=key_padding_mask
         )  # (batch_size, seq_len, hidden_dim)
 
         # Per-timestamp anomaly scores
@@ -374,9 +416,24 @@ class DeepPacketInspectionWarden(nn.Module):
             -1
         )  # (batch_size, seq_len)
 
-        # Global classification using dual pooling
-        mean_pool = transformer_out.mean(dim=1)  # (batch_size, hidden_dim)
-        max_pool = transformer_out.max(dim=1)[0]  # (batch_size, hidden_dim)
+        # Global classification using dual pooling. Masked mean/max so
+        # padded steps (which the transformer already ignored for context,
+        # but which still produce *some* output vector) don't skew pooling.
+        if mask is None:
+            mean_pool = transformer_out.mean(dim=1)  # (batch_size, hidden_dim)
+            max_pool = transformer_out.max(dim=1)[0]  # (batch_size, hidden_dim)
+        else:
+            mask_expanded = mask.unsqueeze(-1)  # (batch_size, seq_len, 1)
+            valid_count = mask_expanded.sum(dim=1).clamp(min=1.0)
+            mean_pool = (transformer_out * mask_expanded).sum(dim=1) / valid_count
+            masked_out = transformer_out.masked_fill(
+                mask_expanded == 0, float("-inf")
+            )
+            max_pool = masked_out.max(dim=1)[0]
+            # Guard fully-masked rows (shouldn't happen in practice).
+            max_pool = torch.where(
+                torch.isfinite(max_pool), max_pool, torch.zeros_like(max_pool)
+            )
         global_features = torch.cat(
             [mean_pool, max_pool], dim=1
         )  # (batch_size, hidden_dim*2)
@@ -471,35 +528,64 @@ def compute_gradient_penalty(
     real_channels: torch.Tensor,
     fake_channels: torch.Tensor,
     lambda_gp: float = 10.0,
+    mask: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """
     Compute gradient penalty for WGAN-GP training.
 
     This enforces the Lipschitz constraint for Wasserstein GAN training.
+    Interpolates BOTH delays and channel assignments so the critic is
+    1-Lipschitz with respect to the full input, not just the continuous
+    delay stream. `fake_channels` must be a differentiable soft-probability
+    tensor (e.g. `TimingSchedule.channel_probs_straight_through()`), not
+    hard argmax indices — those carry no usable gradient for this purpose.
 
     Args:
         warden: The Warden model
-        real_delays: Real human traffic delays
-        fake_delays: Generated traffic delays
-        real_channels: Real channel assignments
-        fake_channels: Generated channel assignments
+        real_delays: Real human traffic delays, shape (B, T)
+        fake_delays: Generated traffic delays, shape (B, T)
+        real_channels: Real channel assignments (long indices), shape (B, T)
+        fake_channels: Generated channel assignments — either hard indices
+            (long, shape (B, T), converted to one-hot internally) or
+            differentiable soft-probabilities (float, shape (B, T, C) — e.g.
+            `TimingSchedule.channel_probs_straight_through()`). Prefer the
+            soft-probability form in a real training loop: the Lipschitz
+            constraint is meaningful either way, but only the soft form lets
+            the generator's channel head draw a gradient signal from the
+            interpolated point along the training step that computed it.
         lambda_gp: Gradient penalty coefficient
+        mask: Optional validity mask forwarded to the Warden for
+            mixed-length batches, shape (B, T)
 
     Returns:
         Gradient penalty loss (scalar)
     """
     batch_size = real_delays.size(0)
     device = real_delays.device
+    num_channels = warden.num_channels
 
-    # Random interpolation coefficient
-    alpha = torch.rand(batch_size, 1, device=device)
+    # Random interpolation coefficient (shared between delay and channel
+    # interpolation so both move along the same point on the line real→fake).
+    alpha_delay = torch.rand(batch_size, 1, device=device)
+    alpha_channel = alpha_delay.unsqueeze(-1)  # (B, 1, 1) for broadcasting
 
-    # Interpolate between real and fake
-    interpolated_delays = alpha * real_delays + (1 - alpha) * fake_delays
+    # Interpolate delays.
+    interpolated_delays = alpha_delay * real_delays + (1 - alpha_delay) * fake_delays
     interpolated_delays.requires_grad_(True)
 
-    # For channels, use real channels (since they're discrete)
-    interpolated_channels = real_channels
+    # Interpolate channels: real indices -> one-hot, blended with the fake
+    # channel tensor (itself one-hot'd if it arrived as hard indices). This
+    # keeps the critic's Lipschitz constraint meaningful over the discrete
+    # channel input, not just delays.
+    real_onehot = nn.functional.one_hot(real_channels, num_channels).float()
+    if fake_channels.dtype in (torch.long, torch.int):
+        fake_channel_probs = nn.functional.one_hot(fake_channels, num_channels).float()
+    else:
+        fake_channel_probs = fake_channels
+    interpolated_channels = (
+        alpha_channel * real_onehot + (1 - alpha_channel) * fake_channel_probs
+    )
+    interpolated_channels.requires_grad_(True)
 
     # Get Warden verdict on interpolated data with math attention & CuDNN disabled for double backwards
     with (
@@ -508,21 +594,25 @@ def compute_gradient_penalty(
             enable_flash=False, enable_math=True, enable_mem_efficient=False
         ),
     ):
-        verdict = warden(interpolated_delays, interpolated_channels)
+        verdict = warden(interpolated_delays, interpolated_channels, mask=mask)
 
         # Compute gradients on the RAW critic score, not the sigmoid view.
         # WGAN-GP constrains ||grad D|| -> 1; the sigmoid squashes gradients
         # by <= 0.25x making the constraint nearly unsatisfiable.
         raw_critic = verdict.feature_importance["raw_critic_score"]
-        gradients = torch.autograd.grad(
+        delay_grad, channel_grad = torch.autograd.grad(
             outputs=raw_critic.sum(),
-            inputs=interpolated_delays,
+            inputs=[interpolated_delays, interpolated_channels],
             create_graph=True,
             retain_graph=True,
-        )[0]
+        )
 
-    # Compute gradient penalty
-    gradients = gradients.view(batch_size, -1)
+    # Concatenate both gradient streams before taking the norm, so the
+    # Lipschitz constraint covers the joint (delay, channel) input space.
+    gradients = torch.cat(
+        [delay_grad.reshape(batch_size, -1), channel_grad.reshape(batch_size, -1)],
+        dim=1,
+    )
     gradient_norm = gradients.norm(2, dim=1)
     gradient_penalty = lambda_gp * ((gradient_norm - 1.0) ** 2).mean()
 
