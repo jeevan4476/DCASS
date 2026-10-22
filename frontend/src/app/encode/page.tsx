@@ -2,12 +2,28 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Navigation from '@/components/Navigation';
-import { Card, Badge, LoadingSpinner } from '@/components/UI';
-import { encodeMessage, EncodeResponse, checkReady } from '@/lib/api';
+import { motion } from 'framer-motion';
+import { Shield, Zap, Brain, Eye, Loader2, CheckCircle, AlertCircle, Copy, ExternalLink, Key, Layers, Radio } from 'lucide-react';
+
+import { encodeMessage, EncodeResponse, checkReady, getErrorMessage } from '@/lib/api';
+import { PageWrapper, Card, Badge, LoadingSpinner, StatCard, useToastHelpers, Tooltip } from '@/components';
+
+const modalityColors = {
+  image: 'text-blue-400',
+  text: 'text-green-400',
+  audio: 'text-purple-400',
+};
+
+const modalityIcons = {
+  image: '🖼',
+  text: '📝',
+  audio: '🔊',
+};
 
 export default function EncodePage() {
   const router = useRouter();
+  const { success, error: showError } = useToastHelpers();
+
   const [message, setMessage] = useState('');
   const [mode, setMode] = useState<'exact_vcp' | 'dssc'>('exact_vcp');
   const [sessionKeyHex, setSessionKeyHex] = useState('');
@@ -19,7 +35,6 @@ export default function EncodePage() {
   const [serverReady, setServerReady] = useState<boolean | null>(null);
   const [serverInitializing, setServerInitializing] = useState(false);
 
-  // Generate a random 32-byte session key
   const generateSessionKey = () => {
     const bytes = new Uint8Array(32);
     crypto.getRandomValues(bytes);
@@ -34,16 +49,22 @@ export default function EncodePage() {
   };
 
   useEffect(() => {
+    let interval: NodeJS.Timeout;
     const checkServerStatus = async () => {
       try {
         const status = await checkReady();
         setServerReady(status.ready);
         setServerInitializing(status.initializing);
+        if (status.ready) {
+          clearInterval(interval);
+        }
       } catch (err) {
         setServerReady(null);
       }
     };
     checkServerStatus();
+    interval = setInterval(checkServerStatus, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleEncode = async () => {
@@ -67,9 +88,12 @@ export default function EncodePage() {
       });
 
       setResult(response);
+      success('Encoded!', `Generated ${response.media_ids.length} carriers in ${response.elapsed_ms.toFixed(1)}ms`);
     } catch (err: any) {
       console.error('Encoding error:', err);
-      setError(err.response?.data?.detail || err.message || 'Encoding failed');
+      const errMsg = getErrorMessage(err, 'Encoding failed');
+      setError(errMsg);
+      showError('Encoding failed', errMsg);
     } finally {
       setLoading(false);
     }
@@ -95,240 +119,371 @@ export default function EncodePage() {
     router.push(url);
   };
 
-  const getModalityColor = (modality: string) => {
-    const colors: Record<string, string> = {
-      image: 'text-blue-400',
-      text: 'text-green-400',
-      audio: 'text-purple-400',
-    };
-    return colors[modality] || 'text-gray-400';
+  const copyToClipboard = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+    success('Copied', 'Media IDs copied to clipboard');
+  };
+
+  if (serverInitializing) {
+    return (
+      <PageWrapper title="Encode" description="Transform messages into semantic media sequences" fullWidth>
+        <div className="max-w-4xl mx-auto text-center py-16">
+          <LoadingSpinner size="lg" />
+          <p className="text-muted mt-4">Initializing engine...</p>
+        </div>
+      </PageWrapper>
+    );
+  }
+
+  if (serverReady === false) {
+    return (
+      <PageWrapper title="Encode" description="Transform messages into semantic media sequences" fullWidth>
+        <Card className="max-w-2xl mx-auto text-center py-12">
+          <AlertCircle className="w-12 h-12 text-error mx-auto mb-4" />
+          <h3 className="text-heading-md font-semibold text-error mb-2">Server Not Ready</h3>
+          <p className="text-muted mb-6">The backend engine is not available. Please start the server:</p>
+          <code className="bg-surface px-4 py-2 rounded font-mono text-body-sm text-primary block max-w-xs mx-auto">
+            python scripts/start_server.py --reload
+          </code>
+        </Card>
+      </PageWrapper>
+    );
+  }
+
+  const modeOptions = {
+    exact_vcp: {
+      label: 'Byte-Exact (VCP)',
+      description: '1 byte per carrier, Voronoi Codebook Partitioning',
+      icon: Shield,
+      color: 'primary',
+    },
+    dssc: {
+      label: 'Compact Semantic (DSSC)',
+      description: '~15 bits per carrier, Dynamic State Space Compression',
+      icon: Brain,
+      color: 'purple',
+    },
   };
 
   return (
-    <>
-      <Navigation />
-      <main className="min-h-screen bg-background">
-        <div className="container mx-auto px-4 py-8">
-          <div className="flex items-center justify-between mb-8">
-            <h1 className="text-3xl font-bold text-primary">Encode Message</h1>
-            <Badge variant="info">Alice's Dashboard</Badge>
-          </div>
+    <PageWrapper
+      title="Encode"
+      description="Transform messages into semantic media sequences without transmitting"
+      action={
+        <div className="flex items-center gap-2">
+          {serverReady === true && (
+            <Badge variant="success" dot size="sm">Engine Ready</Badge>
+          )}
+          {serverReady === null && (
+            <Badge variant="warning" dot size="sm">Unknown</Badge>
+          )}
+        </div>
+      }
+    >
+      <div className="max-w-6xl mx-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Input Panel */}
+          <div className="space-y-6">
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-heading-sm font-semibold">Message Input</h3>
+                <span className="text-body-sm text-muted font-mono tabular-nums">{message.length} chars</span>
+              </div>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Enter your secret message here..."
+                className="input h-32 font-mono text-body-sm resize-none"
+                disabled={loading}
+              />
+              <p className="text-body-xs text-muted mt-2">
+                Maximum ~1000 characters for VCP mode. DSSC supports longer messages with higher density.
+              </p>
+            </Card>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Input Panel */}
-            <div className="space-y-6">
-              <Card title="Message Input">
-                <textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Enter your secret message here..."
-                  className="w-full h-32 bg-gray-800 border border-gray-700 rounded-lg p-4 text-white placeholder-gray-500 focus:outline-none focus:border-primary resize-none"
-                />
-                <div className="mt-2 text-sm text-gray-400">
-                  {message.length} characters
-                </div>
-              </Card>
-
-              <Card title="Encoding Settings">
-                <div className="space-y-4">
-                  {/* Mode Selector */}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">
-                      Steganography Mode
-                    </label>
-                    <div className="flex gap-2">
-                      {(['exact_vcp', 'dssc'] as const).map((m) => (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => handleModeChange(m)}
-                          className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                            mode === m
-                              ? 'bg-primary text-white shadow-lg shadow-primary/30 border border-primary'
-                              : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
-                          }`}
-                        >
-                          {m === 'exact_vcp' ? '🔐 Byte-Exact (VCP)' : '🗜️ Compact Semantic (DSSC)'}
-                        </button>
-                      ))}
-                    </div>
-                    {mode === 'dssc' && (
-                      <p className="mt-2 text-xs text-purple-300">
-                        ✨ DSSC maps multi-bit symbols per carrier using dynamic state spaces (~15 bits/carrier), significantly reducing the required carrier count.
-                      </p>
-                    )}
+            <Card>
+              <h3 className="text-heading-sm font-semibold mb-4">Encoding Settings</h3>
+              <div className="space-y-6">
+                {/* Mode Selector */}
+                <div>
+                  <label className="label">Steganography Mode</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(['exact_vcp', 'dssc'] as const).map((m) => {
+                      const opt = modeOptions[m];
+                      const Icon = opt.icon;
+                      return (
+                        <Tooltip key={m} content={opt.description} className="w-full">
+                          <button
+                            type="button"
+                            onClick={() => handleModeChange(m)}
+                            className={`w-full relative p-4 rounded-xl border-2 transition-all duration-fast flex flex-col items-center justify-center gap-2 ${
+                              mode === m
+                                ? m === 'dssc'
+                                  ? 'border-purple-500 bg-purple-500/10'
+                                  : 'border-primary bg-primary/10'
+                                : 'border-border hover:border-primary/50 hover:bg-surface'
+                            }`}
+                          >
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                              m === 'dssc'
+                                ? 'bg-purple-500/20 text-purple-400'
+                                : 'bg-primary/20 text-primary'
+                            }`}>
+                              <Icon className="w-5 h-5" />
+                            </div>
+                            <span className="font-medium text-body-sm text-center">{opt.label}</span>
+                          </button>
+                        </Tooltip>
+                      );
+                    })}
                   </div>
-
-                  {/* DSSC Session Key */}
                   {mode === 'dssc' && (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-400 mb-1">
-                        Session Key (Hex)
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={sessionKeyHex}
-                          onChange={(e) => setSessionKeyHex(e.target.value)}
-                          placeholder="64-character hex key"
-                          className="flex-1 bg-gray-900 border border-gray-700 rounded p-2 text-xs text-purple-300 font-mono"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setSessionKeyHex(generateSessionKey())}
-                          className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-xs text-gray-300 transition-colors"
-                        >
-                          🔄 New Key
-                        </button>
-                      </div>
-                    </div>
+                    <p className="mt-2 text-body-xs text-purple-300 flex items-center gap-1">
+                      <Brain className="w-3.5 h-3.5" />
+                      DSSC maps multi-bit symbols per carrier using dynamic state spaces (~15 bits/carrier), significantly reducing the required carrier count.
+                    </p>
                   )}
+                </div>
 
-                  {/* Diversity Mode (exact_vcp only) */}
-                  {mode === 'exact_vcp' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Carrier Diversity Mode
-                      </label>
-                      <select
-                        value={diversityMode}
-                        onChange={(e) => setDiversityMode(e.target.value as any)}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:outline-none focus:border-primary"
-                      >
-                        <option value="best">Best Match (Highest score)</option>
-                        <option value="round_robin">Round Robin (Balanced modalities)</option>
-                        <option value="balanced">Balanced (Mix of both)</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Modalities */}
+                {/* DSSC Session Key */}
+                {mode === 'dssc' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Allowed Modalities
-                    </label>
-                    <div className="flex flex-wrap gap-3">
-                      {['image', 'text', 'audio'].map((mod) => (
-                        <button
-                          key={mod}
-                          onClick={() => toggleModality(mod)}
-                          className={`px-4 py-2 rounded-lg border transition-all ${
-                            modalities.includes(mod)
-                              ? 'border-primary bg-primary/20 text-primary'
-                              : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'
-                          }`}
-                        >
-                          <span className="capitalize">{mod}</span>
-                        </button>
+                    <label className="label">Session Key (Hex)</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={sessionKeyHex}
+                        onChange={(e) => setSessionKeyHex(e.target.value)}
+                        placeholder="64-character hex key (auto-generated if empty)"
+                        className="input font-mono text-body-xs flex-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSessionKeyHex(generateSessionKey())}
+                        className="btn-secondary gap-2"
+                      >
+                        <Key className="w-4 h-4" />
+                        New Key
+                      </button>
+                    </div>
+                    <p className="text-body-xs text-muted mt-2">Share this key with the recipient for decoding. Must be 64 hex characters.</p>
+                  </div>
+                )}
+
+                {/* Diversity Mode (exact_vcp only) */}
+                {mode === 'exact_vcp' && (
+                  <div>
+                    <label className="label">Carrier Diversity Mode</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {(['best', 'round_robin', 'balanced'] as const).map((m) => (
+                        <Tooltip key={m} content={
+                          m === 'best' ? 'Always pick highest scoring carrier' :
+                          m === 'round_robin' ? 'Cycle through modalities evenly' :
+                          'Mix of best match and round robin'
+                        } className="w-full">
+                          <button
+                            type="button"
+                            onClick={() => setDiversityMode(m)}
+                            className={`w-full p-3.5 rounded-xl border-2 transition-all duration-fast text-left ${
+                              diversityMode === m
+                                ? 'border-primary bg-primary/5'
+                                : 'border-border hover:border-primary/50 hover:bg-surface'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 whitespace-nowrap">
+                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                                diversityMode === m
+                                  ? 'border-primary bg-primary'
+                                  : 'border-border'
+                              }`}>
+                                {diversityMode === m && <div className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />}
+                              </div>
+                              <span className="font-medium text-body-sm capitalize">{m.replace('_', ' ')}</span>
+                            </div>
+                          </button>
+                        </Tooltip>
                       ))}
                     </div>
                   </div>
-                </div>
-              </Card>
+                )}
 
+                {/* Modalities */}
+                <div>
+                  <label className="label">Allowed Modalities</label>
+                  <div className="flex flex-wrap gap-3">
+                    {['image', 'text', 'audio'].map((mod) => (
+                      <Tooltip key={mod} content={`${mod.charAt(0).toUpperCase() + mod.slice(1)} media carriers`}>
+                        <button
+                          type="button"
+                          onClick={() => toggleModality(mod)}
+                          className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-lg border transition-all duration-fast whitespace-nowrap ${
+                            modalities.includes(mod)
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border bg-surface hover:border-primary/50 text-muted'
+                          }`}
+                        >
+                          <span className="text-lg leading-none shrink-0">{modalityIcons[mod as keyof typeof modalityIcons]}</span>
+                          <span className="font-medium text-body-sm capitalize leading-none">{mod}</span>
+                        </button>
+                      </Tooltip>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <div className="space-y-3">
               <button
                 onClick={handleEncode}
                 disabled={loading || !message.trim()}
-                className="w-full bg-primary hover:bg-primary/90 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg"
+                className="btn-primary btn-lg w-full justify-center gap-2"
               >
-                {loading ? '🔄 Encoding...' : '🔐 Encode & Generate Sequence'}
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Encoding...
+                  </>
+                ) : (
+                  <>
+                    <Shield className="w-5 h-5" />
+                    Encode & Generate Sequence
+                  </>
+                )}
               </button>
 
               {result && !loading && (
                 <button
                   onClick={handleOpenDecode}
-                  className="w-full bg-success hover:bg-success/90 text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg"
+                  className="btn-success btn-lg w-full justify-center gap-2"
                 >
-                  🔓 Send to Decode Dashboard
+                  <ExternalLink className="w-5 h-5" />
+                  Open in Decode Dashboard
                 </button>
               )}
 
               {error && (
-                <div className="bg-error/20 border border-error/30 rounded-lg p-4 text-error">
-                  ❌ {error}
-                </div>
-              )}
-            </div>
-
-            {/* Results Panel */}
-            <div className="space-y-6">
-              {loading && (
-                <Card title="Encoding in Progress">
-                  <LoadingSpinner />
-                  <p className="text-center text-gray-400 mt-4">
-                    Chunking message and searching corpus...
-                  </p>
-                </Card>
-              )}
-
-              {result && !loading && (
-                <>
-                  <Card title="Encoding Results">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Mode:</span>
-                        <Badge variant="info">{result.mode.toUpperCase()}</Badge>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Elapsed Time:</span>
-                        <span className="text-white font-mono">{result.elapsed_ms.toFixed(1)} ms</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Media Carriers:</span>
-                        <span className="text-white font-semibold">{result.media_ids.length} items</span>
-                      </div>
-                      {result.bits_per_carrier && result.mode === 'dssc' && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-400">Information Density:</span>
-                          <span className="text-purple-300 font-mono">~{result.bits_per_carrier} bits/carrier</span>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Error Correction (RS-ECC):</span>
-                        <Badge variant="success">ACTIVE (0% BER)</Badge>
-                      </div>
-                    </div>
-                  </Card>
-
-                  <Card title="Media Sequence & File Locations">
-                    <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {result.encoded.map((item, idx) => (
-                        <div key={idx} className="bg-gray-800 rounded p-3 space-y-1">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-center space-x-2">
-                              <span className="text-xs text-gray-500">#{idx + 1}</span>
-                              <span className="font-mono text-sm text-primary">{item.media_id}</span>
-                            </div>
-                            <Badge variant="info">
-                              <span className={getModalityColor(item.modality)}>{item.modality}</span>
-                            </Badge>
-                          </div>
-                          {item.content && (
-                            <div className="text-sm text-gray-300">{item.content}</div>
-                          )}
-                          {item.file_path && (
-                            <div className="text-xs text-gray-500 font-mono break-all pt-1 border-t border-gray-700/50">
-                              File: {item.file_path}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                </>
-              )}
-
-              {!result && !loading && (
-                <Card title="Results">
-                  <div className="text-center text-gray-500 py-12">
-                    Enter a message and click "Encode" to see results
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 bg-error/10 border border-error/20 rounded-xl text-error flex items-start gap-3"
+                  role="alert"
+                >
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Encoding failed</p>
+                    <p className="text-body-sm mt-1">{error}</p>
                   </div>
-                </Card>
+                </motion.div>
               )}
             </div>
           </div>
+
+          {/* Results Panel */}
+          <div className="space-y-6">
+            {loading && (
+              <Card>
+                <div className="text-center py-12">
+                  <LoadingSpinner size="lg" />
+                  <p className="text-muted mt-4">Chunking message and searching corpus...</p>
+                </div>
+              </Card>
+            )}
+
+            {result && !loading && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <Card>
+                  <h3 className="text-heading-sm font-semibold mb-4">Encoding Results</h3>
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <StatCard label="Mode" value={result.mode.toUpperCase()} variant="info" />
+                    <StatCard label="Elapsed" value={`${result.elapsed_ms.toFixed(1)} ms`} variant="primary" />
+                    <StatCard label="Carriers" value={result.media_ids.length} variant="success" />
+                    <StatCard label="ECC" value="Active (CRC-verified)" variant="success" />
+                    {result.bits_per_carrier && result.mode === 'dssc' && (
+                      <StatCard label="Density" value={`${result.bits_per_carrier} bits/carrier`} variant="warning" />
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {result.modality_breakdown && Object.entries(result.modality_breakdown).map(([mod, count]) => (
+                      <Badge key={mod} variant="info" className="gap-1.5">
+                        <span className={
+                          mod === 'image' ? 'text-blue-400' : mod === 'text' ? 'text-emerald-400' : 'text-purple-400'
+                        }>
+                          {modalityIcons[mod as keyof typeof modalityIcons]}
+                        </span>
+                        <span className="capitalize">{mod}</span>
+                        <span className="font-mono bg-surface px-1.5 py-0.5 rounded text-foreground">{count}</span>
+                      </Badge>
+                    ))}
+                  </div>
+                </Card>
+
+                <Card>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-heading-sm font-semibold">Media Sequence & File Locations</h3>
+                    <button
+                      onClick={() => copyToClipboard(result.media_ids.join(','))}
+                      className="btn-ghost btn-sm gap-1"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy IDs
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                    {result.encoded.map((item, idx) => (
+                      <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.02 }}
+                        className="bg-surface/50 border border-border/50 rounded-xl p-3"
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <span className="text-body-xs text-muted font-mono">#{idx + 1}</span>
+                            <span className="font-mono text-sm text-primary">{item.media_id}</span>
+                          </div>
+                          <Badge variant="info" className="gap-1.5">
+                            <span className={
+                              item.modality === 'image' ? 'text-blue-400' : item.modality === 'text' ? 'text-emerald-400' : 'text-purple-400'
+                            }>
+                              {modalityIcons[item.modality as keyof typeof modalityIcons]}
+                            </span>
+                            <span className="capitalize">{item.modality}</span>
+                            <span className="font-mono text-body-xs bg-surface px-1.5 py-0.5 rounded text-foreground">
+                              {item.score ? (item.score * 100).toFixed(1) + '%' : '—'}
+                            </span>
+                          </Badge>
+                        </div>
+                        {item.content && (
+                          <div className="text-body-sm text-muted mb-2 line-clamp-2">{item.content}</div>
+                        )}
+                        {item.file_path && (
+                          <div className="text-body-xs text-muted font-mono break-all pt-2 border-t border-border/50">
+                            File: {item.file_path}
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                </Card>
+              </motion.div>
+            )}
+
+            {!result && !loading && (
+              <Card className="text-center py-16">
+                <Shield className="w-12 h-12 text-muted/30 mx-auto mb-4" />
+                <h3 className="text-heading-sm font-semibold text-foreground mb-2">No results yet</h3>
+                <p className="text-muted">Enter a message and click "Encode" to generate a semantic media sequence</p>
+              </Card>
+            )}
+          </div>
         </div>
-      </main>
-    </>
+      </div>
+    </PageWrapper>
   );
 }

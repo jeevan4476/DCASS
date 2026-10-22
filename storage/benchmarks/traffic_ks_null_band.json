@@ -1,0 +1,12 @@
+{
+  "schema": "traffic-ks-null-band-v1",
+  "detector": "storage/models/traffic_detector_eval.pt",
+  "reference": "the burst-level synthetic human reference",
+  "note": "The per-trial KS distances a 50-item burst drawn from the reference itself produces. A sampler that matches the reference lands inside this band; a burst that is far from it does not.",
+  "burst_from_pool": {
+    "mean": 0.12390839604107202,
+    "p95": 0.20787031545390525,
+    "max": 0.2719768691848612,
+    "n": 300
+  }
+}

@@ -1,5 +1,6 @@
 # Reed-Solomon Error Correction Code (RS-ECC) Module Specification
 
+> **As-run correction (2026-10-21).** The recorded C4 campaign does not support an unconditional 0% BER or 100% recovery claim. Recovery is 100% on clean channels and within the $t=4$ byte budget, 70% at 5% carrier substitution in the 20-trial arm, 61.2% at 5% in the 80-trial extension, and 0% exact recovery under $\ge 2\%$ carrier dropout in the current wire format. See `CLAIM_LEDGER.md` C4-FAR-04 and the C4 report.
 
 ## 1. Executive Summary & Overview
 
@@ -24,7 +25,7 @@ flowchart LR
         RCV --> SYN["Syndrome Evaluation\nS_i = R(alpha^i)"]
         SYN --> BM["Berlekamp-Massey\nError Locator Lambda(x)"]
         BM --> CHIEN["Chien Search & Forney\nError Locations & Values"]
-        CHIEN --> DEC["Corrected Message M(x)\n(0.0% Bit Error Rate)"]
+        CHIEN --> DEC["Corrected Message M(x)\n(CRC-verified within t=4)"]
     end
 ```
 
@@ -37,8 +38,9 @@ flowchart LR
 | **Default Parity Bytes ($R$)** | 8 bytes ($2t = 8$) | Appends 8 bytes per message block |
 | **Error Correction Capacity ($t$)** | $t = \lfloor R / 2 \rfloor = 4$ byte symbols | Corrects up to 4 completely mismatched media carriers |
 | **Erasure Capacity ($e + 2v \le 2t$)** | Up to 8 known erasures ($v = 8$) | Handles dropped carriers during network transmission |
-| **Baseline Vector Noise BER** | 15.0% - 30.0% (without ECC) | 70.0% - 85.0% payload recovery bottleneck |
-| **DCASS Final System BER** | **0.0% Bit Error Rate** | **100.0% Exact Message Reconstruction** |
+| **Baseline Vector Noise BER** | 15.0% - 30.0% (historical simulation) | 70.0% - 85.0% payload recovery bottleneck in that simulation |
+| **Recorded Clean-Channel BER** | **0.000%** (0 errors) | 100% exact reconstruction on zero-error and within-budget channels |
+| **Recorded Dropout Recovery** | **0% exact at $\ge 2\%$ carrier loss** | Unrecoverable in the current wire format; no positional markers |
 | **Codec Latency** | $< 120\ \mu\text{s}$ per 255-byte block | Negligible computational overhead on CPU |
 
 ---
@@ -80,7 +82,7 @@ Without algebraic error correction, these factors produce a raw symbol error rat
 
 ### 3.2 Transition to Exact Algebraic Determinism
 
-By placing an algebraic block code over $GF(2^8)$ beneath the Voronoi partitioning layer, DCASS decouples carrier selection from hard error failure. Even if a vector search returns an adjacent cluster centroid, the error manifests as an isolated byte substitution. The algebraic decoder detects this substitution and removes it, achieving a verified 0.0% Bit Error Rate.
+By placing an algebraic block code over $GF(2^8)$ beneath the Voronoi partitioning layer, DCASS decouples carrier selection from hard error failure within the correction budget. Even if a vector search returns an adjacent cluster centroid, the error manifests as an isolated byte substitution. The algebraic decoder detects this substitution and removes it while the damaged-byte count stays at or below $t=4$. The recorded clean-channel and within-budget campaign reaches 0.0% BER; the result is not unconditional, because 5% substitution already drops exact recovery to 61.2–70% and carrier dropout is unrecoverable in the current wire format.
 
 ---
 
@@ -410,10 +412,10 @@ def test_rs_ecc_basic_encoding_decoding():
 
 ### 7.2 Performance and Accuracy Comparison
 
-| Metric | Without RS-ECC (Direct Vector $k$-NN) | With RS-ECC ($R=8, t=4$) | With RS-ECC ($R=16, t=8$) |
+| Metric | Without RS-ECC (historical simulation) | With RS-ECC ($R=8, t=4$, recorded) | With RS-ECC ($R=16, t=8$, theory) |
 | :--- | :--- | :--- | :--- |
-| **Bit Error Rate (BER)** | 18.4% (measured mean) | **0.000% (0 errors)** | **0.000% (0 errors)** |
-| **Message Recovery Rate** | 74.2% | **100.0%** | **100.0%** |
+| **Bit Error Rate (BER)** | 18.4% (historical simulation mean) | **0.000% within budget; 0% exact recovery under dropout** | 0% within budget (not separately recorded) |
+| **Message Recovery Rate** | 74.2% (historical simulation) | **100% within budget; 0% under $\ge2\%$ dropout** | 100% within budget (not separately recorded) |
 | **Max Noise Tolerance** | 0 symbol errors | 4 byte substitutions | 8 byte substitutions |
 | **Payload Expansion Rate** | 0% (No overhead) | +8 bytes / message block | +16 bytes / message block |
 | **Encoding Speed (CPU)** | N/A | 14,200 msg/sec | 11,800 msg/sec |

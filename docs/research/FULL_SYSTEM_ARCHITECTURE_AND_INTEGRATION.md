@@ -27,7 +27,7 @@ flowchart TD
         STREAM --> RECV["1. Capture Public Media Stream"]
         RECV --> REV_FAISS["2. FAISS Reverse Lookup\n(Extracts Vector IDs & Symbols)"]
         REV_FAISS --> SOFT_DEC["3. Soft LLR Viterbi + Hard RS Decoder\n(Detects & Corrects Vector & Channel Noise)"]
-        SOFT_DEC --> OUT["100.0% Exact Secret Message\n(0% Bit Error Rate)"]
+        SOFT_DEC --> OUT["Exact Secret Message\n(clean channel, within RS budget)"]
     end
 
     subgraph UI_System["System Showcase & Telemetry Dashboard"]
@@ -49,7 +49,7 @@ Our master integration explicitly incorporates the **4 Advanced Mechanisms** fro
 ### 2. Dual-Layer Soft/Hard Error Correction [CAS/SYSU Model]
 - **Integration**: Combines an **Outer RS-ECC $GF(2^8)$ algebraic encoder** (Berlekamp-Massey) with an **Inner Soft-Decision Viterbi Decoder** utilizing Log-Likelihood Ratios (LLRs):
   $$LLR(m) = \log \left( \frac{P(v_{\text{observed}} \mid m = 1)}{P(v_{\text{observed}} \mid m = 0)} \right)$$
-- **Operation**: Provides robust 0% BER recovery even under lossy JPEG re-compression (WhatsApp/Twitter) and network channel noise.
+- **Operation**: Recovers exactly on clean channels and within the $t=4$ byte budget. Lossy JPEG recompression can exceed that budget, and carrier dropout is unrecoverable in the current wire format; the earlier claim of robust 0% BER under lossy recompression is withdrawn.
 
 ### 3. Stegananalytic Resistance Suite (SRNet / Zhu-Net Benchmark)
 - **Integration**: Evaluates generated carrier sequences directly against SOTA spatial residual steganalysts (**SRNet**, **Zhu-Net**).
@@ -94,8 +94,8 @@ The **RL Adaptive Scheduler (Alice's Brain)** acts as an autonomous agent operat
 
 | Subsystem | Name & Function | Technology Stack | Key Output |
 | :--- | :--- | :--- | :--- |
-| **Subsystem A** | **Multi-Modal Vector Index** | FAISS `IndexFlatIP` (512d) + CLIP + CLAP | 153,281 normalized 512d vectors across Images, Text, & Audio |
-| **Subsystem B** | **Dual RS-ECC $GF(2^8)$ Engine** | Python `reedsolo` / `src/engine/ecc.py` | Appends $R=2t$ parity bytes; guarantees 0% BER via Berlekamp-Massey |
+| **Subsystem A** | **Multi-Modal Vector Index** | FAISS `IndexFlatIP` (512d) + CLIP + CLAP | 245,279 normalized 512d vectors across Images, Text, & Audio |
+| **Subsystem B** | **Dual RS-ECC $GF(2^8)$ Engine** | Python `reedsolo` / `src/engine/ecc.py` | Appends $R=2t$ parity bytes; corrects up to $t=4$ damaged bytes, with 0% clean-channel BER |
 | **Subsystem C** | **Voronoi Codebook Partitioning** | Spherical K-Means (`src/corpus/cluster/`) | 256 deterministic Voronoi centroids mapping byte symbols $0..255$ |
 | **Subsystem D** | **GAN Traffic Mimicry Engine** | PyTorch WGAN-GP (`src/stealth/gan/`) | Generates human-like inter-arrival timing $\Delta t$ & burst distributions |
 | **Subsystem E** | **RL Adaptive Stealth Scheduler** | PyTorch PPO (`src/stealth/rl/`) | Dynamically selects modality, delay, & parity under network risk |

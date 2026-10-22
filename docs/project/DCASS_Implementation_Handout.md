@@ -1032,7 +1032,7 @@ The corpus is small enough (~30K images, ~40K texts, ~13K audio) that exact brut
 Without normalization, text-to-text queries always score 2-3× higher than text-to-image, so the encoder would always prefer text items. Z-score + sigmoid normalization makes scores comparable across modalities.
 
 ### Why No Binary Encoding?
-Traditional steganography maps bits → pixel modifications. DCASS maps **semantic meaning** → media selection. This means it can only encode messages whose concepts exist in the corpus, but it's completely undetectable by statistical analysis of the media files themselves.
+Traditional steganography maps bits → pixel modifications. DCASS maps **semantic meaning** → media selection. This means it can only encode messages whose concepts exist in the corpus. The carrier files are bit-identical to public corpus items, so an adversary inspecting the media files themselves gains no information from their content. That is a statement about the carrier, not about the whole system: the recorded Component 2 run measures a non-zero selection shift in the transmitted distribution, and the recorded Component 1 run measures carrier detection at ROC AUC 0.4973 to 0.4993. See `docs/benchmarking/CLAIM_LEDGER.md` rows `SEC-KL-06` and `C1-AUC-01`.
 
 ### Why GAN + RL for Stealth?
 - **GAN Generator** produces realistic *timing patterns* (delays, channel selection) that mimic human behavior

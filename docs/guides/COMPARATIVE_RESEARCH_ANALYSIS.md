@@ -14,7 +14,7 @@ The table below contrasts DCASS against state-of-the-art methodologies across co
 | :--- | :--- | :--- | :--- |
 | **Physical Signal Modification** | Alters raw pixel bits, DCT coefficients, or audio samples | Generates synthetic artificial media from latent vectors | **Zero Modification (0.0% byte/pixel alteration)** |
 | **Steganalytic Security ($D_{KL}$)** | High residual noise ($D_{KL} > 0.5$). Detected by SRNet with >95% AUC | Leaves AI synthesis artifacts (frequency spikes, checkerboards) | **Information-Theoretic Security ($D_{KL} = 0.0$)** |
-| **Payload Reconstruction Error** | Sensitive to lossy compression (JPEG, MP3) | High decoding error rate under latent noise (20–40% BER) | **0.0% Bit Error Rate (100% Exact Recovery)** via RS $GF(2^8)$ |
+| **Payload Reconstruction Error** | Sensitive to lossy compression (JPEG, MP3) | High decoding error rate under latent noise (20–40% BER) | **0.0% clean-channel BER within the RS correction budget; dropout unrecoverable** |
 | **Multi-Modal Support** | Single modality (Image-only or Audio-only) | Single modality (usually Text-to-Image only) | **Unified Multi-Modal Engine** (512d CLIP/CLAP space) |
 | **Payload Capacity ($R_{eff}$)** | High theoretical bit capacity, but low security | Extremely low capacity (< 2 bits per generated image) | **High Capacity (12.3 - 14.3 bits / carrier item)** |
 
@@ -36,25 +36,25 @@ flowchart TD
 
     subgraph Class3["3. DCASS Framework (Our Zero-Modification Method)"]
         A3["Secret Payload"] --> B3["RS-ECC GF(2^8) Code"] --> C3["FAISS 512d Hypersphere Lookup"]
-        C3 --> D3["Untouched Public Media Sequence\n(D_KL = 0.0 | UNDETECTABLE!)"]
+        C3 --> D3["Untouched Public Media Sequence\n(carrier D_KL = 0.0 | no content residual)"]
     end
 ```
 
-### 2.1 Elimination of Steganalytic Residual Signatures ($D_{KL} = 0.0$)
-- **Other Labs (Spatial & Frequency Modification)**: Laboratories relying on spatial adaptive steganography (e.g., HUGO, WOW, S-UNIWARD) embed secret bits into complex image textures. However, deep convolutional steganalysts like **SRNet** and **Ye-Net** extract high-order spatial noise residuals, easily detecting modified cover images with **95% to 99% accuracy**.
-- **Generative AI Labs**: Labs utilizing GANs or Stable Diffusion to synthesize steganographic images introduce latent distribution artifacts (e.g., spectral frequency spikes, unnatural textures) that deepfake detectors flag immediately.
-- **DCASS Solution**: DCASS transmits **100% unmodified, real public media items**. Because no pixels, DCT coefficients, or audio PCM samples are altered, the relative entropy (Kullback-Leibler Divergence) between the cover distribution $P_{cover}$ and transmitted stego stream $P_{stego}$ is strictly:
+### 2.1 Removal of Content-Residual Signatures (Scoped)
+- **Other Labs (Spatial & Frequency Modification)**: Laboratories relying on spatial adaptive steganography (e.g., HUGO, WOW, S-UNIWARD) embed secret bits into complex image textures. Deep convolutional steganalysts like **SRNet** and **Ye-Net** extract high-order spatial noise residuals and can detect many modified covers with high accuracy.
+- **Generative AI Labs**: Labs utilizing GANs or Stable Diffusion to synthesize steganographic images can introduce latent distribution artifacts (e.g., spectral spikes, unnatural textures) that deepfake detectors may flag.
+- **DCASS Solution**: DCASS transmits **unmodified public media items**. Conditional on the selected item, the transmitted bytes equal the cover bytes, so the **carrier-content** KL divergence is zero:
 
-$$D_{KL}(P_{cover} \parallel P_{stego}) = 0.0 \quad \text{bits}$$
+$$D_{KL}\big(P_{cover}(X \mid \text{selected}) \parallel P_{stego}(X \mid \text{selected})\big) = 0.0 \quad \text{bits}$$
 
-Under Cachin’s information-theoretic security model, $D_{KL} = 0.0$ guarantees **perfect secrecy**, making DCASS immune to all steganalysis neural networks.
+This removes the content-residual signal. It does **not** guarantee perfect secrecy or immunity to all steganalysis: the selection sequence and timing remain separate surfaces. The recorded C2 result includes small image/text selection shifts, and the recorded C3 warden result is negative/limited.
 
 ---
 
-### 2.2 Solving the Decoding Accuracy Plateau (0% BER via RS-ECC over $GF(2^8)$)
+### 2.2 Codec Recovery Within the Correction Budget
 - **Other Labs (Nearest-Neighbor Retrieval Steganography)**: Early semantic steganography prototypes suffered from a **70%–85% decoding accuracy bottleneck** caused by continuous floating-point noise and vector quantization drift.
-- **DCASS Solution**: We integrate Reed-Solomon Error Correcting Codes operating over Galois Field $GF(2^8)$. By appending $R = 2t$ parity bytes prior to vector search, the Berlekamp-Massey decoding algorithm detects and corrects up to $t$ arbitrary vector mismatch errors at the receiver.
-- **Result**: DCASS achieves **100.0% exact secret payload recovery (0% Bit Error Rate)**.
+- **DCASS Solution**: We integrate Reed-Solomon Error Correcting Codes over $GF(2^8)$. With $R = 2t$ parity bytes, Berlekamp-Massey detects and corrects up to $t$ damaged bytes per block.
+- **Result**: DCASS records **0% BER on clean channels and within the $t=4$ budget**. This is not unconditional: at 5% carrier substitution, exact recovery falls to 61.2–70%; carrier dropout is unrecoverable in the current wire format.
 
 ---
 
