@@ -543,14 +543,21 @@ class PPOAgent:
         return self.episode_rewards
 
     def save(self, path: Path | str):
-        """Save agent checkpoint."""
+        """Save agent checkpoint.
+
+        Convention: the pickle holds only tensors, python primitives and
+        the project's own config dataclass, so freshly saved checkpoints
+        load under the repository's strict (weights_only) loader. History
+        values are coerced out of numpy types; they are reporting state,
+        not model state.
+        """
         checkpoint = {
             "actor_critic_state": self.actor_critic.state_dict(),
             "optimizer_state": self.optimizer.state_dict(),
             "config": self.config,
-            "episode_rewards": self.episode_rewards,
-            "episode_lengths": self.episode_lengths,
-            "warden_scores": self.warden_scores
+            "episode_rewards": [float(r) for r in self.episode_rewards],
+            "episode_lengths": [int(n) for n in self.episode_lengths],
+            "warden_scores": [float(s) for s in self.warden_scores],
         }
         torch.save(checkpoint, str(path))
         print(f"Agent saved to {path}")
