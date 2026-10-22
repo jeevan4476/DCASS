@@ -1,12 +1,30 @@
 {
-  "schema": "traffic-ks-null-band-v1",
+  "schema": "traffic-ks-null-band-v2",
   "detector": "storage/models/traffic_detector_eval.pt",
-  "reference": "the burst-level synthetic human reference",
-  "note": "The per-trial KS distances a 50-item burst drawn from the reference itself produces. A sampler that matches the reference lands inside this band; a burst that is far from it does not.",
-  "burst_from_pool": {
-    "mean": 0.12390839604107202,
-    "p95": 0.20787031545390525,
-    "max": 0.2719768691848612,
-    "n": 300
+  "note": "Per-reference null bands. The burst null is the KS distance between a 50-item burst drawn from that reference's own pool and the pool itself; the corpus session null is the KS distance between a whole held-out human session and the corpus pool. A sampler that matches a reference lands inside that reference's burst band; a burst that is far from it does not.",
+  "references": {
+    "synthetic_surrogate": {
+      "burst_from_pool": {
+        "mean": 0.11665533333333333,
+        "p95": 0.19122,
+        "max": 0.288,
+        "n": 300
+      }
+    },
+    "corpus": {
+      "burst_from_pool": {
+        "mean": 0.12390839604107202,
+        "p95": 0.20787031545390525,
+        "max": 0.2719768691848612,
+        "n": 300
+      },
+      "session_null": {
+        "mean": 0.28092384669017073,
+        "p95": 0.5287997945461417,
+        "max": 0.7002158533907802,
+        "n": 1800
+      },
+      "session_source": "checkpoint.holdout_human_indices over load_human_sessions() (n=1800)"
+    }
   }
 }
