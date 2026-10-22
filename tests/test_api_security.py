@@ -63,6 +63,38 @@ class TestApiAuth:
             os.environ.pop("DCASS_API_TOKEN", None)
             assert client.get("/api/auth/me").status_code == 401
             assert client.get("/api/wire/packets").status_code == 401
+            assert client.get("/api/users").status_code == 401
+
+    def test_production_refuses_to_serve_open_when_api_token_unset(self, client):
+        """The token-optional skip must fail closed, never silently open."""
+        with patch.dict(
+            os.environ,
+            {"DCASS_ENV": "production", "DCASS_JWT_SECRET": "test-jwt-secret"},
+            clear=False,
+        ):
+            os.environ.pop("DCASS_API_TOKEN", None)
+            # Routes guarded by require_api_token must refuse, with a 503
+            # that names the missing configuration, rather than serve.
+            res = client.post("/api/encode", json={"message": "x"})
+            assert res.status_code == 503
+            assert "DCASS_API_TOKEN" in res.json()["detail"]
+
+    def test_valid_token_for_unknown_user_is_rejected_not_fallback(self, client):
+        """A structurally valid token for a missing user must never become alice."""
+        import time as _time
+        from jose import jwt as _jwt
+
+        from src.api import auth as _auth
+
+        claims = {
+            "sub": "424242",  # no such user
+            "exp": int(_time.time()) + 600,
+        }
+        token = _jwt.encode(claims, _auth._jwt_secret(), algorithm="HS256")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        assert client.get("/api/auth/me", headers=headers).status_code == 401
+        assert client.get("/api/users", headers=headers).status_code == 401
 
 
 class TestTransmitPathSanitization:

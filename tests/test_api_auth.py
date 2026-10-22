@@ -163,18 +163,19 @@ class TestGetCurrentUser:
             auth.get_current_user(_bearer(token))
         assert exc.value.status_code == 401
 
-    def test_missing_user_after_valid_decode_falls_through(self, auth_db):
-        # A decodable token naming a user that is not in the database does not
-        # raise: control drops to the normal fall-through, so in dev mode the
-        # request continues as the dev default user. Pinned semantics.
+    def test_missing_user_after_valid_decode_is_rejected(self, auth_db):
+        # A decodable token naming a user that is not in the database is a
+        # rejection: falling through would let a stale-but-valid token
+        # impersonate the dev default user. Previously pinned as fall-through
+        # to alice; changed when the auth path was made fail-closed.
         carol = auth.create_user("carol", "pw-carol-12")
         token = auth.create_access_token(9999, "ghost")
         auth.seed_demo_users()
 
-        user = auth.get_current_user(_bearer(token))
-
-        assert user.username == "alice" and user.id != 9999
-        assert user.id != carol.id  # 9999 never resolves
+        with pytest.raises(HTTPException) as exc:
+            auth.get_current_user(_bearer(token))
+        assert exc.value.status_code == 401
+        assert carol.username == "carol"  # 9999 never resolves to anyone
 
     def test_unknown_scheme_or_empty_credentials_ignored(self, auth_db):
         # A non-Bearer scheme or an empty credential is treated as no token
@@ -281,10 +282,16 @@ class TestAuthEndpoints:
         ).json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
 
-        everyone = client.get("/api/users")
+        everyone = client.get("/api/users", headers=headers)
         assert [u["username"] for u in everyone.json()["users"]] == ["carol", "dave"]
 
         excluded = client.get(
             "/api/users", params={"exclude_current": "true"}, headers=headers
         )
         assert [u["username"] for u in excluded.json()["users"]] == ["dave"]
+
+        # Unauthenticated calls succeed through the dev fallback identity and
+        # may materialize it in the DB (test_user), so assert a subset.
+        everyone_dev = client.get("/api/users")
+        assert everyone_dev.status_code == 200
+        assert {"carol", "dave"} <= {u["username"] for u in everyone_dev.json()["users"]}

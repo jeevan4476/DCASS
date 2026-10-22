@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from src.corpus.index.unified_index import resolve_indices_base_path
 from src.api import auth as _auth
-from src.api.auth import AuthenticatedUser, get_current_user, get_optional_current_user
+from src.api.auth import AuthenticatedUser, get_current_user
 
 
 # ---------------------------------------------------------------------------
@@ -69,18 +69,28 @@ def require_api_token(
     """
     Gate sensitive routes when DCASS_API_TOKEN is configured.
 
-    When the env var is unset, auth is skipped (local/dev). Production
-    deployments must set DCASS_API_TOKEN.
+    When the env var is unset in development, auth is skipped (local/dev).
+    Under DCASS_ENV=production an unset DCASS_API_TOKEN is a configuration
+    error, not a decision: the request fails closed with 503, because the
+    alternative is serving sensitive routes to anonymous callers silently.
     """
     expected = os.environ.get("DCASS_API_TOKEN")
-    if not expected:
+    if expected:
+        if (
+            credentials is None
+            or credentials.scheme.lower() != "bearer"
+            or credentials.credentials != expected
+        ):
+            raise HTTPException(status_code=401, detail="Unauthorized")
         return
-    if (
-        credentials is None
-        or credentials.scheme.lower() != "bearer"
-        or credentials.credentials != expected
-    ):
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    if os.environ.get("DCASS_ENV", "development").lower() == "production":
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Authentication is not configured: set DCASS_API_TOKEN (or "
+                "stop claiming DCASS_ENV=production). Refusing to serve open."
+            ),
+        )
 
 
 def _context_secret_from_env() -> Optional[bytes]:
@@ -457,10 +467,14 @@ def auth_me(current_user: AuthenticatedUser = Depends(get_current_user)):
 @app.get("/api/users", response_model=UsersListResponse)
 def list_users(
     exclude_current: bool = False,
-    current_user: Optional[AuthenticatedUser] = Depends(get_optional_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """List users. When exclude_current is True and user is authenticated, excludes current user."""
-    if exclude_current and current_user is not None:
+    """List users (authentication required).
+
+    Usernames are account identifiers; an unauthenticated caller must not
+    be able to enumerate the membership of the deployment, in either env.
+    """
+    if exclude_current:
         users = _auth.list_users_excluding(current_user.id)
     else:
         users = _auth.list_all_users()

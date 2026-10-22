@@ -232,17 +232,24 @@ class AuthenticatedUser:
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
 ) -> AuthenticatedUser:
-    # 1. If a Bearer token is provided, always decode and validate it first
+    # 1. If a Bearer token is provided, decode and validate it first.
     if credentials is not None and credentials.scheme.lower() == "bearer" and credentials.credentials:
         try:
             payload = decode_access_token(credentials.credentials)
-            user_id = int(payload["sub"])
-            user = get_user_by_id(user_id)
-            if user is not None:
-                return AuthenticatedUser(id=user.id, username=user.username)
         except JWTError as e:
             # Explicit invalid token sent -> reject with 401
             raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
+        try:
+            user_id = int(payload["sub"])
+        except (KeyError, ValueError) as e:
+            raise HTTPException(status_code=401, detail=f"Invalid token payload: {e}")
+        user = get_user_by_id(user_id)
+        if user is not None:
+            return AuthenticatedUser(id=user.id, username=user.username)
+        # A structurally valid token naming a user the auth database does
+        # not have must be a rejection, never a fallback identity: the
+        # database may have been reset while old tokens are still out.
+        raise HTTPException(status_code=401, detail="Unknown user in token")
 
     # 2. In production (or when API-token auth is enabled), require valid auth
     is_production = os.environ.get("DCASS_ENV", "development").lower() == "production"
