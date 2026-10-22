@@ -1,0 +1,75 @@
+{
+  "component": "component_3b_warden_score_distributions",
+  "generated_utc": "2026-10-21T19:00:34.197958+00:00",
+  "command": "benchmark_3b_warden_score_distributions.py",
+  "argv": [
+    "/home/img1/projects/DCASS/scripts/analysis/benchmark_3b_warden_score_distributions.py"
+  ],
+  "git": {
+    "commit": "9b02563f956c5bbfb39201fea39965be1348b5b4",
+    "branch": "feature/gan-rl-pipeline",
+    "dirty": true,
+    "dirty_paths": [
+      "M storage/benchmarks/component_3_results.json",
+      " M storage/benchmarks/component_3_results_manifest.json",
+      " M storage/benchmarks/component_3b_warden_score_summary.json",
+      " M storage/benchmarks/generator_path_repair.json",
+      " M storage/benchmarks/plots/fig_3b_warden_scores.png",
+      " M storage/benchmarks/plots/fig_circadian_diurnal.png",
+      " M storage/benchmarks/plots/fig_interarrival_cdf.png",
+      " M storage/benchmarks/tables/table3_traffic_evasion.tex",
+      " M storage/benchmarks/tables/table3b_warden_score_quantiles.tex",
+      " M storage/models/gan_generator.pt",
+      "?? storage/benchmarks/critic_sensitivity_repaired_run.json"
+    ]
+  },
+  "python": {
+    "version": "3.12.8",
+    "implementation": "CPython"
+  },
+  "platform": "Linux-7.2.10-200.fc44.x86_64-x86_64-with-glibc2.43",
+  "packages": {
+    "torch": "2.14.1+cu126",
+    "numpy": "1.26.4",
+    "scipy": "1.17.1",
+    "sklearn": "1.9.1",
+    "faiss": "1.15.1",
+    "matplotlib": "3.11.2"
+  },
+  "seeds": {
+    "primary_flag_threshold": 0.018127655369997026,
+    "historical_flag_threshold": 0.5
+  },
+  "inputs": [
+    {
+      "path": "storage/benchmarks/component_3_results.json",
+      "bytes": 38228,
+      "sha256": "c2f0b86e68ee4f6429b4d8c15cdac7216b7a8b71158987790af6b84f45e64fa8"
+    },
+    {
+      "path": "storage/benchmarks/component_3_results_baseline.json",
+      "bytes": 6805,
+      "sha256": "63fa530fd5e11261fcb532b5e85584d3bf92e09faecbf7f8fc14732febf999bb"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "storage/benchmarks/component_3b_warden_score_summary.json",
+      "bytes": 3747,
+      "sha256": "d17dd7289590a1df1411e12e8bec9226553202c9d53441241bfddaa2e0e7d071"
+    },
+    {
+      "path": "storage/benchmarks/tables/table3b_warden_score_quantiles.tex",
+      "bytes": 1183,
+      "sha256": "948c7e537aeb6ea484c96d9eafdfd6bf745d1f27c9af91584211ee0660e53626"
+    },
+    {
+      "path": "storage/benchmarks/plots/fig_3b_warden_scores.png",
+      "bytes": 127986,
+      "sha256": "797e14e773e6b78392f68b6ac2541b5c937489e294416643e8bfaf2e3b86a2ec"
+    }
+  ],
+  "extra": {
+    "note": "Summarizes the stored per-trial composite warden scores from the primary Component 3 run and from the historical baseline run. The historical row was scored by the superseded WGAN-GP critic and by a scheduler that did not yet clip the RL delays, so it is on a different scale and is not a second operating point of the current pipeline. See docs/benchmarking/C3_WARDEN_DIAGNOSTIC.md."
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "generator_output": {
+    "note": "The generator's delays, mapped the way the scheduler maps them, against the human corpus it is trained against.",
+    "raw": {
+      "min": 0.499521,
+      "p50": 0.50129,
+      "max": 0.518535
+    },
+    "mapped_seconds": {
+      "min": 0.7813,
+      "p10": 2.7421,
+      "p50": 3.4348,
+      "p90": 5.2357,
+      "max": 29.3023,
+      "mean": 4.0152,
+      "std": 3.1692
+    },
+    "corpus_seconds": {
+      "min": 0.5,
+      "p10": 1.06,
+      "p50": 5.49,
+      "p90": 24.29,
+      "max": 60.0,
+      "mean": 9.8516,
+      "std": 11.9859
+    },
+    "fraction_at_the_ceiling": 0.0,
+    "fraction_at_the_floor": 0.0
+  },
+  "gradient_path": {
+    "note": "The gradient that reaches the generator's delay head through the canonical delay mapping. A zero gradient means the generator cannot be trained at all.",
+    "zero_gradient_pct": 0.0,
+    "gradient_median": 1500.0
+  },
+  "critic": {
+    "note": "The trained critic's gradient with respect to its input, the quantity the gradient penalty constrains, measured on the corpus the critic trained on, together with the gap between its score on real traffic and on the generator's own traffic. A collapsed critic has a gradient near zero and a score gap near zero.",
+    "bounded_critic": false,
+    "critic_score_bound": null,
+    "input_gradient_norm": 0.51993035,
+    "gradient_penalty": 2.304669,
+    "real_score": -4.8659,
+    "fake_score": -16.1805,
+    "score_gap": 11.3146,
+    "collapsed": false
+  }
+}

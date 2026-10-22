@@ -15,25 +15,27 @@ A human walker behaves very differently:
 
 ```
                   TRAFFIC DISPATCHING TIMING COMPARISONS
+                  (illustrative targets, not recorded measurements)
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ 1. Naive Automated Bot (Periodic / Deterministic Inter-Arrival Times)    │
 │    Timeline: |-- 2.0s --|-- 2.0s --|-- 2.0s --|-- 2.0s --|-- 2.0s --|    │
 │    Fourier Spectrum: Massive artificial delta spike at frequency f = 0.5Hz│
-│    Warden Classifier Verdict: 100% CONFIRMED PERIODIC REPEAT SCRIPT.      │
+│    Illustrative classifier response: periodic-repeat script.             │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ 2. Naive Uniform Random Schedulers (Uniform Jitter)                      │
 │    Timeline: |-- 1.8s --|-- 2.3s --|-- 1.9s --|-- 2.1s --|-- 1.7s --|    │
-│    Distribution: Flat rectangular density (Fails Kolmogorov-Smirnov Test)│
-│    Warden Classifier Verdict: 98.4% ANOMALOUS PSEUDO-RANDOM BOT.         │
+│    Distribution: Flat rectangular density (fails KS against human data)  │
+│    Illustrative classifier response: pseudo-random bot.                   │
 ├──────────────────────────────────────────────────────────────────────────┤
-│ 3. DCASS WGAN-GP Temporal Mimicry Generator                              │
+│ 3. DCASS WGAN-GP Temporal Mimicry Generator (design target)              │
 │    Timeline: |-- 0.6s -|-- 1.2s -|------ 14.8s (Pause) ------|-- 2.4s --|│
 │    Fourier Spectrum: 1/f Pink Noise power decay (Continuous Human Scale) │
-│    Warden Classifier Verdict: 50.0% RANDOM GUESS (Indistinguishable).    │
+│    Design target: ~50% random guess. The recorded checkpoint does not    │
+│    achieve this; see Section 5.                                          │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The DCASS WGAN-GP generator is the statistical modeling engine for transmission scheduling. Even though individual media items contain zero pixel or audio modifications, transmitting them at regular or naive random intervals would allow a network traffic classifier (referred to in the literature as the **Warden**) to distinguish automated streams from human activity. WGAN-GP ensures that the timing, burstiness, and channel selection match genuine human social media browsing behavior.
+The DCASS WGAN-GP generator is the statistical modeling engine for transmission scheduling. Even though individual media items contain zero pixel or audio modifications, transmitting them at regular or naive random intervals would allow a network traffic classifier (referred to in the literature as the **Warden**) to distinguish automated streams from human activity. The generator is intended to make timing, burstiness, and channel selection resemble human social-media browsing. The recorded checkpoint does not demonstrate that it succeeds; see Section 5 for the negative/limited result.
 
 ---
 
@@ -89,7 +91,16 @@ $$\hat{\mathbf{x}} = \epsilon \mathbf{x} + (1 - \epsilon) \tilde{\mathbf{x}}, \q
 
 $$L_{\text{GP}} = \lambda_{\text{GP}} \cdot \mathbb{E}_{\hat{\mathbf{x}} \sim \mathbb{P}_{\hat{\mathbf{x}}}} \left[ \left( \|\nabla_{\hat{\mathbf{x}}} D(\hat{\mathbf{x}})\|_2 - 1 \right)^2 \right]$$
 
-With gradient penalty weight $\lambda_{\text{GP}} = 10.0$.
+With gradient penalty weight $\lambda_{\text{GP}} = 100.0$. The
+classical WGAN-GP weight of 10 is the setting under which DCASS's critic
+collapsed: at 10 the penalty's maximum value is the same order as the
+Wasserstein term it restrains, so the critic could stop reading its
+input without paying more than doing its job. 100 is the smallest weight
+measured holding the critic sensitive in every epoch of a 30-epoch run
+against the real traffic corpus; a bound on the critic's score was
+measured collapsing the critic faster
+(`docs/benchmarking/C3_GENERATOR_ADVERSARY.md`,
+`storage/benchmarks/critic_sensitivity_repaired_run.json`).
 
 The complete objective for the Warden critic is:
 
@@ -166,9 +177,11 @@ Where $\odot$ represents element-wise Hadamard multiplication, and $\sigma$ is t
 ```
 
 ### 3.5 Strictly Positive Inter-Item Delay Output
-Inter-transmission delays must be strictly positive real values ($\Delta t > 0$). The delay prediction head maps the temporal feature representation through a Softplus activation with a base physical latency offset:
+Inter-transmission delays must be strictly positive real values ($\Delta t > 0$). The delay prediction head maps the temporal feature representation through a Softplus activation, and the Softplus output is then folded into the band of raw values the canonical delay mapping can turn into the deployment window:
 
-$$\Delta t_i = \ln\left(1 + \exp(W_d \mathbf{h}_i + b_d)\right) + \Delta t_{\min} \quad (\Delta t_{\min} = 0.5 \text{ seconds})$$
+$$r_i = r_{\min} + (r_{\max} - r_{\min}) \cdot \frac{\ln\left(1 + \exp(W_d \mathbf{h}_i + b_d)\right)}{1 + \ln\left(1 + \exp(W_d \mathbf{h}_i + b_d)\right)}$$
+
+with $r_{\min} = 0.49933$ and $r_{\max} = 0.519$, so that the mapping $\Delta t = (r - 0.5) \times 1500 + 1.5$ clipped to $[0.5, 30]$ seconds is never saturated. The band matters: a Softplus output placed directly into the mapping lands outside that 1.97 percent window, and the clip then zeroes the gradient that would bring it back, which is what left a fresh generator untrainable.
 
 ---
 
@@ -268,36 +281,21 @@ for epoch in range(num_epochs):
 
 ---
 
-## 5. Quantitative Empirical Benchmarks and Statistical Validation
+## 5. Quantitative Empirical Record and Limitations
 
-The trained WGAN-GP generator (`storage/models/gan_generator.pt`) was trained on **10,000 real-world human browsing sessions** over **17 GPU epochs** and evaluated against four statistical tests in [`scripts/stealth/benchmark_gan_timing.py`](../../scripts/stealth/benchmark_gan_timing.py):
+**As-run correction (2026-10-21).** An earlier version of this section claimed training on 10,000 real-world human browsing sessions over 17 GPU epochs, with KS 0.0214 ($p=0.428$), spectral PAPR 11.24 dB, and warden bot probability 0.4999. No recorded artifact in this repository supports those numbers. They are withdrawn. The repaired checkpoint `storage/models/gan_generator.pt` records its configuration: 30 epochs with `lambda_gp` 100, an anchored score offset (penalty 0.1), five critic steps per generator step, batch 64, and sequence length 60, trained on the repository's traffic corpus (2000 sessions split 1800 train / 200 held-out), with the critic's thirty-epoch record in `storage/benchmarks/critic_sensitivity_repaired_run.json`. The recorded timing benchmark is `scripts/analysis/benchmark_3_traffic_evasion.py`; the previously referenced `scripts/stealth/benchmark_gan_timing.py` does not exist.
 
-### Benchmark Summary Table
+### 5.1 What the recorded benchmark shows
 
-| Evaluation Metric | Target Human Baseline | DCASS WGAN-GP Result | Validation Verdict |
-| :--- | :---: | :---: | :---: |
-| **Warden Bot Probability ($P_{\text{bot}}$)** | 0.5000 (Random Guess) | **0.4999** | **Nash Equilibrium Achieved** |
-| **Two-Sample KS Test ($D_{\text{KS}}$)** | $D_{\text{KS}} < 0.05$ | **0.0214 ($p = 0.428$)** | **Pass (Identical Cumulative Distribution)** |
-| **Spectral PAPR (Periodic Clock Detector)** | $< 15.0 \text{ dB}$ | **11.24 dB (Real: 10.85 dB)** | **Pass (No Artificial Spikes, Pink Noise)** |
-| **Autocorrelation (ACF Lag-1)** | $0.215$ | **0.208** | **Pass (Natural Temporal Memory Decay)** |
-| **Inference Latency ($N=50$ items)** | $< 10.0 \text{ ms}$ | **1.84 ms on GPU** | **Real-Time Operational Ready** |
-| **Arbitrary Length Support ($N$)** | $N \in [1, 1000]$ | **Fully Supported ($N=1..1000$)** | **No Context Overflow** |
+| Metric | Recorded result | Interpretation |
+| :--- | :--- | :--- |
+| Warden anomaly | The shipped checkpoint is a constant **0.62493** across every scheduler and input (`storage/benchmarks/warden_diagnostic.json`) | The shipped checkpoint is a constant function; it does not discriminate. The benchmark now uses a separately trained detector instead |
+| Warden bot probability | The shipped checkpoint's critic was **0.0** on 50 real and 50 random sessions (`storage/benchmarks/warden_diagnostic.json`) | Not a Nash equilibrium. That critic was collapsed. The retrained critic discriminates; see `C3_GENERATOR_ADVERSARY.md` |
+| Two-sample KS to surrogate | **0.5595** (WGAN), **0.5553** (Hybrid), $p < 10^-4$ |
+| Interception rate | **100%** WGAN and Hybrid | A trained traffic detector separates the generated cadence from the repository's human traffic corpus, with the flag threshold calibrated on held-out human traffic at a measured 4.60% false-positive rate. The human side of that comparison is a synthetic corpus, so this is not a statement about real-world detectability |
+| Diurnal conditioning | 3.89 s at hour 14 vs 14.93 s at hour 3 under one mapping | A conditioning tilt in the dormancy direction, but the training data has no hour-conditioned structure to learn it from, so it is not a learned circadian adaptation |
+| Deployed delay mapping | `_schedule_gan`, `_schedule_hybrid` and the benchmark all apply the shared `canonical_delay_mapping`, `(raw - 0.5) * 1500 + 1.5` | The benchmark's GAN row is the deployed GAN path, driven with a pinned `time_of_day` |
 
-```
-                       WGAN-GP VALIDATION VISUALIZATION
-                       
-  Cumulative Distribution Function (CDF)             FFT Power Spectrum (Log Scale)
-  1.0 |        ... Real Human                       Power |  \
-      |       /                                           |   \   1/f Pink Noise Decay
-  0.8 |     ./   --- Generated WGAN-GP                    |    \  (Human Reading Dynamic)
-      |    ./                                             |     \
-  0.6 |   /                                               |      \
-      |  /                                                |       \_________________
-  0.4 | /     KS Statistic: D = 0.0214                    |       (Zero Artificial Clock
-      |/      p-value: 0.428 (Consistent)                 |        Spikes at any freq)
-  0.0 └──────────────────────────────                     └─────────────────────────
-      0.0   5.0   10.0  15.0  20.0 (sec)                  0.01   0.1    1.0   10.0 Hz
-```
+### 5.2 Conclusion
 
-### 5.1 Analysis of the Nash Equilibrium ($P_{\text{bot}} = 0.4999$)
-At the conclusion of adversarial training, the Warden critic achieves a classification probability of **0.4999** on generated traffic sequences. This represents a perfect game-theoretic Nash equilibrium: the Warden cannot distinguish synthetic DCASS schedules from genuine human traffic any better than tossing a fair coin ($50\%$).
+The current WGAN-GP checkpoint does not support a claim of human-like timing or warden evasion, and the retrained generator does not change that. The generator is now trained against a critic that discriminates, and the measured delays span the corpus's range, but the traffic is still flagged at 100 percent. Treat the traffic-timing component as a negative/limited result until a real human/background baseline is used. The claim ledger entries `C3-CAP-01`, `C3-WARDEN-02`, `C3-MAP-04`, `C3-GEN-07` and `C3-GEN-08` carry the scope and caveats.

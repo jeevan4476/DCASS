@@ -1,0 +1,55 @@
+{
+  "schema": "traffic-detector-generalization-v1",
+  "detector": "storage/models/traffic_detector.pt",
+  "note": "The detector's score on six traffic populations. The independent human generator is a Weibull-mixture model the detector has never seen in any form, so it measures generalization rather than memorization of the training corpus. The human corpus is the repository's own traffic data, whose time-of-day distribution is uniform and whose delay values are bounded, so it is a synthetic surrogate rather than recorded human browsing.",
+  "populations": {
+    "corpus_human_heldout": {
+      "n": 300,
+      "mean": 0.019306485769338907,
+      "p05": 0.004843634949065745,
+      "p50": 0.0052984405774623156,
+      "p95": 0.056346913613379006,
+      "max": 0.5753737688064575
+    },
+    "benchmark_synthetic_surrogate": {
+      "n": 300,
+      "mean": 0.004867624468170106,
+      "p05": 0.004692941950634122,
+      "p50": 0.00481022521853447,
+      "p95": 0.00521353289950639,
+      "max": 0.008040688000619411
+    },
+    "independent_human_generator": {
+      "n": 300,
+      "mean": 0.004879674706608057,
+      "p05": 0.004322103271260857,
+      "p50": 0.004354216158390045,
+      "p95": 0.006324090925045313,
+      "max": 0.03773505985736847
+    },
+    "synthetic_bot": {
+      "n": 300,
+      "mean": 0.9343595423549413,
+      "p05": 0.5749198347330093,
+      "p50": 0.9999566078186035,
+      "p95": 0.9999762773513794,
+      "max": 0.999976396560669
+    },
+    "dcass_temporal_wgan": {
+      "n": 20,
+      "mean": 0.5085530236363411,
+      "p05": 0.29190071672201157,
+      "p50": 0.503900557756424,
+      "p95": 0.8332838505506517,
+      "max": 0.9996442794799805
+    },
+    "dcass_hybrid_engine": {
+      "n": 20,
+      "mean": 0.48086177855730056,
+      "p05": 0.3584134891629219,
+      "p50": 0.47898127138614655,
+      "p95": 0.6165363222360611,
+      "max": 0.7418065667152405
+    }
+  }
+}

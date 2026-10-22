@@ -25,9 +25,23 @@ addopts = "-q"
 markers = [
     "integration: mark test as integration test (requires indices)",
     "slow: mark test as slow running",
+    "needs_models: mark test as requiring trained model checkpoints under storage/models",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
+]
+
+# ---------------------------------------------------------------------------
+# Coverage (drives .venv coverage run -m pytest; pytest-cov is not installed)
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = [
+    "if __name__ == .__main__.:",
 ]
 
 # ---------------------------------------------------------------------------
