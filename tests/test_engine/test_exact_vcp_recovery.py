@@ -8,6 +8,8 @@ wrong payload bytes) and asserts the decoder recovers the original message
 exactly. Uses a fake index/codebook so it runs without artifacts.
 """
 
+import hashlib
+
 import numpy as np
 import pytest
 
@@ -62,16 +64,6 @@ class FakeIndex(UnifiedSemanticIndex):
                         "text": f"carrier {symbol:02x}.{j}",
                     }
                 )
-        assignments = []
-        for v in vectors:
-            np.dot(np.array(vectors), np.array(v))
-            assignments.append(
-                int(
-                    np.argmax(
-                        np.stack([np.dot(v, centroids[c]) for c in range(NUM_CLUSTERS)])
-                    )
-                )
-            )
         self.codebook = codebook
         self._vcp_codebook = codebook  # consumed by VCPPayloadMapper
         self._vectors = np.array(vectors, dtype=np.float32)
@@ -129,7 +121,7 @@ class FakeIndex(UnifiedSemanticIndex):
 
     def _encode_query(self, text, modality):
         # Deterministic pseudo-query embedding in the same space.
-        seed = abs(hash(text)) % (2**32)
+        seed = int.from_bytes(hashlib.sha256(text.encode("utf-8")).digest()[:4], "big")
         rng = np.random.default_rng(seed)
         v = rng.standard_normal(DIM).astype(np.float32)
         return (v / np.linalg.norm(v))[None, :]

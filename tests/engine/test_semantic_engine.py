@@ -31,6 +31,48 @@ def test_dssc_requires_session_key():
         engine.encode("hello", mode="dssc", session_key=None)
 
 
+def test_dssc_encode_rejects_exact_vcp_only_options():
+    """Dynamic context and cover_story must not be silently ignored in DSSC mode."""
+    from src.engine.semantic_engine import SemanticEngine
+    engine = SemanticEngine()
+    engine._loaded = True  # Mock load state
+    with pytest.raises(ValueError, match="exact_vcp"):
+        engine.encode(
+            "hello",
+            mode="dssc",
+            session_key=b"0123456789abcdef",
+            context_manager=object(),
+        )
+    with pytest.raises(ValueError, match="exact_vcp"):
+        engine.encode(
+            "hello",
+            mode="dssc",
+            session_key=b"0123456789abcdef",
+            cover_story="decoy topic about cooking",
+        )
+
+
+def test_dssc_decode_rejects_dynamic_context_options():
+    """Context flags must not be silently ignored when decoding DSSC traffic."""
+    from src.engine.semantic_engine import SemanticEngine
+    engine = SemanticEngine()
+    engine._loaded = True  # Mock load state
+    with pytest.raises(ValueError, match="exact_vcp"):
+        engine.decode(
+            ["media_1"],
+            mode="dssc",
+            session_key=b"0123456789abcdef",
+            context_epoch_hint="123|3600|time",
+        )
+    with pytest.raises(ValueError, match="exact_vcp"):
+        engine.decode(
+            ["media_1"],
+            mode="dssc",
+            session_key=b"0123456789abcdef",
+            context_manager=object(),
+        )
+
+
 def test_unified_encoding_result_fields():
     """UnifiedEncodingResult must expose mode, media_ids, carrier_count."""
     from src.engine.semantic_engine import UnifiedEncodingResult
