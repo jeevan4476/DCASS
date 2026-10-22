@@ -206,7 +206,8 @@ def _get_session_state(session_id: Optional[str]) -> dict:
             _transmission_sessions[session_id] = {
                 "active": False,
                 "stop_requested": False,
-                "progress": {"current": 0, "total": 0, "status": "idle"}
+                "progress": {"current": 0, "total": 0, "status": "idle"},
+                "owner": None,
             }
         return _transmission_sessions[session_id]
 
@@ -217,7 +218,7 @@ def _cleanup_session(session_id: str) -> None:
         _transmission_sessions.pop(session_id, None)
 
 
-def _claim_transmission(session_id: str) -> bool:
+def _claim_transmission(session_id: str, owner: Optional[int] = None) -> bool:
     """Atomically claim a transmission slot for the given session.
 
     Sessions are independent: each writes packets under its own
@@ -230,6 +231,9 @@ def _claim_transmission(session_id: str) -> bool:
     burst of clients cannot spawn an unbounded number of scheduler threads
     writing into one directory.
 
+    `owner` stamps the authenticated user so /api/transmit/stop can scope
+    its effects to the caller's own sessions.
+
     Returns True if claimed, False if the concurrency bound is reached.
     """
     with _transmission_sessions_lock:
@@ -241,9 +245,11 @@ def _claim_transmission(session_id: str) -> bool:
             _transmission_sessions[session_id] = {
                 "active": False,
                 "stop_requested": False,
-                "progress": {"current": 0, "total": 0, "status": "idle"}
+                "progress": {"current": 0, "total": 0, "status": "idle"},
+                "owner": owner,
             }
         _transmission_sessions[session_id]["active"] = True
+        _transmission_sessions[session_id]["owner"] = owner
         return True
 
 
@@ -903,14 +909,21 @@ def get_wire_packets(current_user: AuthenticatedUser = Depends(get_current_user)
 
 
 @app.delete("/api/wire/packets")
-def clear_wire_packets(_: None = Depends(require_api_token)):
-    """Clear all packets from shared_channel directory."""
-    shared_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
-    shared_dir.mkdir(parents=True, exist_ok=True)
+def clear_wire_packets(current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Clear the authenticated user's own inbox.
+
+    Deletion is scoped to `storage/shared_channel/<current_user.id>/`;
+    other users' packets are never touched.
+    """
+    base_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
+    shared_dir = base_dir / str(current_user.id)
+
+    if not base_dir.exists() or not shared_dir.exists():
+        return {"success": True, "deleted": 0}
 
     deleted_count = 0
     try:
-        for f in shared_dir.rglob("*.json"):
+        for f in shared_dir.glob("*.json"):
             # Keep sender-side control files (e.g. _manifest.json), consistent
             # with the GET endpoint which skips them.
             if f.name.startswith("_"):
@@ -1095,7 +1108,7 @@ def transmit_sequence(
 
     # Atomically claim a transmission slot for this session. Several
     # sessions may run at once, up to the concurrency bound.
-    if not _claim_transmission(session_id):
+    if not _claim_transmission(session_id, current_user.id):
         raise HTTPException(
             status_code=429,
             detail=(
@@ -1204,19 +1217,29 @@ def get_transmission_status():
 
 
 @app.post("/api/transmit/stop")
-def stop_transmission(request: Request, _: None = Depends(require_api_token)):
-    """Stop every active transmission (best effort).
+def stop_transmission(
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Stop the caller's own active transmissions (best effort).
 
-    `session_id` in the query string stops one session; without it, all
-    active sessions are stopped.
+    `session_id` in the query string stops one session — the caller's
+    only; another user's session id is indistinguishable from an unknown
+    one (404). Without `session_id`, the caller's active sessions stop.
     """
     session_id = request.query_params.get("session_id")
     with _transmission_sessions_lock:
-        targets = (
-            [session_id]
-            if session_id
-            else [sid for sid, s in _transmission_sessions.items() if s["active"]]
-        )
+        if session_id:
+            state = _transmission_sessions.get(session_id)
+            if state is None or state.get("owner") != current_user.id:
+                raise HTTPException(status_code=404, detail="unknown session")
+            targets = [session_id]
+        else:
+            targets = [
+                sid
+                for sid, s in _transmission_sessions.items()
+                if s["active"] and s.get("owner") == current_user.id
+            ]
         for sid in targets:
             state = _transmission_sessions.get(sid)
             if state is not None and state["active"]:
