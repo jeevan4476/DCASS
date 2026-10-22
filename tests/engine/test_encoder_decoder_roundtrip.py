@@ -2,6 +2,8 @@
 """Integration smoke test — no index loaded; checks wiring only."""
 from unittest.mock import MagicMock
 
+import pytest
+
 
 def make_mock_index():
     index = MagicMock()
@@ -19,13 +21,11 @@ def make_mock_index():
 def test_encoder_no_legacy_param():
     """encode() must not accept payload_mode='semantic_legacy'."""
     from src.engine.encoder import SemanticEncoder
+
     enc = SemanticEncoder(index=make_mock_index())
     enc._loaded = True
-    import inspect
-    sig = inspect.signature(enc.encode)
-    assert "payload_mode" not in sig.parameters or \
-           sig.parameters.get("payload_mode", None) is None or \
-           sig.parameters["payload_mode"].default == "exact_vcp"
+    with pytest.raises((TypeError, ValueError)):
+        enc.encode("alpha bravo", payload_mode="semantic_legacy")
 
 
 def test_decoder_no_raw_codeword_param():

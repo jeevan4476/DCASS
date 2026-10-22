@@ -403,7 +403,9 @@ class SemanticEncoder:
                 original=f"byte[{idx}]=0x{symbol:02x}",
                 index=idx,
             )
-            encoded_chunks.append(self._encoded_from_payload(byte_chunk, carrier))
+            encoded_chunks.append(
+                self._encoded_from_payload(byte_chunk, carrier, payload_byte=symbol)
+            )
             used_ids.add(carrier.media.id)
             modality_counts[carrier.media.modality] = (
                 modality_counts.get(carrier.media.modality, 0) + 1
@@ -437,12 +439,20 @@ class SemanticEncoder:
         self,
         chunk: SemanticChunk,
         carrier: PayloadCarrier,
+        payload_byte: Optional[int] = None,
     ) -> EncodedChunk:
+        """Record the message byte and the transmitted cluster separately.
+
+        Under dynamic context keying the carrier maps to the permuted
+        cluster while the message byte is the pre-permutation symbol; the
+        decoder reports both under these semantics, so the encoder must use
+        the same convention. Without keying the two are identical.
+        """
         return EncodedChunk(
             chunk=chunk,
             media=carrier.media,
             alternatives=[],
-            payload_byte=carrier.symbol,
+            payload_byte=carrier.symbol if payload_byte is None else int(payload_byte),
             cluster_id=carrier.symbol,
         )
 

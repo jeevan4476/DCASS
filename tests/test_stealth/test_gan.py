@@ -75,7 +75,10 @@ def test_warden_forward():
     assert (verdict.bot_probability >= 0.0).all() and (verdict.bot_probability <= 1.0).all()
 
 def test_wgan_gradient_penalty():
-    """Verify WGAN-GP gradient penalty computation on Warden."""
+    """
+    WGAN-GP must be finite and non-negative on a real Warden, scale LINEARLY
+    with lambda_gp, and backpropagate into the critic's parameters.
+    """
     batch_size = 4
     seq_len = 10
     num_channels = 3
@@ -86,20 +89,47 @@ def test_wgan_gradient_penalty():
         num_transformer_layers=1,
         feature_dim=8
     )
+    warden.eval()
 
+    torch.manual_seed(11)
     real_delays = torch.rand(batch_size, seq_len) * 4.0 + 1.0
     fake_delays = torch.rand(batch_size, seq_len) * 4.0 + 1.0
     real_channels = torch.randint(0, num_channels, (batch_size, seq_len))
     fake_channels = torch.randint(0, num_channels, (batch_size, seq_len))
 
-    gp = compute_gradient_penalty(
+    # Identical RNG state => identical interpolation alpha and deterministic
+    # eval-mode forward, so the only difference between the two penalty
+    # evaluations is lambda_gp (1.0 vs the default 10.0).
+    torch.manual_seed(5)
+    gp_unit = compute_gradient_penalty(
         warden,
         real_delays,
         fake_delays,
         real_channels,
-        fake_channels
+        fake_channels,
+        lambda_gp=1.0,
+    )
+    torch.manual_seed(5)
+    gp_ten = compute_gradient_penalty(
+        warden,
+        real_delays,
+        fake_delays,
+        real_channels,
+        fake_channels,
     )
 
-    assert isinstance(gp, torch.Tensor)
-    assert gp.ndim == 0
-    assert gp.item() >= 0.0
+    assert isinstance(gp_ten, torch.Tensor)
+    assert gp_ten.ndim == 0
+    assert torch.isfinite(gp_ten)
+    assert gp_ten.item() >= 0.0
+
+    expected = 10.0 * gp_unit.item()
+    assert abs(gp_ten.item() - expected) <= 1e-5 * max(1.0, abs(expected)), (
+        "gradient penalty must scale linearly with lambda_gp: "
+        f"lambda=10 gave {gp_ten.item()}, lambda=1 gave {gp_unit.item()}"
+    )
+
+    gp_ten.backward()
+    grads = [p.grad for p in warden.parameters() if p.grad is not None]
+    assert grads, "gradient penalty must backpropagate into the Warden"
+    assert any(g.abs().sum().item() > 0 for g in grads)

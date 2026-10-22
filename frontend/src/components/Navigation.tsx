@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, User, LogOut, LayoutDashboard, Send, Mail, Settings, Terminal, Shield, BarChart2 } from 'lucide-react';
+import { Menu, X, User, LogOut, LayoutDashboard, Send, Mail, Settings, Terminal, Shield, BarChart2, FlaskConical } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 
 const navigationItems = [
@@ -14,6 +14,7 @@ const navigationItems = [
   { href: '/status', label: 'Panel', icon: BarChart2 },
   { href: '/encode', label: 'Encode', icon: Terminal },
   { href: '/decode', label: 'Decode', icon: Shield },
+  { href: '/showcase', label: 'Showcase', icon: FlaskConical },
 ];
 
 export function Navigation() {

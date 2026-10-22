@@ -140,3 +140,27 @@ def test_decoder_modality_filtering():
         # Should only have the 10 image candidates
         assert args[0] == 10
 
+
+def test_decoder_rejects_unframed_bytes_when_ecc_enabled():
+    """A decoded codeword without a frame marker must fail closed under ECC."""
+    from src.engine.dssc_decoder import DSSCDecoder
+    from src.engine.dssc_state_space import DEFAULT_SEMANTIC_FAMILIES, SemanticFamilyManager
+
+    media_ids = [f"nature_item_{i}" for i in range(10)]
+    index = _make_index(media_ids)
+    vcp_mapper = _make_vcp_mapper({mid: 5 for mid in media_ids})
+    family_manager = SemanticFamilyManager(families=[DEFAULT_SEMANTIC_FAMILIES[0]])
+    dec = DSSCDecoder(index=index, vcp_mapper=vcp_mapper, family_manager=family_manager)
+
+    with patch("src.engine.dssc_decoder.RSErrorCorrection") as rs_cls:
+        # Simulate a deletion-shifted codeword whose first byte is no longer
+        # the 0x01 frame marker, while RS still reports a successful decode.
+        rs_cls.return_value.decode_bytes.return_value = (b"\x00" * 64, True, [])
+        result = dec.decode(
+            carrier_ids=["nature_item_0"],
+            session_key=b"testkey12345678!",
+            ecc_parity_bytes=8,
+        )
+
+    assert result.success is False
+    assert result.reconstructed_message is None

@@ -233,6 +233,16 @@ class SemanticDecoder:
         if not self._loaded:
             raise RuntimeError("Decoder not loaded. Call load() first.")
 
+        if context_epoch_hint and context_manager is None:
+            # A hint cannot be resolved without a manager. Fail loudly: this
+            # combination used to be silently ignored, which made keyed
+            # traffic decode as unkeyed garbage with no explanation.
+            raise ValueError(
+                "context_epoch_hint was provided but dynamic context is not "
+                "active. Pass a ContextKeyManager (API: use_dynamic_context=true) "
+                "or drop the hint."
+            )
+
         id_symbols: dict[str, Optional[int]] = {}
         for media_id in media_ids:
             id_symbols[media_id] = self.payload_mapper.symbol_for_media_id(media_id)
@@ -256,41 +266,36 @@ class SemanticDecoder:
                     recovered = bytes(int(inv[int(s)]) for s in codeword)
                     if rs_ecc is not None:
                         data, ok, fixed = rs_ecc.decode_bytes(recovered)
-                        if ok:
-                            # Decision 4: require frame integrity/auth
-                            # (CRC or HMAC) before accepting this epoch.
-                            try:
-                                text, _ = unframe_payload(data, secret=frame_secret)
-                            except FrameError:
-                                continue  # integrity failed -> wrong epoch
-                            context_used_epoch = epoch.epoch_id
-                            return self._build_result(
-                                media_ids=media_ids,
-                                id_symbols=id_symbols,
-                                codeword=bytes(codeword),
-                                inverse_permutation=inv,
-                                text=text,
-                                ecc_success=True,
-                                ecc_errors_fixed=fixed,
-                                parity_bytes=ecc_parity_bytes,
-                                context_epoch=context_used_epoch,
-                            )
+                        if not ok:
+                            continue
                     else:
-                        # No integrity check available; require an explicit
-                        # hint rather than guessing epochs silently.
-                        if context_epoch_hint:
-                            context_used_epoch = epoch.epoch_id
-                            return self._build_result(
-                                media_ids=media_ids,
-                                id_symbols=id_symbols,
-                                codeword=bytes(codeword),
-                                inverse_permutation=inv,
-                                text=recovered.decode("utf-8", errors="replace"),
-                                ecc_success=True,
-                                ecc_errors_fixed=[],
-                                parity_bytes=ecc_parity_bytes,
-                                context_epoch=context_used_epoch,
-                            )
+                        # Framing provides an ECC-independent integrity /
+                        # authenticity check (CRC-16 or HMAC-SHA256), so a
+                        # candidate epoch can be validated without RS.
+                        data = recovered
+                        fixed = []
+                    # Decision 4: require frame integrity/auth (CRC or HMAC)
+                    # before accepting this epoch.
+                    try:
+                        text, _ = unframe_payload(
+                            data,
+                            secret=frame_secret,
+                            require_framed=use_ecc or bool(frame_secret),
+                        )
+                    except FrameError:
+                        continue  # integrity failed -> wrong epoch
+                    context_used_epoch = epoch.epoch_id
+                    return self._build_result(
+                        media_ids=media_ids,
+                        id_symbols=id_symbols,
+                        codeword=bytes(codeword),
+                        inverse_permutation=inv,
+                        text=text,
+                        ecc_success=True,
+                        ecc_errors_fixed=fixed,
+                        parity_bytes=ecc_parity_bytes,
+                        context_epoch=context_used_epoch,
+                    )
             # Keyed decode failed all candidates - fall through so the caller
             # sees a normal failure instead of garbage success.
             return self._build_result(
@@ -319,8 +324,10 @@ class SemanticDecoder:
             data, ecc_success, ecc_errors_fixed = rs_ecc.decode_bytes(codeword)
             try:
                 # Framed transport (current encoder default). Integrity
-                # failure here means corruption beyond RS capacity.
-                ecc_payload, _framed = unframe_payload(data)
+                # failure here means corruption beyond RS capacity. Requiring
+                # the frame prevents a damaged header from falling back to
+                # the legacy raw-payload path and reporting success.
+                ecc_payload, _framed = unframe_payload(data, require_framed=True)
             except FrameError:
                 ecc_success = False
                 ecc_payload = data.decode("utf-8", errors="replace")

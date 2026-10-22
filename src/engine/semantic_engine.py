@@ -179,6 +179,16 @@ class SemanticEngine:
                     "session_key (bytes) is required for DSSC mode. "
                     "Generate a random key per session: os.urandom(32)."
                 )
+            if context_manager is not None or cover_story is not None:
+                # DSSC derives its carrier families from the session key; it
+                # has no context-keyed permutation and no cover-story
+                # ranking. Silently dropping either option would misrepresent
+                # the transmitted guarantees, so fail loudly instead.
+                raise ValueError(
+                    "Dynamic context keying and cover_story are only supported "
+                    "for exact_vcp mode. DSSC mode keys carrier families with "
+                    "session_key; drop the exact_vcp-only option or switch modes."
+                )
             if self._dssc_encoder is None:
                 self.load()
             effective_parity = ecc_parity_bytes if use_ecc else 0
@@ -243,6 +253,15 @@ class SemanticEngine:
             if not session_key:
                 raise ValueError(
                     "session_key (bytes) is required for DSSC mode."
+                )
+            if context_manager is not None or context_epoch_hint is not None:
+                # DSSC has no context-keyed permutation; a hint or manager
+                # passed here would be silently ignored and the caller would
+                # assume keyed semantics that were never applied.
+                raise ValueError(
+                    "Dynamic context keying is only supported for exact_vcp "
+                    "mode. DSSC mode keys its carrier state spaces with "
+                    "session_key; drop the hint/context options or switch modes."
                 )
             if self._dssc_decoder is None:
                 self.load()

@@ -21,6 +21,7 @@ This directory provides an index of technical documentation for the DCASS projec
 | [master_architecture_and_decisions.md](../master_architecture_and_decisions.md) | Canonical architecture specifications and design decisions |
 | [08_INTEGRATION.md](../modules/08_INTEGRATION.md) | Integrated WGAN-GP and PPO stealth-scheduling pipeline specification |
 | [BENCHMARKING_REPORT.md](../benchmarking/BENCHMARKING_REPORT.md) | Full benchmarking and experimental evaluation report |
+| [BENCHMARK_DEEP_EXPLANATION.md](../benchmarking/BENCHMARK_DEEP_EXPLANATION.md) | Figure-by-figure mathematical explanation of every benchmark plot with panel defense scripts |
 
 ## Diagrams
 
