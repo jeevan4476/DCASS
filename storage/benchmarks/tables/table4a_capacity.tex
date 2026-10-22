@@ -1,0 +1,28 @@
+% Component 4a: Codec Capacity - DSSC vs exact_vcp
+\begin{table*}[htbp]
+\centering
+\caption{Codec capacity: DSSC vs exact\_vcp with matched framing and Reed-Solomon ECC. Latency columns are reference-implementation wall-clock measurements, not codec-only lower bounds. (n = 5 payload sizes x 3 modes; scope = coded bits/carrier including framing and RS parity; user-payload density is lower; commit = 536808a8f8c1046e3802cf9ef094ef54d93a9908)}
+\label{tab:codec_capacity}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+Mode & Payload (B) & Carriers & Bits/Carrier & Reduction (\%) & Encode (ms, ref.) & Decode (ms, ref.) \\
+\midrule
+DSSC (multi-modal) & 14 & 16 & 13.50 & 40.7\% & 106.0 & 181.3 \\
+DSSC (text-only) & 14 & 14 & 15.43 & 48.1\% & 89.3 & 243.3 \\
+exact\_vcp (multi-modal) & 14 & 27 & 8.00 & -- & 1784.6 & 2.2 \\
+DSSC (multi-modal) & 50 & 37 & 13.62 & 41.3\% & 113.6 & 280.4 \\
+DSSC (text-only) & 50 & 32 & 15.75 & 49.2\% & 111.2 & 442.1 \\
+exact\_vcp (multi-modal) & 50 & 63 & 8.00 & -- & 5232.6 & 5.0 \\
+DSSC (multi-modal) & 150 & 96 & 13.58 & 41.1\% & 119.0 & 542.7 \\
+DSSC (text-only) & 150 & 82 & 15.90 & 49.7\% & 153.6 & 1009.4 \\
+exact\_vcp (multi-modal) & 150 & 163 & 8.00 & -- & 14861.7 & 12.3 \\
+DSSC (multi-modal) & 300 & 188 & 13.66 & 41.4\% & 167.9 & 1013.1 \\
+DSSC (text-only) & 300 & 161 & 15.95 & 49.8\% & 214.5 & 1931.4 \\
+exact\_vcp (multi-modal) & 300 & 321 & 8.00 & -- & 29529.9 & 23.8 \\
+DSSC (multi-modal) & 500 & 310 & 13.65 & 41.4\% & 209.0 & 1580.0 \\
+DSSC (text-only) & 500 & 265 & 15.97 & 49.9\% & 296.9 & 3066.4 \\
+exact\_vcp (multi-modal) & 500 & 529 & 8.00 & -- & 51703.8 & 40.7 \\
+\bottomrule
+\end{tabular}}
+\end{table*}

@@ -1,0 +1,35 @@
+% Component 4b: Codec Robustness, Permutation Scaling & Key Separation
+\begin{table*}[htbp]
+\centering
+\caption{DSSC codec robustness: permutation scaling, RS-ECC resilience, and key separation. Intervals are Wilson 95 percent. (n = 5 permutation pool sizes, 6 substitution rates, 356 wrong-key trials; scope = clean-channel codec; substitution recovery and key separation; dropout is not covered here; commit = 536808a8f8c1046e3802cf9ef094ef54d93a9908)}
+\label{tab:codec_robustness}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+\multicolumn{6}{c}{\textbf{Sub-Millisecond HMAC-DRBG Permutation Scaling}} \\
+Candidate Pool ($N$) & Mean (ms) & p50 (ms) & Determinism & Key Sensitivity ($\rho$) & Throughput (perm/s) \\
+\midrule
+1,000 & 0.0575 & 0.0576 & \checkmark & +0.043505 & 17,378 \\
+5,000 & 0.1673 & 0.1749 & \checkmark & -0.016776 & 5,978 \\
+10,000 & 0.1575 & 0.1292 & \checkmark & +0.004498 & 6,350 \\
+20,000 & 0.3013 & 0.3411 & \checkmark & -0.002327 & 3,319 \\
+35,000 & 0.4056 & 0.3611 & \checkmark & -0.001982 & 2,466 \\
+\midrule
+\multicolumn{6}{c}{\textbf{Algebraic RS-ECC Resilience Under Carrier Substitution}} \\
+Substitution Rate (\%) & Recovery (\%) & 95\% CI & Mean BER (\%) & Mean Fixed Errors & Latency (ms) \\
+\midrule
+0.0\% & 100.0\% & [83.9, 100.0] & 0.00\% & 0.0 B & 585.2 \\
+5.0\% & 70.0\% & [48.1, 85.5] & 30.00\% & 2.7 B & 554.9 \\
+10.0\% & 0.0\% & [0.0, 16.1] & 100.00\% & 0.0 B & 533.2 \\
+15.0\% & 0.0\% & [0.0, 16.1] & 100.00\% & 0.0 B & 529.9 \\
+20.0\% & 0.0\% & [0.0, 16.1] & 100.00\% & 0.0 B & 511.9 \\
+25.0\% & 0.0\% & [0.0, 16.1] & 100.00\% & 0.0 B & 444.0 \\
+\midrule
+\multicolumn{6}{c}{\textbf{Cryptographic Key Separation \& Unforgeability}} \\
+Test Type & Trials & Accepted & Exact & FAR & FAR 95\% Upper \\
+\midrule
+Random Keys & 100 & 0 & 0 & 0.000000 & 0.036995 \\
+1-Bit Flipped Keys & 256 & 0 & 0 & 0.000000 & 0.014784 \\
+\bottomrule
+\end{tabular}}
+\end{table*}

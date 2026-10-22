@@ -1,0 +1,36 @@
+% Component 5: Computational Performance & System Scalability
+\begin{table*}[htbp]
+\centering
+\caption{\textbf{Codec Latency, Encoding Throughput, and Direct-Engine Thread Concurrency.} Empirical benchmark of the DCASS Dynamic Semantic State-Space Coding (DSSC) pipeline across payload sizes and parallel worker-thread workloads. The concurrency rows are direct SemanticEngine encode/decode service times, not FastAPI or transmit latencies. (n = 5 payload sizes, 3 thread levels x 100 sessions each; scope = direct SemanticEngine encode/decode only; the API transmit path is not exercised; commit = 536808a8f8c1046e3802cf9ef094ef54d93a9908)}
+\label{tab:system_performance}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+\multicolumn{7}{l}{\textbf{Part A: End-to-End Codec Latency \& Throughput Across Payload Sizes}} \\
+\midrule
+Payload Size & Carrier Count & Encode Time & Decode Time & Total Latency & Encode Rate & Carrier Speed \\
+(Bytes) & ($N$) & ($\mu \pm \sigma$, ms) & ($\mu \pm \sigma$, ms) & (ms) & (KB/s) & (carriers/s) \\
+\midrule
+32 B & 27 & 107.1 $\pm$ 10.6 & 222.6 $\pm$ 7.6 & 329.7 & 0.29 & 81.9 \\
+64 B & 46 & 111.0 $\pm$ 10.3 & 321.7 $\pm$ 16.2 & 432.7 & 0.56 & 106.3 \\
+128 B & 83 & 123.2 $\pm$ 12.7 & 484.7 $\pm$ 16.1 & 607.9 & 1.01 & 136.5 \\
+256 B & 163 & 158.5 $\pm$ 13.5 & 856.6 $\pm$ 11.9 & 1015.1 & 1.58 & 160.6 \\
+512 B & 317 & 206.3 $\pm$ 10.2 & 1590.0 $\pm$ 19.1 & 1796.2 & 2.42 & 176.5 \\
+\bottomrule
+\end{tabular}}
+
+\vspace{0.6em}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccccc}
+\toprule
+\multicolumn{9}{l}{\textbf{Part B: Direct-Engine Thread Concurrency, Latency Percentiles \& Payload Isolation}} \\
+\midrule
+Worker & Total Sessions & Throughput & $p_{50}$ Latency & $p_{90}$ Latency & $p_{95}$ Latency & $p_{99}$ Latency & Success Rate & Observed Swap \\
+Threads & Evaluated & (sessions/s) & (ms) & (ms) & (ms) & (ms) & (\%) & Rate (\%) \\
+\midrule
+10 & 100 & 2.00 & 4975.6 & 5502.2 & 5705.7 & 5978.9 & \textbf{100.0\%} & \textbf{0.000\%} \\
+20 & 100 & 1.95 & 10089.1 & 11220.0 & 11454.7 & 11730.2 & \textbf{100.0\%} & \textbf{0.000\%} \\
+50 & 100 & 1.89 & 24367.5 & 26988.9 & 27597.6 & 27948.6 & \textbf{100.0\%} & \textbf{0.000\%} \\
+\bottomrule
+\end{tabular}}
+\end{table*}
