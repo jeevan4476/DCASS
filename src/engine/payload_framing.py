@@ -27,6 +27,8 @@ HMAC frame so wrong-key/wrong-epoch acceptance is negligible.
 Legacy compatibility: unframed (raw) payloads never start with version byte
 0x01/0x02 followed by plausible framing, so the decoder sniffs the version:
 0x01/0x02 -> parse frame; anything else -> treat entire codeword as raw UTF-8.
+Callers that expect a framed transport pass require_framed=True and reject the
+raw fallback.
 """
 
 from __future__ import annotations
@@ -81,15 +83,21 @@ class FrameError(Exception):
     """Raised when a codeword is not validly framed."""
 
 
-def unframe_payload(codeword: bytes, secret: Optional[bytes] = None) -> tuple[str, bool]:
+def unframe_payload(
+    codeword: bytes,
+    secret: Optional[bytes] = None,
+    require_framed: bool = False,
+) -> tuple[str, bool]:
     """
     Decode a post-RS codeword into (plaintext, was_framed).
 
     Returns (text, True) when the version byte and integrity/auth check verify.
     Falls back to legacy raw decoding (text, False) when the first byte is
-    not a frame version marker. Raises FrameError only when the payload
-    CLAIMS to be framed but fails validation - that indicates corruption or
-    a wrong epoch and must not be silently accepted.
+    not a frame version marker, unless *require_framed* is set. Raises
+    FrameError when the payload CLAIMS to be framed but fails validation, or
+    when framing is required and the payload is a legacy raw message. An
+    unframed payload in an ECC-protected transport is indistinguishable from
+    a damaged frame, so callers that expect framing must fail closed.
     """
     if not codeword:
         raise FrameError("empty payload")
@@ -114,6 +122,8 @@ def unframe_payload(codeword: bytes, secret: Optional[bytes] = None) -> tuple[st
         return text, True
 
     if codeword[0] != FRAME_VERSION:
+        if require_framed:
+            raise FrameError("framing required but payload has no frame version marker")
         # Legacy unframed transport
         return codeword.decode("utf-8", errors="replace"), False
 

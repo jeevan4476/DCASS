@@ -94,19 +94,44 @@ class DSSCDecoder:
             )
 
         # 1. Collect identical canonical candidate pool from index
-        all_ids = []
+        all_ids_by_modality: dict[Modality, list[str]] = {}
         for mod, meta_list in self.index.metadata.items():
             if modalities and mod not in modalities:
                 continue
+            ids = []
             for m in meta_list:
                 mid = m.get("id")
                 if mid:
-                    all_ids.append(mid)
+                    ids.append(mid)
+            ids.sort()
+            all_ids_by_modality[mod] = ids
 
+        # Combined sorted list for fallback
+        all_ids = []
+        for ids in all_ids_by_modality.values():
+            all_ids.extend(ids)
         all_ids.sort()
+
+        # Available modalities present in the index
+        available_modalities = [m for m in ["text", "image", "audio"] if all_ids_by_modality.get(m)]
+        if not available_modalities:
+            available_modalities = [m for m in all_ids_by_modality.keys() if all_ids_by_modality[m]]
+        if not available_modalities:
+            available_modalities = ["image"]
+
+        # Modality-conditioned family mapping (2 families per modality)
+        # This ensures each modality only picks from its native semantic families
+        MODALITY_FAMILY_MAP: dict[Modality, list[str]] = {
+            "image": ["nature_outdoor", "urban_architecture"],
+            "text":  ["people_interaction", "objects_indoor"],
+            "audio": ["technology_science", "sound_atmosphere"],
+        }
+
         bit_writer = BitStreamWriter()
 
         verified_count = 0
+
+        candidate_pool_cache: dict[tuple[str, str], list[str]] = {}
 
         for chunk_idx, carrier_id in enumerate(carrier_ids):
             # Check if item exists in corpus
@@ -120,17 +145,40 @@ class DSSCDecoder:
                 f"family:{chunk_idx}".encode("utf-8"),
                 hashlib.sha256,
             ).digest()
-            family_idx = int.from_bytes(family_digest[:4], "big") % len(self.family_manager.families)
-            primary_family = self.family_manager.families[family_idx]
 
-            # Candidate set: all IDs whose VCP cluster in family range (mirrors encoder)
-            allowed_clusters = set(primary_family.cluster_ids)
-            candidates = [
-                cid for cid in all_ids
-                if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
-            ]
-            if len(candidates) < 8:
-                candidates = all_ids[:256]
+            # Modality balancing: deterministic round-robin across available modalities
+            modality_for_chunk = available_modalities[chunk_idx % len(available_modalities)]
+            modality_ids = all_ids_by_modality.get(modality_for_chunk, [])
+
+            # Modality-conditioned family selection: pick from families native to this modality
+            native_names = MODALITY_FAMILY_MAP.get(modality_for_chunk, [])
+            matching_families = [fam for fam in self.family_manager.families if fam.name in native_names]
+            if matching_families:
+                admissible_families = matching_families
+            else:
+                admissible_families = self.family_manager.families
+
+            family_idx = int.from_bytes(family_digest[:4], "big") % len(admissible_families)
+            primary_family = admissible_families[family_idx]
+
+            # Candidate set: all IDs whose VCP cluster in family range (cached per pool)
+            cache_key = (modality_for_chunk, primary_family.name)
+            if cache_key not in candidate_pool_cache:
+                allowed_clusters = set(primary_family.cluster_ids)
+                cand = [
+                    cid for cid in modality_ids
+                    if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
+                ]
+                if len(cand) < 8:
+                    cand = [
+                        cid for cid in all_ids
+                        if self.vcp_mapper.symbol_for_media_id(cid) in allowed_clusters
+                    ]
+                if len(cand) < 8:
+                    cand = all_ids[:256]  # Ultimate safety fallback
+                candidate_pool_cache[cache_key] = cand
+
+            candidates = candidate_pool_cache[cache_key]
 
             bits_per_carrier = max(2, min(16, int(math.floor(math.log2(len(candidates))))))
             perm = derive_session_permutation(
@@ -155,19 +203,38 @@ class DSSCDecoder:
             bit_writer.append_bits(symbol, bits_per_carrier)
 
         codeword = bit_writer.to_bytes()
-        rs = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
-
-        fixed_errors = []
-        data, ok, fixed = rs.decode_bytes(codeword)
-        if ok:
-            fixed_errors = fixed
+        if ecc_parity_bytes > 0:
+            rs = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
+            fixed_errors = []
+            data, ok, fixed = rs.decode_bytes(codeword)
+            if ok:
+                fixed_errors = fixed
+        else:
+            data = codeword
+            ok = True
+            fixed_errors = []
 
         reconstructed_text = None
         success = False
         if ok:
             try:
-                reconstructed_text, _ = unframe_payload(data)
-                success = True
+                # unframe_payload validates the CRC-16 integrity frame. DSSC
+                # frames are NOT HMAC-authenticated: the encoder calls
+                # frame_payload(message) without a secret deliberately, to
+                # avoid the 32-byte HMAC tag. The session key protects the
+                # carrier state-space permutation, not these frame bytes, so
+                # no secret belongs here.
+                #
+                # When ECC is enabled, the encoder always emits a framed
+                # payload. A missing frame marker after RS decode therefore
+                # means the codeword is corrupt, not that it is a legacy raw
+                # message. Requiring the frame prevents deletion or symbol
+                # corruption from being accepted as a successful decode.
+                reconstructed_text, was_framed = unframe_payload(
+                    data,
+                    require_framed=ecc_parity_bytes > 0,
+                )
+                success = was_framed or ecc_parity_bytes == 0
             except FrameError:
                 # Corruption beyond RS capacity
                 success = False
