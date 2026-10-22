@@ -51,6 +51,19 @@ class TestApiAuth:
         with patch.dict(os.environ, {"DCASS_API_TOKEN": "test-token-xyz"}, clear=False):
             assert client.get("/api/health").status_code == 200
 
+    def test_production_requires_bearer_without_api_token(self, client):
+        with patch.dict(
+            os.environ,
+            {
+                "DCASS_ENV": "production",
+                "DCASS_JWT_SECRET": "test-jwt-secret",
+            },
+            clear=False,
+        ):
+            os.environ.pop("DCASS_API_TOKEN", None)
+            assert client.get("/api/auth/me").status_code == 401
+            assert client.get("/api/wire/packets").status_code == 401
+
 
 class TestTransmitPathSanitization:
     def test_validate_rejects_traversal(self):
@@ -67,7 +80,7 @@ class TestTransmitPathSanitization:
         shared.mkdir()
         path = sanitize_packet_filename(shared, "media_abc", channel=0, idx=1)
         assert path.is_relative_to(shared.resolve())
-        assert path.name == "media_abc_0_0001.json"
+        assert path.name == "media_abc.json"
 
         with pytest.raises(ValueError):
             sanitize_packet_filename(shared, "../escape", channel=0, idx=0)
@@ -85,6 +98,16 @@ class TestTransmitPathSanitization:
         assert "invalid media_id" in res.json()["detail"].lower() or "path" in res.json()[
             "detail"
         ].lower()
+
+    def test_transmit_rejects_non_positive_speed_multiplier(self, client):
+        res = client.post(
+            "/api/transmit",
+            json={
+                "media_ids": ["ok_id"],
+                "speed_multiplier": 0,
+            },
+        )
+        assert res.status_code == 422
 
 
 class TestDoctorPublicDict:
@@ -134,10 +157,15 @@ class TestContextEpochHint:
     def test_decode_api_returns_400_on_bad_hint(self, client):
         from src.engine.decoder import SemanticDecoder
         from tests.test_engine.test_exact_vcp_recovery import FakeIndex
+        from src.engine.semantic_engine import SemanticEngine
 
         decoder = SemanticDecoder(index=FakeIndex())
         decoder._loaded = True
-        with patch("src.api.server._get_decoder", return_value=decoder):
+        engine = SemanticEngine()
+        engine._loaded = True
+        engine._exact_decoder = decoder
+
+        with patch("src.api.server._get_engine", return_value=engine):
             res = client.post(
                 "/api/decode",
                 json={
@@ -235,21 +263,20 @@ class TestKeyedRoundtripWithHmac:
         return encoder, decoder
 
     def test_hmac_keyed_roundtrip(self, codec):
-        from src.engine.context import ContextKeyManager
+            from src.engine.context import ContextKeyManager
 
-        encoder, decoder = codec
-        mgr = ContextKeyManager(bucket_seconds=3600, secret=b"roundtrip-secret")
-        msg = "HMAC keyed channel"
-        result = encoder.encode(
-            msg, payload_mode="exact_vcp", use_ecc=True, context_manager=mgr
-        )
-        assert result.context_info.get("context_mode") == "keyed"
-        decoded = decoder.decode(
-            result.media_ids,
-            payload_mode="exact_vcp",
-            use_ecc=True,
-            context_manager=mgr,
-            context_epoch_hint=result.context_info["epoch_id"],
-        )
-        assert decoded.ecc_success
-        assert decoded.reconstructed_meaning == msg
+            encoder, decoder = codec
+            mgr = ContextKeyManager(bucket_seconds=3600, secret=b"roundtrip-secret")
+            msg = "HMAC keyed channel"
+            result = encoder.encode(
+                msg, use_ecc=True, context_manager=mgr
+            )
+            assert result.context_info.get("context_mode") == "keyed"
+            decoded = decoder.decode(
+                result.media_ids,
+                use_ecc=True,
+                context_manager=mgr,
+                context_epoch_hint=result.context_info["epoch_id"],
+            )
+            assert decoded.ecc_success
+            assert decoded.reconstructed_meaning == msg
