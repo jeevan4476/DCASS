@@ -11,6 +11,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from src.utils.checkpoint_io import load_trained_checkpoint
 from torch.distributions import Normal, Categorical
 import numpy as np
 from dataclasses import dataclass, field
@@ -556,7 +557,7 @@ class PPOAgent:
 
     def load(self, path: Path | str):
         """Load agent checkpoint into existing instance."""
-        checkpoint = torch.load(str(path), map_location=self.device, weights_only=False)
+        checkpoint = load_trained_checkpoint(str(path), map_location=self.device,)
 
         # If config is present in checkpoint, recreate actor_critic if dimensions differ
         if "config" in checkpoint and isinstance(checkpoint["config"], PPOConfig):
@@ -591,7 +592,7 @@ class PPOAgent:
     ) -> PPOAgent:
         """Create and load a PPOAgent directly from a checkpoint file."""
         dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        checkpoint = torch.load(str(path), map_location=dev, weights_only=False)
+        checkpoint = load_trained_checkpoint(str(path), map_location=dev,)
         cfg = checkpoint.get("config", PPOConfig(state_dim=env.state_dim, device=dev))
         if isinstance(cfg, PPOConfig):
             cfg.device = dev

@@ -151,18 +151,18 @@ def profile_stage_breakdown(engine: SemanticEngine, test_payload: str, session_k
     """Measure granular execution times for individual algorithmic sub-stages."""
     ecc = RSErrorCorrection(parity_bytes=8)
     payload_bytes = test_payload.encode("utf-8")
-    
+
     # 1. Encoding stages
     t0 = time.perf_counter()
     ecc_framed = ecc.encode(payload_bytes)
     t_ecc = (time.perf_counter() - t0) * 1000
-    
+
     t0 = time.perf_counter()
     # Key expansion / permutation
     h = hashlib.sha256(session_key).digest()
     np.random.default_rng(int.from_bytes(h[:4], "big")).permutation(len(ecc_framed))
     t_perm = (time.perf_counter() - t0) * 1000
-    
+
     # Full encode
     t0 = time.perf_counter()
     res = engine.encode(
@@ -175,7 +175,7 @@ def profile_stage_breakdown(engine: SemanticEngine, test_payload: str, session_k
     )
     t_full_enc = (time.perf_counter() - t0) * 1000
     t_faiss_selection = max(0.1, t_full_enc - t_ecc - t_perm)
-    
+
     # 2. Decoding stages
     t0 = time.perf_counter()
     dec = engine.decode(
@@ -186,13 +186,13 @@ def profile_stage_breakdown(engine: SemanticEngine, test_payload: str, session_k
         ecc_parity_bytes=8
     )
     t_full_dec = (time.perf_counter() - t0) * 1000
-    
+
     t0 = time.perf_counter()
     ecc.decode(ecc_framed)
     t_ecc_dec = (time.perf_counter() - t0) * 1000
-    
+
     t_centroid_lookup = max(0.1, t_full_dec - t_ecc_dec - t_perm)
-    
+
     return {
         "enc_ecc_framing_ms": float(t_ecc),
         "enc_permutation_ms": float(t_perm),
@@ -209,21 +209,21 @@ def benchmark_payload_scaling(engine: SemanticEngine) -> List[PayloadPerformance
     payload_sizes = [32, 64, 128, 256, 512]
     num_trials = 8
     results = []
-    
+
     for size in payload_sizes:
         raw_msg = "A" * size
         enc_times = []
         dec_times = []
         carrier_counts = []
-        
+
         session_key = os.urandom(32)
-        
+
         # Warmup
         engine.encode(raw_msg, mode="dssc", session_key=session_key, use_ecc=True, ecc_parity_bytes=8)
-        
+
         for _ in range(num_trials):
             key = os.urandom(32)
-            
+
             t0 = time.perf_counter()
             enc_res = engine.encode(
                 raw_msg,
@@ -235,7 +235,7 @@ def benchmark_payload_scaling(engine: SemanticEngine) -> List[PayloadPerformance
             )
             enc_times.append((time.perf_counter() - t0) * 1000)
             carrier_counts.append(len(enc_res.media_ids))
-            
+
             t0 = time.perf_counter()
             dec_res = engine.decode(
                 enc_res.media_ids,
@@ -246,19 +246,19 @@ def benchmark_payload_scaling(engine: SemanticEngine) -> List[PayloadPerformance
             )
             dec_times.append((time.perf_counter() - t0) * 1000)
             assert dec_res.reconstructed_message == raw_msg, "Decoded plaintext mismatch"
-            
+
         mean_enc = float(np.mean(enc_times))
         std_enc = float(np.std(enc_times))
         mean_dec = float(np.mean(dec_times))
         std_dec = float(np.std(dec_times))
         mean_carriers = int(np.round(np.mean(carrier_counts)))
-        
+
         enc_kbps = float((size / 1024.0) / (mean_enc / 1000.0))
         dec_kbps = float((size / 1024.0) / (mean_dec / 1000.0))
         carriers_per_sec = float(mean_carriers / ((mean_enc + mean_dec) / 1000.0))
-        
+
         stages = profile_stage_breakdown(engine, raw_msg, session_key)
-        
+
         res = PayloadPerformanceResult(
             payload_bytes=size,
             carrier_count=mean_carriers,
@@ -273,13 +273,13 @@ def benchmark_payload_scaling(engine: SemanticEngine) -> List[PayloadPerformance
             stage_breakdown=stages
         )
         results.append(res)
-        
+
         print(f"  Payload: {size:3d} B | Carriers: {mean_carriers:2d} | "
               f"Encode: {mean_enc:6.2f} ± {std_enc:4.2f} ms | "
               f"Decode: {mean_dec:6.2f} ± {std_dec:4.2f} ms | "
               f"Total: {res.total_latency_ms:6.2f} ms | "
               f"Throughput: {enc_kbps:5.2f} KB/s")
-              
+
     return results
 
 
@@ -287,7 +287,7 @@ def run_single_client_session(engine: SemanticEngine, session_id: int) -> Dict[s
     """Execute a single independent client encode/decode session."""
     key = hashlib.sha256(f"session_key_{session_id}".encode()).digest()
     secret = f"SECRET_PAYLOAD_FOR_CLIENT_{session_id:04d}_VERIFY_ISOLATION!"
-    
+
     t0 = time.perf_counter()
     enc = engine.encode(
         secret,
@@ -298,7 +298,7 @@ def run_single_client_session(engine: SemanticEngine, session_id: int) -> Dict[s
         ecc_parity_bytes=8
     )
     t_enc = (time.perf_counter() - t0) * 1000
-    
+
     t0 = time.perf_counter()
     dec = engine.decode(
         enc.media_ids,
@@ -308,11 +308,11 @@ def run_single_client_session(engine: SemanticEngine, session_id: int) -> Dict[s
         ecc_parity_bytes=8
     )
     t_dec = (time.perf_counter() - t0) * 1000
-    
+
     is_success = (dec.reconstructed_message == secret)
     # Check for cross-talk: did it recover someone else's payload?
     is_cross_talk = (dec.reconstructed_message != secret and "SECRET_PAYLOAD" in (dec.reconstructed_message or ""))
-    
+
     return {
         "session_id": session_id,
         "latency_ms": t_enc + t_dec,
@@ -331,13 +331,13 @@ def benchmark_concurrency(engine: SemanticEngine) -> List[ConcurrencyResult]:
     thread_counts = [10, 20, 50]
     total_sessions_per_level = 100
     results = []
-    
+
     for threads in thread_counts:
         print(f"  Testing Concurrency: {threads} parallel worker threads ({total_sessions_per_level} sessions)...")
         latencies = []
         successes = 0
         cross_talks = 0
-        
+
         t_start = time.perf_counter()
         with ThreadPoolExecutor(max_workers=threads) as executor:
             futures = [
@@ -351,18 +351,18 @@ def benchmark_concurrency(engine: SemanticEngine) -> List[ConcurrencyResult]:
                     successes += 1
                 if res["cross_talk"]:
                     cross_talks += 1
-                    
+
         total_time = time.perf_counter() - t_start
         rps = total_sessions_per_level / total_time
-        
+
         p50 = float(np.percentile(latencies, 50))
         p90 = float(np.percentile(latencies, 90))
         p95 = float(np.percentile(latencies, 95))
         p99 = float(np.percentile(latencies, 99))
-        
+
         success_pct = (successes / total_sessions_per_level) * 100.0
         cross_talk_pct = (cross_talks / total_sessions_per_level) * 100.0
-        
+
         c_res = ConcurrencyResult(
             num_threads=threads,
             total_requests=total_sessions_per_level,
@@ -376,30 +376,30 @@ def benchmark_concurrency(engine: SemanticEngine) -> List[ConcurrencyResult]:
             cross_talk_rate_pct=cross_talk_pct
         )
         results.append(c_res)
-        
+
         print(f"    Sessions/s: {rps:5.2f} | p50: {p50:6.2f} ms | p95: {p95:6.2f} ms | p99: {p99:6.2f} ms | "
               f"Success: {success_pct:.1f}% | Observed swaps: {cross_talk_pct:.3f}%")
-              
+
     return results
 
 
 def create_latency_breakdown_plot(results: List[PayloadPerformanceResult], output_path: Path):
     """Generate stacked bar chart of computational latency breakdown."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
-    
+
     sizes = [f"{r.payload_bytes} B" for r in results]
     x = np.arange(len(sizes))
     width = 0.55
-    
+
     # 1. Encoding Stages Stacked
     ecc_enc = [r.stage_breakdown["enc_ecc_framing_ms"] for r in results]
     perm_enc = [r.stage_breakdown["enc_permutation_ms"] for r in results]
     faiss_enc = [r.stage_breakdown["enc_faiss_search_ms"] for r in results]
-    
+
     ax1.bar(x, faiss_enc, width, label="FAISS Voronoi Search", color="#4A90D9", edgecolor="black", linewidth=0.6)
     ax1.bar(x, ecc_enc, width, bottom=faiss_enc, label="RS-ECC Framing", color="#F39C12", edgecolor="black", linewidth=0.6)
     ax1.bar(x, perm_enc, width, bottom=np.array(faiss_enc)+np.array(ecc_enc), label="HMAC-DRBG Permutation", color="#27AE60", edgecolor="black", linewidth=0.6)
-    
+
     ax1.set_ylabel("Encoding Latency (ms)", fontsize=11)
     ax1.set_title("Direct-Engine Encoding Latency Breakdown", fontsize=12, fontweight="bold")
     ax1.set_xticks(x)
@@ -407,19 +407,19 @@ def create_latency_breakdown_plot(results: List[PayloadPerformanceResult], outpu
     ax1.grid(True, alpha=0.3, axis="y")
     ax1.legend(loc="upper left", framealpha=0.9)
     ax1.set_ylim(0, max(r.encode_latency_ms for r in results) * 1.12)
-    
+
     for i, r in enumerate(results):
         ax1.text(i, r.encode_latency_ms + 2.0, f"{r.encode_latency_ms:.1f}ms", ha="center", va="bottom", fontsize=9.5, fontweight="bold")
-        
+
     # 2. Decoding Stages Stacked
     centroid_dec = [r.stage_breakdown["dec_centroid_lookup_ms"] for r in results]
     perm_dec = [r.stage_breakdown["dec_inv_permutation_ms"] for r in results]
     ecc_dec = [r.stage_breakdown["dec_ecc_syndrome_ms"] for r in results]
-    
+
     ax2.bar(x, centroid_dec, width, label="Centroid Reverse Mapping", color="#9B59B6", edgecolor="black", linewidth=0.6)
     ax2.bar(x, ecc_dec, width, bottom=centroid_dec, label="RS Syndrome Correction", color="#E85D5D", edgecolor="black", linewidth=0.6)
     ax2.bar(x, perm_dec, width, bottom=np.array(centroid_dec)+np.array(ecc_dec), label="Inverse Permutation", color="#27AE60", edgecolor="black", linewidth=0.6)
-    
+
     ax2.set_ylabel("Decoding Latency (ms)", fontsize=11)
     ax2.set_title("Direct-Engine Decoding Latency Breakdown", fontsize=12, fontweight="bold")
     ax2.set_xticks(x)
@@ -427,10 +427,10 @@ def create_latency_breakdown_plot(results: List[PayloadPerformanceResult], outpu
     ax2.grid(True, alpha=0.3, axis="y")
     ax2.legend(loc="upper left", framealpha=0.9)
     ax2.set_ylim(0, max(r.decode_latency_ms for r in results) * 1.10)
-    
+
     for i, r in enumerate(results):
         ax2.text(i, r.decode_latency_ms + 3.0, f"{r.decode_latency_ms:.1f}ms", ha="center", va="bottom", fontsize=9.5, fontweight="bold")
-        
+
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches="tight", facecolor="white")
     plt.close()
@@ -439,10 +439,10 @@ def create_latency_breakdown_plot(results: List[PayloadPerformanceResult], outpu
 def create_concurrency_plot(results: List[ConcurrencyResult], output_path: Path):
     """Generate concurrency scaling and latency percentile curves."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.2))
-    
+
     threads = [r.num_threads for r in results]
     session_rate = [r.requests_per_sec for r in results]
-    
+
     # 1. Throughput in completed sessions per second
     bars = ax1.bar([str(t) for t in threads], session_rate, width=0.45, color="#2ECC71", edgecolor="black", linewidth=0.7)
     ax1.set_xlabel("Worker Threads", fontsize=11)
@@ -453,25 +453,25 @@ def create_concurrency_plot(results: List[ConcurrencyResult], output_path: Path)
     for bar in bars:
         ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1, f"{bar.get_height():.2f} sessions/s",
                  ha="center", va="bottom", fontsize=10, fontweight="bold")
-        
+
     # 2. Latency Percentiles
     p50 = [r.p50_latency_ms for r in results]
     p90 = [r.p90_latency_ms for r in results]
     p95 = [r.p95_latency_ms for r in results]
     p99 = [r.p99_latency_ms for r in results]
-    
+
     ax2.plot(threads, p50, "o-", color="#3498DB", linewidth=2.0, label="p50 (Median)")
     ax2.plot(threads, p90, "s--", color="#F39C12", linewidth=2.0, label="p90")
     ax2.plot(threads, p95, "^-.", color="#E67E22", linewidth=2.0, label="p95")
     ax2.plot(threads, p99, "d-", color="#E74C3C", linewidth=2.2, label="p99 (Tail)")
-    
+
     ax2.set_xlabel("Worker Threads", fontsize=11)
     ax2.set_ylabel("Latency (ms)", fontsize=11)
     ax2.set_title("Direct-Engine Latency Percentile Expansion ($p_{50}$ to $p_{99}$)", fontsize=12, fontweight="bold")
     ax2.set_xticks(threads)
     ax2.grid(True, alpha=0.3)
     ax2.legend(loc="upper left", framealpha=0.9)
-    
+
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches="tight", facecolor="white")
     plt.close()
@@ -555,34 +555,34 @@ def run_component5():
     print(f"Device: {DEVICE}")
     print("Scope: SemanticEngine.encode/decode directly; no FastAPI or /api/transmit.")
     print()
-    
+
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     print("1. Loading unified semantic index and DSSC engine...")
     idx = UnifiedSemanticIndex()
     idx.load()
     engine = SemanticEngine(index=idx)
     engine.load()
     print("   SemanticEngine and FAISS indices loaded successfully.")
-    
+
     # 1. Payload Scaling & Speed
     payload_results = benchmark_payload_scaling(engine)
-    
+
     # 2. Direct-Engine Concurrency & Payload Isolation
     concurrency_results = benchmark_concurrency(engine)
-    
+
     # 3. Generate Output Artifacts
     table_path = TABLES_DIR / "table5_system_performance.tex"
     plot_breakdown_path = PLOTS_DIR / "fig5_latency_breakdown.png"
     plot_concurrency_path = PLOTS_DIR / "fig5_concurrency_scaling.png"
     json_path = BENCHMARK_DIR / "component_5_results.json"
-    
+
     print("\n3. Generating publication artifacts...")
     generate_latex_table(payload_results, concurrency_results, table_path)
     create_latency_breakdown_plot(payload_results, plot_breakdown_path)
     create_concurrency_plot(concurrency_results, plot_concurrency_path)
-    
+
     output_data = {
         "schema": SCHEMA,
         "component": "Component 5: Codec Latency, Throughput & Direct-Engine Concurrency",
@@ -611,7 +611,7 @@ def run_component5():
     )
     print(f"  JSON results saved to {json_path}")
     print(f"  Plots saved: {plot_breakdown_path.name}, {plot_concurrency_path.name}")
-    
+
     print("\n" + "=" * 80)
     print(" COMPONENT 5 BENCHMARK COMPLETE")
     print("=" * 80)

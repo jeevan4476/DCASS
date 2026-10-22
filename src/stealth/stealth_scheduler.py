@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import threading
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 import numpy as np
 from pathlib import Path
 from typing import Literal, Optional
@@ -258,7 +259,7 @@ class StealthScheduler:
         import pathlib
         sys.modules.setdefault("pathlib._local", pathlib)
 
-        ckpt = torch.load(checkpoint, map_location=self.device, weights_only=False)
+        ckpt = load_trained_checkpoint(checkpoint, map_location=self.device,)
         # Prefer dimensions stored in the checkpoint; fall back to the
         # architecture defaults they were trained with.
         config = ckpt.get("config", {}) if isinstance(ckpt, dict) else {}
@@ -292,7 +293,6 @@ class StealthScheduler:
             )
             return self._schedule_static(media_ids, base_delay)
 
-        import torch
 
         seq_len = len(media_ids)
         hour = (
@@ -343,7 +343,6 @@ class StealthScheduler:
             print("[StealthScheduler] GAN checkpoint not found for hybrid — falling back to static")
             return self._schedule_static(media_ids, base_delay)
 
-        import torch
         seq_len = len(media_ids)
         hour = (
             float(np.random.randint(0, 24)) if time_of_day is None else float(time_of_day)
@@ -422,9 +421,8 @@ class StealthScheduler:
                 import sys
                 import pathlib
                 sys.modules.setdefault("pathlib._local", pathlib)
-                gan_ckpt = torch.load(
-                    DEFAULT_GAN_CHECKPOINT, map_location=self.device, weights_only=False
-                )
+                gan_ckpt = load_trained_checkpoint(
+                    DEFAULT_GAN_CHECKPOINT, map_location=self.device,)
                 warden.load_state_dict(gan_ckpt["warden_state"])
             except Exception as exc:  # noqa: BLE001 - diagnostics-only fallback
                 print(

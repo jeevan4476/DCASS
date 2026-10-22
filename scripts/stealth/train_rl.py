@@ -33,6 +33,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden
 from src.stealth.rl.agent import PPOAgent, PPOConfig
@@ -59,7 +60,7 @@ def load_frozen_warden(
     probability, which is what the reward function needs. See
     ``docs/benchmarking/C3_WARDEN_DIAGNOSTIC.md``.
     """
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    ckpt = load_trained_checkpoint(checkpoint_path, map_location=device,)
     config = ckpt.get("config")
     hidden_dim = getattr(config, "hidden_dim", 256) if config is not None and not isinstance(config, dict) else (config or {}).get("hidden_dim", 256)
 

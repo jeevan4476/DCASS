@@ -19,7 +19,7 @@ import json
 import sys
 from pathlib import Path
 
-import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -36,7 +36,7 @@ TRAFFIC = {
 
 
 def load_warden(path: Path, key: str) -> DeepPacketInspectionWarden:
-    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    ckpt = load_trained_checkpoint(path, map_location="cpu",)
     warden = DeepPacketInspectionWarden(num_channels=3)
     warden.load_state_dict(ckpt[key] if key in ckpt else ckpt["state_dict"])
     # A checkpoint whose critic was trained with a bounded score is a

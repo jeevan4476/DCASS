@@ -28,6 +28,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -128,11 +129,9 @@ def main() -> int:
     results: dict = {}
 
     # --- The generator's output and its gradient path -------------------
-    ckpt = torch.load(
+    ckpt = load_trained_checkpoint(
         PROJECT_ROOT / "storage" / "models" / "gan_generator.pt",
-        map_location=DEVICE,
-        weights_only=False,
-    )
+        map_location=DEVICE,)
     generator = TemporalPatternGenerator(
         latent_dim=128, hidden_dim=256, num_channels=3, max_sequence_length=SEQ
     )

@@ -30,6 +30,7 @@ from dataclasses import dataclass, asdict, field
 from scipy.stats import ks_2samp
 
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 # Compatibility shim for Python 3.12 + PyTorch unpickling
 sys.modules.setdefault("pathlib._local", pathlib)
@@ -637,7 +638,7 @@ def load_corpus_human_sessions(limit: int = 300) -> List[dict]:
     holdout_indices: Optional[List[int]] = None
     if DETECTOR_PATH.exists():
         try:
-            ckpt = torch.load(DETECTOR_PATH, map_location="cpu", weights_only=False)
+            ckpt = load_trained_checkpoint(DETECTOR_PATH, map_location="cpu",)
             if isinstance(ckpt, dict):
                 holdout_indices = ckpt.get("holdout_human_indices")
         except Exception:  # pragma: no cover - a missing split is not fatal
@@ -1055,7 +1056,7 @@ def run_component3():
     print("1. Loading the trained traffic detector...")
     warden = DeepPacketInspectionWarden(num_channels=NUM_CHANNELS).to(DEVICE)
     if DETECTOR_PATH.exists():
-        det_ckpt = torch.load(DETECTOR_PATH, map_location=DEVICE, weights_only=False)
+        det_ckpt = load_trained_checkpoint(DETECTOR_PATH, map_location=DEVICE,)
         if isinstance(det_ckpt, dict) and "state_dict" in det_ckpt:
             warden.load_state_dict(det_ckpt["state_dict"])
         else:

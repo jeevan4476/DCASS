@@ -22,6 +22,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 from scipy.stats import ks_2samp
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -48,11 +49,9 @@ def load_benchmark():
 
 
 def load_detector():
-    ckpt = torch.load(
+    ckpt = load_trained_checkpoint(
         PROJECT_ROOT / "storage" / "models" / "traffic_detector.pt",
-        map_location=DEVICE,
-        weights_only=False,
-    )
+        map_location=DEVICE,)
     model = DeepPacketInspectionWarden(num_channels=3).to(DEVICE)
     model.load_state_dict(ckpt["state_dict"])
     model.eval()
@@ -92,9 +91,6 @@ def main() -> int:
     # A size-matched corpus reference: the benchmark compares a 50-item
     # burst against a 5000-item pool, so the null KS is not zero.
     print(f"  corpus pool: {len(corpus_pool)} delays; surrogate pool: {len(surrogate)}")
-
-    # Human sessions, held out from anything the detector saw.
-    human_probe = human[-400:]
 
     bots = [make_bot_session(s, rng) for s in human[:400]]
 

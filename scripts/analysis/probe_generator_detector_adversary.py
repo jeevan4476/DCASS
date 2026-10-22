@@ -36,6 +36,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+from src.utils.checkpoint_io import load_trained_checkpoint
 from torch.utils.data import DataLoader
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -92,7 +93,7 @@ def enable_input_gradients(model: DeepPacketInspectionWarden) -> None:
 
 
 def load_detector(path: Path, key: str) -> DeepPacketInspectionWarden:
-    ckpt = torch.load(path, map_location=DEVICE, weights_only=False)
+    ckpt = load_trained_checkpoint(path, map_location=DEVICE,)
     model = DeepPacketInspectionWarden(num_channels=3, hidden_dim=256)
     model.load_state_dict(ckpt[key] if key in ckpt else ckpt["state_dict"])
     model.to(DEVICE).eval()

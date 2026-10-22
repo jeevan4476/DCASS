@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -52,7 +53,7 @@ def main() -> int:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     warden = DeepPacketInspectionWarden(num_channels=3).to(device)
     ckpt_path = PROJECT_ROOT / "storage" / "models" / "warden.pt"
-    state = torch.load(ckpt_path, map_location=device, weights_only=False)
+    state = load_trained_checkpoint(ckpt_path, map_location=device,)
     warden.load_state_dict(state, strict=False)
     warden.eval()
 

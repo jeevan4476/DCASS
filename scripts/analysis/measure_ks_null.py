@@ -35,6 +35,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 from scipy.stats import ks_2samp
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -65,11 +66,9 @@ def main() -> int:
 
     # The eval detector checkpoint also carries the trainer's held-out human
     # split, which is where the corpus session null must be measured.
-    ckpt = torch.load(
+    ckpt = load_trained_checkpoint(
         PROJECT_ROOT / "storage" / "models" / "traffic_detector_eval.pt",
-        map_location="cpu",
-        weights_only=False,
-    )
+        map_location="cpu",)
     model = DeepPacketInspectionWarden(num_channels=3)
     model.load_state_dict(ckpt["state_dict"])
     model.eval()

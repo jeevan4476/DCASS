@@ -26,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -126,7 +127,7 @@ def main() -> int:
     }
 
     if ckpt_path.exists():
-        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+        ckpt = load_trained_checkpoint(ckpt_path, map_location=device,)
         if isinstance(ckpt, dict) and "warden_state" in ckpt:
             state = ckpt["warden_state"]
             report["checkpoint_kind"] = "training_checkpoint"

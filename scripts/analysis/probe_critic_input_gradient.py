@@ -35,6 +35,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -127,11 +128,9 @@ def main() -> int:
 
     # The same measurement after the critic has been trained to collapse,
     # using the shipped checkpoint, for reference.
-    ckpt = torch.load(
+    ckpt = load_trained_checkpoint(
         PROJECT_ROOT / "storage" / "models" / "warden.pt",
-        map_location=DEVICE,
-        weights_only=False,
-    )
+        map_location=DEVICE,)
     warden = DeepPacketInspectionWarden(num_channels=3, hidden_dim=256)
     warden.load_state_dict(ckpt if not isinstance(ckpt, dict) or "state_dict" not in ckpt else ckpt["state_dict"])
     warden = warden.to(DEVICE)

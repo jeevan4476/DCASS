@@ -27,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 from scipy.stats import ks_2samp
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -48,7 +49,6 @@ def load_benchmark():
 
 
 def score(model, delays, channels):
-    n = len(delays)
     d_t = torch.tensor(np.asarray(delays, dtype=np.float32)).unsqueeze(0).to("cpu")
     c_t = torch.tensor(np.asarray(channels, dtype=np.int64)).unsqueeze(0).to("cpu")
     with torch.no_grad():
@@ -58,11 +58,9 @@ def score(model, delays, channels):
 
 def main() -> int:
     bench = load_benchmark()
-    ckpt = torch.load(
+    ckpt = load_trained_checkpoint(
         PROJECT_ROOT / "storage" / "models" / "traffic_detector.pt",
-        map_location="cpu",
-        weights_only=False,
-    )
+        map_location="cpu",)
     model = DeepPacketInspectionWarden(num_channels=3)
     model.load_state_dict(ckpt["state_dict"])
     model.eval()

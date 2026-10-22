@@ -32,6 +32,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -72,11 +73,9 @@ def main() -> int:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     shipped_state = {
         k: (v.to(device) if isinstance(v, torch.Tensor) else v)
-        for k, v in torch.load(
+        for k, v in load_trained_checkpoint(
             PROJECT_ROOT / "storage" / "models" / "warden.pt",
-            map_location=device,
-            weights_only=False,
-        ).items()
+            map_location=device,).items()
     }
 
     a, b = probes()

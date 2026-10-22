@@ -27,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -129,11 +130,9 @@ def report(name, scores):
 
 def main() -> int:
     bench = load_benchmark()
-    ckpt = torch.load(
+    ckpt = load_trained_checkpoint(
         PROJECT_ROOT / "storage" / "models" / "traffic_detector.pt",
-        map_location="cpu",
-        weights_only=False,
-    )
+        map_location="cpu",)
     model = DeepPacketInspectionWarden(num_channels=3)
     model.load_state_dict(ckpt["state_dict"])
     model.eval()
