@@ -16,6 +16,8 @@ import torch.nn as nn
 from dataclasses import dataclass
 from typing import Optional, Iterator, Tuple
 
+from src.stealth.delay_contract import raw_delay_band_transform
+
 
 @dataclass
 class TimingSchedule:
@@ -234,8 +236,18 @@ class TemporalPatternGenerator(nn.Module):
         # Apply causal temporal block
         temporal_features = self.temporal_block(gru_out)
 
-        # Output predictions (add minimum 0.5s baseline delay)
-        delays = self.delay_head(temporal_features).squeeze(-1) + 0.5
+        # Output predictions.
+        #
+        # The delay head's Softplus output is folded into the band of raw
+        # values the canonical delay mapping can turn into the deployment
+        # window without clipping, so the mapping is never saturated and
+        # the gradient always reaches the head. Emitting the Softplus
+        # value directly left the raw output unbounded, and the mapping
+        # flattened everything outside a 1.97 percent slice of it against
+        # the clip, where the gradient is zero.
+        delays = raw_delay_band_transform(
+            self.delay_head(temporal_features).squeeze(-1)
+        )
         channel_logits = self.channel_head(temporal_features)
 
         final_state = temporal_features[:, -1, :]

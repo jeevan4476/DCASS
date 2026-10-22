@@ -1,0 +1,19 @@
+{
+  "schema": "critic-input-gradient-probe-v1",
+  "lambda_gp": 10.0,
+  "note": "The critic's gradient with respect to its input, which is the quantity the WGAN-GP penalty constrains. The penalty equals lambda_gp exactly when this norm is zero, so a penalty sitting at lambda_gp means the constraint is inert rather than merely violated.",
+  "configurations": {
+    "post_ln_shipped": {
+      "input_gradient_norm": 0.18641,
+      "gradient_penalty": 6.619282
+    },
+    "pre_ln": {
+      "input_gradient_norm": 0.151848,
+      "gradient_penalty": 7.19361
+    },
+    "shipped_collapsed_critic": {
+      "input_gradient_norm": 1.3e-05,
+      "gradient_penalty": 9.999735
+    }
+  }
+}

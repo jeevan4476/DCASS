@@ -18,6 +18,7 @@ from typing import Optional, Tuple, List
 from pathlib import Path
 
 from .environment import StealthEnvironment
+from .pacing import canonical_rl_delay
 
 
 @dataclass
@@ -184,11 +185,15 @@ class ActorCritic(nn.Module):
         delay_dist = Normal(delay_mean, delay_std)
         delay_sample = delay_dist.sample()
 
-        # Clamp to a physically valid positive delay BEFORE computing log_prob so
+        # Clamp to the deployment pacing window BEFORE computing log_prob so
         # the stored log_prob matches the action actually executed in the environment.
         # (If we clamped after, old_log_probs would reflect the raw sample while
         #  evaluate() would compute log_prob of the clamped action, breaking PPO.)
-        delay_val = max(0.5, delay_sample.item())
+        #
+        # The window is the same one the scheduler deploys and the environment
+        # scores, so the delay the agent optimizes is the delay the receiver
+        # sees. See src/stealth/rl/pacing.py.
+        delay_val = canonical_rl_delay(delay_sample.item())
         delay_clamped = torch.tensor([[delay_val]], dtype=delay_mean.dtype, device=delay_mean.device)
         delay_log_prob = delay_dist.log_prob(delay_clamped).sum(dim=-1)
 
