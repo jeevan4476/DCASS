@@ -1,0 +1,139 @@
+{
+  "schema": "wgan-training-data-probe-v1",
+  "epochs": 6,
+  "note": "The same WGAN-GP training run against the synthetic fallback the shipped generator was trained on and against the traffic corpus the detector was trained on. 'critic_anomaly_spread' is the spread of the critic's mean anomaly score across the diagnostic's six delay probes; it falls to zero as the critic collapses. 'generator_delay_std' is the standard deviation of the generator's raw delay output.",
+  "arms": {
+    "synthetic_fallback": {
+      "data_path": "data/human_traffic.json",
+      "data_exists": false,
+      "history": [
+        {
+          "epoch": 0,
+          "generator_loss": 83.4415,
+          "warden_loss": -77.072,
+          "gradient_penalty": 5.2607,
+          "real_bot_prob": 0.807567,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 1.031762,
+          "critic_anomaly_spread": 0.0329953
+        },
+        {
+          "epoch": 1,
+          "generator_loss": 252.9713,
+          "warden_loss": -89.8844,
+          "gradient_penalty": 2.5971,
+          "real_bot_prob": 0.008809,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 1.822328,
+          "critic_anomaly_spread": 0.02478659
+        },
+        {
+          "epoch": 2,
+          "generator_loss": 364.3259,
+          "warden_loss": -162.4258,
+          "gradient_penalty": 74.8532,
+          "real_bot_prob": 0.25,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 3.514197,
+          "critic_anomaly_spread": 0.01882951
+        },
+        {
+          "epoch": 3,
+          "generator_loss": 365.4267,
+          "warden_loss": -124.0644,
+          "gradient_penalty": 45.3544,
+          "real_bot_prob": 0.088067,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 5.800793,
+          "critic_anomaly_spread": 0.03540614
+        },
+        {
+          "epoch": 4,
+          "generator_loss": 310.3225,
+          "warden_loss": 23.2917,
+          "gradient_penalty": 9.6542,
+          "real_bot_prob": 0.0,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 5.857638,
+          "critic_anomaly_spread": 0.01779112
+        },
+        {
+          "epoch": 5,
+          "generator_loss": 418.0451,
+          "warden_loss": -96.9269,
+          "gradient_penalty": 14.5004,
+          "real_bot_prob": 0.0,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 6.212333,
+          "critic_anomaly_spread": 0.02289239
+        }
+      ]
+    },
+    "traffic_corpus": {
+      "data_path": "storage/data/traffic/human_traffic.json",
+      "data_exists": true,
+      "history": [
+        {
+          "epoch": 0,
+          "generator_loss": 239.0028,
+          "warden_loss": -92.6604,
+          "gradient_penalty": 30.385,
+          "real_bot_prob": 0.249951,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 1.934629,
+          "critic_anomaly_spread": 0.03194382
+        },
+        {
+          "epoch": 1,
+          "generator_loss": 277.7685,
+          "warden_loss": 27.0429,
+          "gradient_penalty": 9.5087,
+          "real_bot_prob": 0.0,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 4.171208,
+          "critic_anomaly_spread": 0.02309466
+        },
+        {
+          "epoch": 2,
+          "generator_loss": 351.5856,
+          "warden_loss": 2.6572,
+          "gradient_penalty": 9.9511,
+          "real_bot_prob": 0.0,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 4.995979,
+          "critic_anomaly_spread": 0.00738341
+        },
+        {
+          "epoch": 3,
+          "generator_loss": 248.59,
+          "warden_loss": 25.9497,
+          "gradient_penalty": 8.606,
+          "real_bot_prob": 0.0,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 5.436937,
+          "critic_anomaly_spread": 0.0202111
+        },
+        {
+          "epoch": 4,
+          "generator_loss": 172.0934,
+          "warden_loss": -2.5803,
+          "gradient_penalty": 9.6726,
+          "real_bot_prob": 0.0,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 5.406511,
+          "critic_anomaly_spread": 0.00872022
+        },
+        {
+          "epoch": 5,
+          "generator_loss": 129.8896,
+          "warden_loss": -13.4359,
+          "gradient_penalty": 7.1351,
+          "real_bot_prob": 0.0,
+          "fake_bot_prob": 0.0,
+          "generator_delay_std": 5.620887,
+          "critic_anomaly_spread": 0.0265831
+        }
+      ]
+    }
+  }
+}

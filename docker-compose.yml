@@ -129,9 +129,17 @@ services:
   # ─────────────────────────────────────────────────────────────────────────
   # Training Services (profile: training)
   # Run with: docker compose --profile training run <service>
+  #
+  # The training profile is runnable end to end: step 0 generates the
+  # behavioral corpus, step 1 trains the generator and its warden, and step
+  # 2 trains the RL policy against the frozen warden.
   # ─────────────────────────────────────────────────────────────────────────
 
   # Step 0: Generate synthetic human traffic data
+  #
+  # The corpus is synthetic: it models human browsing as a mixture of
+  # regimes, it is not a recording of any real person. A detector or a
+  # generator trained on it learns that structure, not human behaviour.
   dcass-gen-traffic:
     build:
       context: .
@@ -176,6 +184,7 @@ services:
         --epochs ${GAN_EPOCHS:-50}
         --batch-size ${GAN_BATCH_SIZE:-32}
         --checkpoint-dir /app/models/gan
+        --out /app/models/gan_generator.pt
         --device cpu
     profiles:
       - training
@@ -205,8 +214,8 @@ services:
       python -u scripts/stealth/train_rl.py
         --episodes ${RL_EPISODES:-1000}
         --num-channels ${NUM_CHANNELS:-3}
-        --checkpoint-dir /app/models/rl
-        --warden-checkpoint /app/models/gan/final.pt
+        --warden-checkpoint /app/models/gan_generator.pt
+        --out /app/models/rl_agent.pt
         --device cpu
     profiles:
       - training
