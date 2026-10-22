@@ -15,8 +15,8 @@ This document presents the **complete, end-to-end mathematical and operational t
  │ Plaintext Message             │ "Sample message" (14 Bytes)   │
  │ Total Encoded Bits            │ 216 bits (27 Codeword Bytes)  │
  │ Standard VCP Carrier Count    │ 27-28 carriers (1 Byte/item)  │
- │ DSSC Compacted Carrier Count  │ 15 carriers (~15 bits/item)   │
- │ Compaction Ratio              │ 46.4% Traffic Reduction       │
+ │ DSSC Compacted Carrier Count  │ 16 carriers (14 B multi-modal) │
+ │ Compaction Ratio              │ 40.7% Traffic Reduction       │
  │ Session Key                   │ 4a8f9c2d1e0b... (32-byte hex) │
  │ Reed-Solomon Parity Block     │ 8 Parity Bytes (GF(2^8))      │
  │ CRC-16 Integrity Checksum     │ Valid CRC-16 CCITT Checksum   │
@@ -60,7 +60,7 @@ This document presents the **complete, end-to-end mathematical and operational t
 
 ### 2. Complete 15-Carrier Live Execution Table
 
-Here is the exact trace for every carrier selected from the 256,366-item corpus:
+Here is the exact trace for every carrier selected from the 245,279-item corpus:
 
 | # | 15-Bit Symbol Value | Binary Pattern (15-bit) | Target Semantic Family | Voronoi Cluster | Modality | Media ID | Visible Public Caption / Content Snippet |
 |---|---|---|---|---|---|---|---|
@@ -164,7 +164,8 @@ When receiver Bob receives the sequence of 15 media IDs:
 ---
 
 ### Source Code & Test Script Reference
-* **Trace Dump Data:** [`scripts/scratch/dssc_trace_dump.json`](file:///home/jeevan/projects/DCASS/scripts/scratch/dssc_trace_dump.json)
-* **Symbol & Bit Records:** [`scripts/scratch/dssc_exact_records.json`](file:///home/jeevan/projects/DCASS/scripts/scratch/dssc_exact_records.json)
-* **Live Test Script:** [`scripts/scratch/extract_exact_symbols.py`](file:///home/jeevan/projects/DCASS/scripts/scratch/extract_exact_symbols.py)
+The trace dump, symbol records, and extraction script this document was written against are not in the repository, so the numbers above are illustrative rather than a recorded artifact. The recorded capacity figures are in `storage/benchmarks/component_4a_capacity_results.json` and are quoted in [`docs/benchmarking/04_CODEC_PERFORMANCE_AND_ECC.md`](../benchmarking/04_CODEC_PERFORMANCE_AND_ECC.md).
+
+* **Core DSSC Implementation:** [`src/engine/dssc_encoder.py`](file:///home/img1/projects/DCASS/src/engine/dssc_encoder.py) & [`src/engine/dssc_decoder.py`](file:///home/img1/projects/DCASS/src/engine/dssc_decoder.py)
+* **Recorded capacity artifact:** `storage/benchmarks/component_4a_capacity_results.json`
 * **Core DSSC Implementation:** [`src/engine/dssc_encoder.py`](file:///home/jeevan/projects/DCASS/src/engine/dssc_encoder.py) & [`src/engine/dssc_decoder.py`](file:///home/jeevan/projects/DCASS/src/engine/dssc_decoder.py)

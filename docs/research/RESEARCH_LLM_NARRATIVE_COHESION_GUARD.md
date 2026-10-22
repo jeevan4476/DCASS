@@ -93,12 +93,12 @@ For multi-modal sequences mixing Images, Text, and Audio:
 
 ## 3. Quantitative Density & Corpus Assessment
 
-### Is the 153,281 Vector Index Sufficient for Narrative Cohesion?
+### Is the 245,279 Vector Index Sufficient for Narrative Cohesion?
 
 **Evaluation**:
 For Beam Search to find low-perplexity paths ($\mathcal{P}(S) < 40$), each byte symbol $m \in \{0, \dots, 255\}$ must have a sufficiently large candidate pool $|\mathcal{C}(m)|$ within its Voronoi cluster $\mathcal{V}(c_m)$.
 
-- **Average Voronoi Cluster Size**: $\bar{\rho} \approx 598.8$ vectors per symbol.
+- **Average Voronoi Cluster Size**: $\bar{\rho} \approx 958.1$ vectors per symbol.
 - **Beam Search Expansion**: With Beam Width $B = 5$, at each step the guard evaluates $5 \times 10 = 50$ candidate paths.
 - **Corpus Coverage Margin**: Having ~600 candidate media items per symbol provides **12 times the required candidates** per beam step, ensuring Beam Search consistently discovers smooth, natural narrative sequences.
 

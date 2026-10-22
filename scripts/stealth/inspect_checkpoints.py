@@ -1,11 +1,12 @@
-import sys, pathlib
+import sys
+import pathlib
 sys.modules['pathlib._local'] = pathlib
-import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 # Inspect GAN checkpoint
 gan_path = 'storage/models/gan_generator.pt'
 try:
-    ckpt = torch.load(gan_path, map_location='cpu', weights_only=False)
+    ckpt = load_trained_checkpoint(gan_path, map_location='cpu',)
     print('=== GAN Generator Checkpoint ===')
     print(f'Keys: {list(ckpt.keys())}')
     if 'config' in ckpt:
@@ -38,7 +39,7 @@ except Exception as e:
 # Inspect RL checkpoint
 rl_path = 'storage/models/rl_agent.pt'
 try:
-    ckpt = torch.load(rl_path, map_location='cpu', weights_only=False)
+    ckpt = load_trained_checkpoint(rl_path, map_location='cpu',)
     print('\n=== RL Agent Checkpoint ===')
     print(f'Keys: {list(ckpt.keys())}')
     if 'config' in ckpt:
@@ -54,7 +55,7 @@ try:
             if hasattr(v, 'shape'):
                 print(f'  {k}: {v.shape}')
     if 'optimizer_state' in ckpt:
-        print(f'Optimizer state present')
+        print('Optimizer state present')
 except Exception as e:
     print(f'RL Error: {e}')
     import traceback

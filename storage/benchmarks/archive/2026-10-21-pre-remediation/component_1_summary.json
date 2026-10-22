@@ -1,0 +1,446 @@
+{
+  "schema": "component1-summary-v2",
+  "provenance": {
+    "git_commit": "1fe027532f690ae8bfb9476128e53ae3100799a9",
+    "torch": "2.14.1+cu126",
+    "device": "NVIDIA GeForce RTX 4050 Laptop GPU",
+    "timestamp": "2026-10-20T13:57:46"
+  },
+  "protocol": {
+    "images": 2000,
+    "folds": 3,
+    "epochs": 20,
+    "carriers": 1000,
+    "sweep_rates": [
+      1.0,
+      0.4,
+      0.2,
+      0.1
+    ],
+    "positive_control_gate": 0.9,
+    "seed": 42
+  },
+  "detectors": [
+    {
+      "name": "sr_net",
+      "citation": "Boroumand et al., \"Deep Residual Network for Steganalysis\", TIFS 2018",
+      "reference": "Boroumand et al., TIFS 2018",
+      "control": {
+        "accuracy": 0.93675,
+        "accuracy_ci": [
+          0.9287795129803704,
+          0.9438823825351763
+        ],
+        "auc_mean": 0.9843950112247896,
+        "auc_std": 0.004030601741427801,
+        "auc_ci": [
+          0.9809517645680141,
+          0.9875035992703103
+        ],
+        "n": 4000,
+        "gate_pass_all": true
+      },
+      "dcass": {
+        "auc_mean": 0.49734690313902447,
+        "auc_std": 0.011082889616852094,
+        "auc_ci": [
+          0.4830122958409067,
+          0.5142633118040721
+        ],
+        "balanced_mean": 0.5024741133069469,
+        "balanced_ci": [
+          0.49380477813567514,
+          0.5112323584368111
+        ],
+        "cover_rate_mean": 0.8830799815042693,
+        "cover_rate_std": 0.04891838660237814,
+        "kl_mean": 0.23103326804953808,
+        "kl_std": 0.09091681573171861,
+        "kl_p_values": [
+          0.23776223776223776,
+          0.4225774225774226,
+          0.37462537462537465
+        ],
+        "kl_p_min": 0.23776223776223776,
+        "kl_p_max": 0.4225774225774226,
+        "carrier_n_mean": 933.0
+      },
+      "sweep": {
+        "1": {
+          "accuracy": 0.93675,
+          "accuracy_ci": [
+            0.9287795129803704,
+            0.9438823825351763
+          ],
+          "fpr": 0.112,
+          "auc_mean": 0.9843950112247896,
+          "n": 4000
+        },
+        "0.4": {
+          "accuracy": 0.72125,
+          "accuracy_ci": [
+            0.7071471890603811,
+            0.7349282416959204
+          ],
+          "fpr": 0.112,
+          "auc_mean": 0.8773340240053246,
+          "n": 4000
+        },
+        "0.2": {
+          "accuracy": 0.566,
+          "accuracy_ci": [
+            0.5505843406891643,
+            0.5812890081466137
+          ],
+          "fpr": 0.112,
+          "auc_mean": 0.729540062366148,
+          "n": 4000
+        },
+        "0.1": {
+          "accuracy": 0.5235,
+          "accuracy_ci": [
+            0.5080068263593711,
+            0.5389480781503377
+          ],
+          "fpr": 0.112,
+          "auc_mean": 0.6215133944610323,
+          "n": 4000
+        }
+      },
+      "per_fold": [
+        {
+          "fold": 0,
+          "control_acc": 0.9197901049475262,
+          "control_auc": 0.9829238304386038,
+          "dcass_auc": 0.5039497604776787,
+          "dcass_auc_ci": [
+            0.474123987355563,
+            0.5325242205361527
+          ],
+          "dcass_perm_p": 0.7981009495252374,
+          "kl": 0.14339346340636044,
+          "kl_perm_p": 0.23776223776223776,
+          "cover_class_rate": 0.8156182212581344,
+          "balanced_accuracy": 0.5134802446932716,
+          "checkpoint": "storage/models/benchmark_1/sr_net_fold0.pt",
+          "runtime_s": 901.2
+        },
+        {
+          "fold": 1,
+          "control_acc": 0.9310344827586207,
+          "control_auc": 0.9803613935161355,
+          "dcass_auc": 0.481735016736005,
+          "dcass_auc_ci": [
+            0.4529790570952466,
+            0.5091643486938202
+          ],
+          "dcass_perm_p": 0.22088955522238882,
+          "kl": 0.19337771667019835,
+          "kl_perm_p": 0.4225774225774226,
+          "cover_class_rate": 0.9035369774919614,
+          "balanced_accuracy": 0.48676224588670297,
+          "checkpoint": "storage/models/benchmark_1/sr_net_fold1.pt",
+          "runtime_s": 901.3
+        },
+        {
+          "fold": 2,
+          "control_acc": 0.9594594594594594,
+          "control_auc": 0.9898998097196295,
+          "dcass_auc": 0.5063559322033898,
+          "dcass_auc_ci": [
+            0.47797799123275814,
+            0.5348671234794116
+          ],
+          "dcass_perm_p": 0.6521739130434783,
+          "kl": 0.3563286240720555,
+          "kl_perm_p": 0.37462537462537465,
+          "cover_class_rate": 0.9300847457627118,
+          "balanced_accuracy": 0.5071798493408662,
+          "checkpoint": "storage/models/benchmark_1/sr_net_fold2.pt",
+          "runtime_s": 899.7
+        }
+      ]
+    },
+    {
+      "name": "zhu_net",
+      "citation": "Zhu et al., \"Universal Steganalysis with Separable Convolutions\", TIFS 2020",
+      "reference": "Zhu et al., TIFS 2020",
+      "control": {
+        "accuracy": 0.9505,
+        "accuracy_ci": [
+          0.943334994710436,
+          0.9568005151458979
+        ],
+        "auc_mean": 0.9859520681666202,
+        "auc_std": 0.00240265485315959,
+        "auc_ci": [
+          0.9828056905052058,
+          0.9888022317434688
+        ],
+        "n": 4000,
+        "gate_pass_all": true
+      },
+      "dcass": {
+        "auc_mean": 0.49933447192146474,
+        "auc_std": 0.015937131099337982,
+        "auc_ci": [
+          0.4819863423419532,
+          0.5145899070712503
+        ],
+        "balanced_mean": 0.5025430008018452,
+        "balanced_ci": [
+          0.49557609466830765,
+          0.5100761405989502
+        ],
+        "cover_rate_mean": 0.9214087089989661,
+        "cover_rate_std": 0.020727269652539664,
+        "kl_mean": 0.18028936077801225,
+        "kl_std": 0.06485910831097526,
+        "kl_p_values": [
+          0.24975024975024976,
+          0.9370629370629371,
+          0.903096903096903
+        ],
+        "kl_p_min": 0.24975024975024976,
+        "kl_p_max": 0.9370629370629371,
+        "carrier_n_mean": 933.0
+      },
+      "sweep": {
+        "1": {
+          "accuracy": 0.9505,
+          "accuracy_ci": [
+            0.943334994710436,
+            0.9568005151458979
+          ],
+          "fpr": 0.0735,
+          "auc_mean": 0.9859520681666202,
+          "n": 4000
+        },
+        "0.4": {
+          "accuracy": 0.72525,
+          "accuracy_ci": [
+            0.711205112626129,
+            0.7388626423020379
+          ],
+          "fpr": 0.0735,
+          "auc_mean": 0.900177872848314,
+          "n": 4000
+        },
+        "0.2": {
+          "accuracy": 0.547,
+          "accuracy_ci": [
+            0.5315356900430874,
+            0.5623741189763305
+          ],
+          "fpr": 0.0735,
+          "auc_mean": 0.7382728858419353,
+          "n": 4000
+        },
+        "0.1": {
+          "accuracy": 0.51325,
+          "accuracy_ci": [
+            0.49775499565855924,
+            0.5287195781607448
+          ],
+          "fpr": 0.0735,
+          "auc_mean": 0.6224385373527559,
+          "n": 4000
+        }
+      },
+      "per_fold": [
+        {
+          "fold": 0,
+          "control_acc": 0.9475262368815592,
+          "control_auc": 0.9836386154748713,
+          "dcass_auc": 0.5078084601950652,
+          "dcass_auc_ci": [
+            0.4790983846471558,
+            0.5368588346824418
+          ],
+          "dcass_perm_p": 0.5757121439280359,
+          "kl": 0.2713272368580668,
+          "kl_perm_p": 0.24975024975024976,
+          "cover_class_rate": 0.9078091106290672,
+          "balanced_accuracy": 0.5071149349403389,
+          "checkpoint": "storage/models/benchmark_1/zhu_net_fold0.pt",
+          "runtime_s": 1453.2
+        },
+        {
+          "fold": 1,
+          "control_acc": 0.946776611694153,
+          "control_auc": 0.9849535502114011,
+          "dcass_auc": 0.47701069079608105,
+          "dcass_auc_ci": [
+            0.44945513577616336,
+            0.5044615152230959
+          ],
+          "dcass_perm_p": 0.12043978010994502,
+          "kl": 0.14447272841584852,
+          "kl_perm_p": 0.9370629370629371,
+          "cover_class_rate": 0.9506966773847803,
+          "balanced_accuracy": 0.4954162789987643,
+          "checkpoint": "storage/models/benchmark_1/zhu_net_fold1.pt",
+          "runtime_s": 1438.1
+        },
+        {
+          "fold": 2,
+          "control_acc": 0.9572072072072072,
+          "control_auc": 0.9892640388135884,
+          "dcass_auc": 0.5131842647732479,
+          "dcass_auc_ci": [
+            0.4828703571155901,
+            0.541991024393037
+          ],
+          "dcass_perm_p": 0.3773113443278361,
+          "kl": 0.12506811706012141,
+          "kl_perm_p": 0.903096903096903,
+          "cover_class_rate": 0.9057203389830508,
+          "balanced_accuracy": 0.5050977884664325,
+          "checkpoint": "storage/models/benchmark_1/zhu_net_fold2.pt",
+          "runtime_s": 1448.4
+        }
+      ]
+    },
+    {
+      "name": "ye_net",
+      "citation": "Ye et al., \"Deep Learning Hierarchical Representations\", TIFS 2017",
+      "reference": "Ye et al., TIFS 2017",
+      "control": {
+        "accuracy": 0.93975,
+        "accuracy_ci": [
+          0.9319454113217129,
+          0.9467107273227329
+        ],
+        "auc_mean": 0.9852870387724115,
+        "auc_std": 0.001970078269842213,
+        "auc_ci": [
+          0.9822975143107711,
+          0.9880859039895322
+        ],
+        "n": 4000,
+        "gate_pass_all": true
+      },
+      "dcass": {
+        "auc_mean": 0.49932948387404824,
+        "auc_std": 0.016889406168939674,
+        "auc_ci": [
+          0.48257962536405413,
+          0.5159870776242356
+        ],
+        "balanced_mean": 0.4987880837194379,
+        "balanced_ci": [
+          0.4914496487979306,
+          0.5068571894578834
+        ],
+        "cover_rate_mean": 0.9234265444184088,
+        "cover_rate_std": 0.019139550217506525,
+        "kl_mean": 0.2329949452325216,
+        "kl_std": 0.07430558958566207,
+        "kl_p_values": [
+          0.8491508491508492,
+          0.4775224775224775,
+          0.38461538461538464
+        ],
+        "kl_p_min": 0.38461538461538464,
+        "kl_p_max": 0.8491508491508492,
+        "carrier_n_mean": 933.0
+      },
+      "sweep": {
+        "1": {
+          "accuracy": 0.93975,
+          "accuracy_ci": [
+            0.9319454113217129,
+            0.9467107273227329
+          ],
+          "fpr": 0.079,
+          "auc_mean": 0.9852870387724115,
+          "n": 4000
+        },
+        "0.4": {
+          "accuracy": 0.63425,
+          "accuracy_ci": [
+            0.6192016229930929,
+            0.6490407570251376
+          ],
+          "fpr": 0.079,
+          "auc_mean": 0.8625082256846341,
+          "n": 4000
+        },
+        "0.2": {
+          "accuracy": 0.53325,
+          "accuracy_ci": [
+            0.5177646225352429,
+            0.5486715721433878
+          ],
+          "fpr": 0.079,
+          "auc_mean": 0.7171410826769892,
+          "n": 4000
+        },
+        "0.1": {
+          "accuracy": 0.5125,
+          "accuracy_ci": [
+            0.4970051174298245,
+            0.5279708956072545
+          ],
+          "fpr": 0.079,
+          "auc_mean": 0.6168102859122548,
+          "n": 4000
+        }
+      },
+      "per_fold": [
+        {
+          "fold": 0,
+          "control_acc": 0.9355322338830585,
+          "control_auc": 0.9837667373209946,
+          "dcass_auc": 0.5124232894398788,
+          "dcass_auc_ci": [
+            0.48222916741195565,
+            0.5401351114030837
+          ],
+          "dcass_perm_p": 0.4002998500749625,
+          "kl": 0.12825481234476055,
+          "kl_perm_p": 0.8491508491508492,
+          "cover_class_rate": 0.8980477223427332,
+          "balanced_accuracy": 0.5022505016472241,
+          "checkpoint": "storage/models/benchmark_1/ye_net_fold0.pt",
+          "runtime_s": 363.3
+        },
+        {
+          "fold": 1,
+          "control_acc": 0.9340329835082459,
+          "control_auc": 0.9840252287649279,
+          "dcass_auc": 0.4754825159767383,
+          "dcass_auc_ci": [
+            0.44751117206669977,
+            0.5046073024580957
+          ],
+          "dcass_perm_p": 0.09045477261369315,
+          "kl": 0.2927209200159541,
+          "kl_perm_p": 0.4775224775224775,
+          "cover_class_rate": 0.9442658092175777,
+          "balanced_accuracy": 0.4948835871453341,
+          "checkpoint": "storage/models/benchmark_1/ye_net_fold1.pt",
+          "runtime_s": 357.6
+        },
+        {
+          "fold": 2,
+          "control_acc": 0.9496996996996997,
+          "control_auc": 0.9880691502313124,
+          "dcass_auc": 0.5100826462055276,
+          "dcass_auc_ci": [
+            0.48233318063826536,
+            0.5389455133099201
+          ],
+          "dcass_perm_p": 0.49525237381309345,
+          "kl": 0.27800910333685014,
+          "kl_perm_p": 0.38461538461538464,
+          "cover_class_rate": 0.9279661016949152,
+          "balanced_accuracy": 0.4992301623657556,
+          "checkpoint": "storage/models/benchmark_1/ye_net_fold2.pt",
+          "runtime_s": 358.0
+        }
+      ]
+    }
+  ],
+  "all_gates_passed": true
+}

@@ -1,0 +1,100 @@
+{
+  "schema": "critic-sensitivity-track-v1",
+  "run": "/home/img1/gan_runs/l1000",
+  "lambda_gp": 10.0,
+  "note": "The critic's gradient with respect to its input, measured on the corpus the critic trained on, and the gap between its score on real traffic and on the generator's own traffic. A collapsed epoch has a gradient near zero and a score gap near zero: the adversary is not discriminating anything.",
+  "collapsed_epochs": [],
+  "final_epoch_collapsed": false,
+  "history": [
+    {
+      "epoch": 0,
+      "input_gradient_norm": 0.6666724,
+      "gradient_penalty": 1.111073,
+      "real_score": -0.2708,
+      "fake_score": 2.7763,
+      "score_gap": -3.0471,
+      "collapsed": false
+    },
+    {
+      "epoch": 1,
+      "input_gradient_norm": 0.57877803,
+      "gradient_penalty": 1.774279,
+      "real_score": -0.0103,
+      "fake_score": -1.3169,
+      "score_gap": 1.3066,
+      "collapsed": false
+    },
+    {
+      "epoch": 2,
+      "input_gradient_norm": 0.76535248,
+      "gradient_penalty": 0.550595,
+      "real_score": -1.6577,
+      "fake_score": -2.8506,
+      "score_gap": 1.1929,
+      "collapsed": false
+    },
+    {
+      "epoch": 3,
+      "input_gradient_norm": 0.91504489,
+      "gradient_penalty": 0.072174,
+      "real_score": -1.3123,
+      "fake_score": -3.4456,
+      "score_gap": 2.1333,
+      "collapsed": false
+    },
+    {
+      "epoch": 4,
+      "input_gradient_norm": 0.82646258,
+      "gradient_penalty": 0.301152,
+      "real_score": -1.094,
+      "fake_score": -2.579,
+      "score_gap": 1.485,
+      "collapsed": false
+    },
+    {
+      "epoch": 5,
+      "input_gradient_norm": 0.61449081,
+      "gradient_penalty": 1.486173,
+      "real_score": -2.8431,
+      "fake_score": -3.1625,
+      "score_gap": 0.3194,
+      "collapsed": false
+    },
+    {
+      "epoch": 6,
+      "input_gradient_norm": 0.66256075,
+      "gradient_penalty": 1.138652,
+      "real_score": -1.0523,
+      "fake_score": -1.5517,
+      "score_gap": 0.4994,
+      "collapsed": false
+    },
+    {
+      "epoch": 7,
+      "input_gradient_norm": 0.62113358,
+      "gradient_penalty": 1.435398,
+      "real_score": -1.1458,
+      "fake_score": -0.1756,
+      "score_gap": -0.9702,
+      "collapsed": false
+    },
+    {
+      "epoch": 8,
+      "input_gradient_norm": 0.42145813,
+      "gradient_penalty": 3.347107,
+      "real_score": -1.166,
+      "fake_score": -2.5193,
+      "score_gap": 1.3533,
+      "collapsed": false
+    },
+    {
+      "epoch": 9,
+      "input_gradient_norm": 0.8532786,
+      "gradient_penalty": 0.215272,
+      "real_score": -1.824,
+      "fake_score": -2.8571,
+      "score_gap": 1.0331,
+      "collapsed": false
+    }
+  ]
+}

@@ -34,7 +34,7 @@ The diagram below illustrates the complete end-to-end lifecycle of a secret payl
 │     Chunk 1: "Autonomous multimodal systems enable"                                                                  │
 │     Chunk 2: "privacy-preserving distributed knowledge discovery across networks"                                     │
 │   • CLIP / CLAP Encoder embeds chunks into 512-dimensional unit hypersphere S^511 vectors v_chunk \in R^512.         │
-│   • FAISS k-NN Index searches 153,281 vectors across Image (39.7k), Text (100k), Audio (13.4k) channels.             │
+│   • FAISS k-NN Index searches 245,279 vectors across Image (31.8k), Text (200k), Audio (13.5k) channels.             │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
   │
   ▼
@@ -73,7 +73,7 @@ The diagram below illustrates the complete end-to-end lifecycle of a secret payl
   ▼
 [ BOB: RECONSTRUCTED PAYLOAD ]
   └─► "Autonomous multimodal systems enable privacy-preserving distributed knowledge discovery across networks"
-      (✅ 100.0% BIT-EXACT MATCH / 0% BIT ERROR RATE)
+      (BIT-EXACT MATCH on clean channels and within the t=4 budget)
 ========================================================================================================================
 ```
 
@@ -96,7 +96,7 @@ Without error correction, 15–30% of recovered bytes suffer single-bit flips, c
 ---
 
 ### 2.2 Mathematical Mechanics of RS-ECC over $GF(2^8)$
-To guarantee **0% Bit Error Rate (100% exact recovery)**, DCASS integrates Reed-Solomon block coding over Galois Field $GF(2^8)$ constructed using the primitive polynomial:
+To correct up to $t=4$ damaged bytes and reach **0% clean-channel BER within that budget**, DCASS integrates Reed-Solomon block coding over $GF(2^8)$ constructed using the primitive polynomial:
 
 $$p(x) = x^8 + x^4 + x^3 + x^2 + 1 \quad (\text{Hexadecimal: } \texttt{0x11D})$$
 
@@ -202,7 +202,7 @@ This dual constraint explains why the selected sequence **"skewly" matches the s
 ```
 Traditional Steganography (LSB / J-UNIWARD)       DCASS (Pure Semantic Steganography)
 ┌──────────────────────────────────────────┐     ┌──────────────────────────────────────────┐
-│  Raw Cover Image (256x256 pixels)        │     │  Corpus of 153,281 Public Media Items     │
+│  Raw Cover Image (256x256 pixels)        │     │  Corpus of 245,279 Public Media Items     │
 │                │                         │     │                │                         │
 │  [+] Modify LSBs of pixel values         │     │  [x] ZERO PIXEL / PCM MODIFICATIONS      │
 │  (Leaves statistical noise signature)    │     │  (Selects existing untouched file)       │
@@ -222,7 +222,7 @@ The **Kullback-Leibler (KL) Divergence** measuring steganalytic risk is defined 
 
 $$D_{\text{KL}}(P_{\text{cover}} \parallel P_{\text{stego}}) = \sum_{x \in \mathcal{X}} P_{\text{cover}}(x) \log \frac{P_{\text{cover}}(x)}{P_{\text{stego}}(x)}$$
 
-Since DCASS selects existing, unmodified files directly from public datasets (Flickr30k, Wikipedia, LibriTTS):
+Since DCASS selects existing, unmodified files directly from public datasets (Flickr30k, Wikipedia, `libretta`):
 
 $$P_{\text{stego}}(x) \equiv P_{\text{cover}}(x) \implies \frac{P_{\text{cover}}(x)}{P_{\text{stego}}(x)} = 1 \implies \log(1) = 0$$
 
@@ -231,7 +231,7 @@ $$D_{\text{KL}}(P_{\text{cover}} \parallel P_{\text{stego}}) = 0.000 \text{ bits
 ### Conclusion:
 DCASS **does NOT violate** semantic steganography; it represents the **purest form of semantic steganography**. 
 
-Because zero pixels or audio samples are modified, deep neural network steganalysis models (SRNet, Ye-Net, Zhu-Net) perform no better than **random guessing (ROC AUC = 0.500)**.
+Because zero pixels or audio samples are modified, deep neural network steganalysis models (SRNet, Ye-Net, Zhu-Net) do no better than chance on the carrier: the recorded C1 run measures **ROC AUC 0.4973 to 0.4993**, with every 95% interval covering 0.5000. That is a statement about the carrier, not about the whole system; see `docs/benchmarking/CLAIM_LEDGER.md` row `SEC-KL-06`.
 
 ---
 
@@ -240,7 +240,7 @@ Because zero pixels or audio samples are modified, deep neural network steganaly
 | Property | Spatial LSB / J-UNIWARD | Generative GAN / Diffusion | DCASS (Our Model) |
 | :--- | :--- | :--- | :--- |
 | **Pixel / Sample Modification** | Modifies LSB bits | Generates artificial pixels | **0.0% (100% Untouched)** |
-| **KL-Divergence ($D_{\text{KL}}$)** | $D_{\text{KL}} > 0.45$ bits | $D_{\text{KL}} \approx 0.12$ bits | **$D_{\text{KL}} = 0.000$ bits** |
-| **Steganalysis Risk (SRNet)** | High (> 95% detection) | Medium (> 75% detection) | **Zero (50% Random Guessing)** |
-| **Decoding Error Rate (BER)** | 0% (Exact) | High (15–35% BER) | **0% BER (RS-ECC Guaranteed)** |
+| **Carrier-Content KL-Divergence** | $D_{\text{KL}} > 0.45$ bits | $D_{\text{KL}} \approx 0.12$ bits | **Conditional $D_{\text{KL}} = 0.000$ bits; selection/timing excluded** |
+| **Content-Residual Steganalysis (SRNet)** | High (> 95% detection) | Medium (> 75% detection) | **~Chance in the C1 negative control; not full-system undetectability** |
+| **Decoding Error Rate (BER)** | 0% (Exact) | High (15–35% BER) | **0% clean-channel BER within $t=4$; dropout unrecoverable** |
 | **Multi-Modal Capability** | Single image only | Single modality | **Unified Image + Text + Audio** |

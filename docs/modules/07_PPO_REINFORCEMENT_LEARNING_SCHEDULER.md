@@ -1,12 +1,12 @@
 # PPO Reinforcement Learning Closed-Loop Stealth Scheduler Specification
 
-**Module**: 07  
-**Name**: Proximal Policy Optimization (PPO) Closed-Loop Stealth Scheduler  
-**Implementation**: [`src/stealth/rl/agent.py`](../src/stealth/rl/agent.py) (`PPOAgent`, `ActorCritic`, `PPOConfig`), [`src/stealth/rl/environment.py`](../src/stealth/rl/environment.py) (`StealthEnvironment`)  
-**Training Script**: [`scripts/stealth/train_rl.py`](../scripts/stealth/train_rl.py)  
-**Evaluation Script**: [`scripts/stealth/benchmark_rl_agent.py`](../scripts/stealth/benchmark_rl_agent.py)  
-**Test Suite**: [`tests/test_stealth/test_rl.py`](../tests/test_stealth/test_rl.py)  
-**Status**: Production Verified (1.57 / 1.58 Bits Channel Path Entropy, 49.39% Warden Indistinguishability)
+**Module**: 07
+**Name**: Proximal Policy Optimization (PPO) Closed-Loop Stealth Scheduler
+**Implementation**: [`src/stealth/rl/agent.py`](../src/stealth/rl/agent.py) (`PPOAgent`, `ActorCritic`, `PPOConfig`), [`src/stealth/rl/environment.py`](../src/stealth/rl/environment.py) (`StealthEnvironment`)
+**Training Script**: [`scripts/stealth/train_rl.py`](../scripts/stealth/train_rl.py)
+**Evaluation Script**: [`scripts/analysis/benchmark_3_traffic_evasion.py`](../scripts/analysis/benchmark_3_traffic_evasion.py)
+**Test Suite**: [`tests/test_stealth/test_rl.py`](../tests/test_stealth/test_rl.py)
+**Status**: Design specification. The earlier "Production Verified" status, the 1.57/1.58-bit channel entropy, the 49.39% warden bot probability, and the 98.88% delivery rate are withdrawn because no current repository artifact supports them. The recorded C3 PPO arm is 0/50 flagged (0%) under the composite rule, all 50 through the soft branch. See Section 4 and [`CLAIM_LEDGER.md`](../benchmarking/CLAIM_LEDGER.md).
 
 ---
 
@@ -14,7 +14,7 @@
 
 While the open-loop WGAN-GP generator pre-computes human-like timing schedules before transmission, it cannot react to dynamic network conditions during live operations. If a social media platform throttles an egress account, or if network jitter causes packet pileups, static schedules risk triggering firewall rate limiters or bot detection alarms.
 
-Module 07 introduces a closed-loop adaptive controller powered by Proximal Policy Optimization (PPO). The Actor-Critic agent observes a 21-dimensional environment state (queue backlog, circadian hour angle, channel cooldown timers, rolling packet latency), predicts continuous inter-packet delays $\Delta t \in [0.5\text{s}, 60.0\text{s}]$, and executes multi-platform channel hopping across available egress channels.
+Module 07 introduces a closed-loop adaptive controller powered by Proximal Policy Optimization (PPO). The Actor-Critic agent observes a 21-dimensional environment state (queue backlog, circadian hour angle, channel cooldown timers, rolling packet latency), predicts continuous inter-packet delays $\Delta t \in [0.5\text{s}, 20.0\text{s}]$, and executes multi-platform channel hopping across available egress channels.
 
 ```mermaid
 flowchart TD
@@ -28,7 +28,7 @@ flowchart TD
     EnvState --> SHARED["Shared Feature Extractor\n(21 -> 256 -> 256 ReLU)"]
 
     subgraph DualHeads["Actor-Critic Policy & Value Heads"]
-        SHARED --> DELAY["Delay Actor Head\nGaussian(mu, sigma) -> Delta t in [0.5, 60s]"]
+        SHARED --> DELAY["Delay Actor Head\nGaussian(mu, sigma) -> Delta t in [0.5, 20s]"]
         SHARED --> CHAN["Channel Actor Head\nCategorical Logits + Action Masking"]
         SHARED --> VALUE["Critic Value Head\nV(s_t) -> State Baseline"]
     end
@@ -50,12 +50,12 @@ flowchart TD
 | **State Space Dimensionality** | 21 continuous inputs | Real-time tracking of queue, clock, cooldowns, and jitter |
 | **Action Space** | Hybrid continuous + discrete | Jointly predicts inter-packet delay $\Delta t$ and channel ID $k$ |
 | **Actor-Critic Parameters** | 187,142 parameters | High-speed inference ($< 1.2\ \text{ms}$ per action on GPU) |
-| **Channel Path Entropy** | **1.57 / 1.58 bits (99.4%)** | Near-perfect load balancing across all 3 egress channels |
-| **Channel Distribution** | Ch0: 27.1%, Ch1: 35.7%, Ch2: 37.2% | Prevents single-channel monitoring vulnerabilities |
-| **Mean Inter-Packet Delay ($\mu$)**| 23.05 seconds ($\sigma = 11.07\text{s}$) | Realistic browsing pace with natural dispersion |
-| **Effective Throughput** | 2.57 items / minute | 2x speedup over conservative baseline policies |
-| **Warden Detection Probability** | **49.39% Bot Probability** | Indistinguishable from organic human activity |
-| **Delivery Success Rate** | 98.88% (100% on valid hops) | Closed-loop cooldown avoidance |
+| **Channel Path Entropy** | Not recorded in the current C3 artifact | The earlier 1.57/1.58-bit figure is withdrawn |
+| **Channel Distribution** | Not recorded in the current C3 artifact | The earlier 27.1/35.7/37.2% split is withdrawn |
+| **Mean Inter-Packet Delay ($\mu$)** | **5.20 s** (recorded C3 PPO arm, retrained) | Slower than WGAN/Hybrid (7.44–7.50 s) |
+| **Effective Throughput** | Not recorded in the current C3 artifact | No current artifact supports the earlier 2.57 items/min claim |
+| **Warden Detection Probability** | **0/50 flagged (0%, 95% CI [0%, 7.1%])** | The soft branch scores it 0.0040 to 0.0047 against a threshold of 0.0181, measured by a detector held out from RL training |
+| **Delivery Success Rate** | Not recorded in the current C3 artifact | The earlier 98.88% figure is withdrawn |
 
 ---
 
@@ -129,41 +129,23 @@ Where:
 
 ---
 
-## 4. Empirical Benchmark Results (100 Sessions / 2,406 Hops)
+## 4. Recorded Benchmark: C3 PPO Arm
 
-```
-================================================================================
- DCASS PPO REINFORCEMENT LEARNING POLICY EVALUATION BENCHMARK
-================================================================================
-[1] CLOSED-LOOP TIMING & DELAY DISTRIBUTION
---------------------------------------------------------------------------------
-• Total Packet Hops Evaluated:     2,406
-• Mean Inter-Packet Delay:         23.05 seconds
-• Median Inter-Packet Delay:       23.61 seconds
-• Standard Deviation:              11.07 seconds
-• Delay Dynamic Range [Min, Max]:  [0.50s, 61.20s]
+The current recorded comparison is `storage/benchmarks/component_3_results.json`: 50 trials per scheduler, 50-carrier messages, composite warden rules. The earlier 2,406-hop block with 49.39% bot probability, 98.88% delivery, and 100% "indistinguishable" is not supported by a current artifact and is withdrawn.
 
-[2] MULTI-CHANNEL ADAPTIVE ALLOCATION
---------------------------------------------------------------------------------
-• Channel 0 (Social Feed, Cap=10/min):   27.1% (651 packets)
-• Channel 1 (Forum, Cap=5/min):          35.7% (859 packets)
-• Channel 2 (Media Sharing, Cap=15/min): 37.2% (896 packets)
-• Channel Entropy (Path Diversity):      1.57 / 1.58 bits (99.4% of maximum)
+| Metric | Recorded PPO result | Interpretation |
+| :--- | :--- | :--- |
+| Interception | **0/50 (0%, 95% CI [0%, 7.1%])** | All 50 trials reach the soft branch at a bot probability of 0.0040 to 0.0047, below the threshold |
+| Mean inter-packet delay | **5.20 s** | Slower than WGAN (7.50 s) and Hybrid (7.44 s) |
+| Mean coefficient of variation | **1.0348** | No trial is close to the periodic rule's 0.20 trigger |
+| Delay entropy | **3.5809 bits** | The rule that fires is the soft branch, not the periodic one |
+| Two-sample KS to surrogate | **0.2538** ($p = 1.2\times10^{-2}$) | Second smallest in the table, behind Poisson's 0.2211 |
+| Warden bot probability | **0.0042** mean over the recorded PPO trials | The benchmark's held-out detector; the shipped WGAN-GP checkpoint it replaced is a constant 0.62493 and does not discriminate |
+| Shipped warden bot probability | **0.0** (`storage/benchmarks/warden_diagnostic.json`) | Not a Nash equilibrium; the shipped critic is collapsed. It is not the detector the benchmark uses |
 
-[3] RATE LIMITS & BACKPRESSURE PERFORMANCE
---------------------------------------------------------------------------------
-• Rate-Limit Violations:           27 / 2,406 (1.12%)
-• Effective Transmission Rate:     2.57 items / minute
-• Delivery Success Rate:           98.88%
+The PPO arm is not an evasion result, and the agent was not always this good. The agent this repository used to ship was trained against a warden whose `bot_probability` was identically zero, so its stealth penalty was zero and it optimized throughput and channel diversity only; it was flagged at 100%. The agent here is retrained against a working detector, and four defects in the RL path had to be fixed first, among them that the agent optimized delays the network never saw. The retrained arm is measured by a detector held out from its training, so the row is not a measurement of the agent gaming its own opponent.
 
-[4] ADVERSARIAL WARDEN EVALUATION PERFORMANCE
---------------------------------------------------------------------------------
-• Mean Warden Bot Probability:     49.39%
-• Median Warden Bot Probability:   49.39%
-• Indistinguishable Rate (Score <0.5):100.0%
-• Warden Classification Status:    ✅ INDISTINGUISHABLE (0.4940 <= 0.5000 Equilibrium)
-================================================================================
-```
+Three limits still travel with the row. The human side of the comparison is the repository's own synthetic traffic corpus, not recorded human browsing. The detector is a narrow model, trained to catch three families of machine-like timing. And the component measures a timing warden: the agent's channel routing is unlike the corpus's, and a warden that looked at routing as well as timing would see it. See [`C3_TRAFFIC_DETECTOR_EVALUATION.md`](../benchmarking/C3_TRAFFIC_DETECTOR_EVALUATION.md). The current C3 conclusion remains negative/limited.
 
 ---
 

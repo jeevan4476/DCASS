@@ -1,0 +1,87 @@
+{
+  "schema": "critic-sensitivity-track-v1",
+  "run": "/home/img1/gan_runs/b100",
+  "lambda_gp": 10.0,
+  "note": "The critic's gradient with respect to its input, measured on the corpus the critic trained on, and the gap between its score on real traffic and on the generator's own traffic. A collapsed epoch has a gradient near zero and a score gap near zero: the adversary is not discriminating anything.",
+  "collapsed_epochs": [
+    4,
+    5,
+    6,
+    7
+  ],
+  "final_epoch_collapsed": true,
+  "history": [
+    {
+      "epoch": 0,
+      "input_gradient_norm": 0.04419692,
+      "gradient_penalty": 9.135595,
+      "real_score": -3.1707,
+      "fake_score": -3.0888,
+      "score_gap": -0.0819,
+      "collapsed": false
+    },
+    {
+      "epoch": 1,
+      "input_gradient_norm": 0.48477299,
+      "gradient_penalty": 2.654589,
+      "real_score": 9.6503,
+      "fake_score": -11.5202,
+      "score_gap": 21.1705,
+      "collapsed": false
+    },
+    {
+      "epoch": 2,
+      "input_gradient_norm": 3.2579409,
+      "gradient_penalty": 50.982971,
+      "real_score": -8.6973,
+      "fake_score": -29.2629,
+      "score_gap": 20.5656,
+      "collapsed": false
+    },
+    {
+      "epoch": 3,
+      "input_gradient_norm": 0.39863976,
+      "gradient_penalty": 3.616341,
+      "real_score": -28.3543,
+      "fake_score": -37.7214,
+      "score_gap": 9.3671,
+      "collapsed": false
+    },
+    {
+      "epoch": 4,
+      "input_gradient_norm": 0.00076934,
+      "gradient_penalty": 9.984619,
+      "real_score": -5.048,
+      "fake_score": -5.0695,
+      "score_gap": 0.0215,
+      "collapsed": true
+    },
+    {
+      "epoch": 5,
+      "input_gradient_norm": 0.00074185,
+      "gradient_penalty": 9.985168,
+      "real_score": -6.2612,
+      "fake_score": -6.2834,
+      "score_gap": 0.0222,
+      "collapsed": true
+    },
+    {
+      "epoch": 6,
+      "input_gradient_norm": 0.00021136,
+      "gradient_penalty": 9.995773,
+      "real_score": -6.4773,
+      "fake_score": -6.4805,
+      "score_gap": 0.0032,
+      "collapsed": true
+    },
+    {
+      "epoch": 7,
+      "input_gradient_norm": 0.0002352,
+      "gradient_penalty": 9.995296,
+      "real_score": -5.0156,
+      "fake_score": -5.0193,
+      "score_gap": 0.0037,
+      "collapsed": true
+    }
+  ]
+}

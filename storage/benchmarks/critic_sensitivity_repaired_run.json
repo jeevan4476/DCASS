@@ -1,0 +1,280 @@
+{
+  "schema": "critic-sensitivity-track-v1",
+  "run": "/home/img1/gan_runs/l100",
+  "lambda_gp": 10.0,
+  "note": "The critic's gradient with respect to its input, measured on the corpus the critic trained on, and the gap between its score on real traffic and on the generator's own traffic. A collapsed epoch has a gradient near zero and a score gap near zero: the adversary is not discriminating anything.",
+  "collapsed_epochs": [],
+  "final_epoch_collapsed": false,
+  "history": [
+    {
+      "epoch": 0,
+      "input_gradient_norm": 0.43545624,
+      "gradient_penalty": 3.187097,
+      "real_score": -3.7863,
+      "fake_score": -15.6134,
+      "score_gap": 11.8271,
+      "collapsed": false
+    },
+    {
+      "epoch": 1,
+      "input_gradient_norm": 0.7495002,
+      "gradient_penalty": 0.627501,
+      "real_score": 4.643,
+      "fake_score": -14.7549,
+      "score_gap": 19.3979,
+      "collapsed": false
+    },
+    {
+      "epoch": 2,
+      "input_gradient_norm": 0.51730431,
+      "gradient_penalty": 2.329951,
+      "real_score": 11.6119,
+      "fake_score": -0.7491,
+      "score_gap": 12.3611,
+      "collapsed": false
+    },
+    {
+      "epoch": 3,
+      "input_gradient_norm": 0.71724157,
+      "gradient_penalty": 0.799523,
+      "real_score": 7.7386,
+      "fake_score": -3.4485,
+      "score_gap": 11.187,
+      "collapsed": false
+    },
+    {
+      "epoch": 4,
+      "input_gradient_norm": 0.28749596,
+      "gradient_penalty": 5.07662,
+      "real_score": -5.3723,
+      "fake_score": -8.6014,
+      "score_gap": 3.229,
+      "collapsed": false
+    },
+    {
+      "epoch": 5,
+      "input_gradient_norm": 0.10777413,
+      "gradient_penalty": 7.96067,
+      "real_score": -4.1059,
+      "fake_score": -4.4324,
+      "score_gap": 0.3266,
+      "collapsed": false
+    },
+    {
+      "epoch": 6,
+      "input_gradient_norm": 0.66566625,
+      "gradient_penalty": 1.117791,
+      "real_score": -0.8671,
+      "fake_score": -13.0535,
+      "score_gap": 12.1865,
+      "collapsed": false
+    },
+    {
+      "epoch": 7,
+      "input_gradient_norm": 0.78199751,
+      "gradient_penalty": 0.475251,
+      "real_score": -3.4124,
+      "fake_score": -9.6655,
+      "score_gap": 6.2531,
+      "collapsed": false
+    },
+    {
+      "epoch": 8,
+      "input_gradient_norm": 0.63495808,
+      "gradient_penalty": 1.332556,
+      "real_score": -8.0108,
+      "fake_score": -14.6382,
+      "score_gap": 6.6274,
+      "collapsed": false
+    },
+    {
+      "epoch": 9,
+      "input_gradient_norm": 0.47821017,
+      "gradient_penalty": 2.722646,
+      "real_score": -3.7308,
+      "fake_score": -22.7788,
+      "score_gap": 19.0479,
+      "collapsed": false
+    },
+    {
+      "epoch": 10,
+      "input_gradient_norm": 0.59544273,
+      "gradient_penalty": 1.636666,
+      "real_score": -4.4458,
+      "fake_score": -10.7591,
+      "score_gap": 6.3133,
+      "collapsed": false
+    },
+    {
+      "epoch": 11,
+      "input_gradient_norm": 0.64986407,
+      "gradient_penalty": 1.225952,
+      "real_score": -5.3978,
+      "fake_score": -20.9417,
+      "score_gap": 15.5439,
+      "collapsed": false
+    },
+    {
+      "epoch": 12,
+      "input_gradient_norm": 0.43323712,
+      "gradient_penalty": 3.212202,
+      "real_score": -5.6328,
+      "fake_score": -18.1667,
+      "score_gap": 12.5338,
+      "collapsed": false
+    },
+    {
+      "epoch": 13,
+      "input_gradient_norm": 0.61915761,
+      "gradient_penalty": 1.450409,
+      "real_score": -0.8345,
+      "fake_score": -8.1946,
+      "score_gap": 7.3601,
+      "collapsed": false
+    },
+    {
+      "epoch": 14,
+      "input_gradient_norm": 0.29596833,
+      "gradient_penalty": 4.956606,
+      "real_score": -3.6172,
+      "fake_score": -5.2426,
+      "score_gap": 1.6254,
+      "collapsed": false
+    },
+    {
+      "epoch": 15,
+      "input_gradient_norm": 0.30018932,
+      "gradient_penalty": 4.89735,
+      "real_score": -4.3602,
+      "fake_score": -8.7878,
+      "score_gap": 4.4276,
+      "collapsed": false
+    },
+    {
+      "epoch": 16,
+      "input_gradient_norm": 0.53293516,
+      "gradient_penalty": 2.181496,
+      "real_score": 4.1595,
+      "fake_score": -10.9795,
+      "score_gap": 15.1391,
+      "collapsed": false
+    },
+    {
+      "epoch": 17,
+      "input_gradient_norm": 0.24636843,
+      "gradient_penalty": 5.679605,
+      "real_score": -3.9308,
+      "fake_score": -4.2659,
+      "score_gap": 0.3351,
+      "collapsed": false
+    },
+    {
+      "epoch": 18,
+      "input_gradient_norm": 0.38938068,
+      "gradient_penalty": 3.728559,
+      "real_score": -7.038,
+      "fake_score": -9.6749,
+      "score_gap": 2.6369,
+      "collapsed": false
+    },
+    {
+      "epoch": 19,
+      "input_gradient_norm": 0.56385957,
+      "gradient_penalty": 1.902185,
+      "real_score": -12.4704,
+      "fake_score": -20.5696,
+      "score_gap": 8.0991,
+      "collapsed": false
+    },
+    {
+      "epoch": 20,
+      "input_gradient_norm": 0.41906251,
+      "gradient_penalty": 3.374884,
+      "real_score": 5.7735,
+      "fake_score": -4.6329,
+      "score_gap": 10.4064,
+      "collapsed": false
+    },
+    {
+      "epoch": 21,
+      "input_gradient_norm": 0.4200722,
+      "gradient_penalty": 3.363163,
+      "real_score": -4.3079,
+      "fake_score": -9.0395,
+      "score_gap": 4.7316,
+      "collapsed": false
+    },
+    {
+      "epoch": 22,
+      "input_gradient_norm": 0.62288743,
+      "gradient_penalty": 1.422139,
+      "real_score": -9.155,
+      "fake_score": -15.7361,
+      "score_gap": 6.5811,
+      "collapsed": false
+    },
+    {
+      "epoch": 23,
+      "input_gradient_norm": 0.68304346,
+      "gradient_penalty": 1.004614,
+      "real_score": 9.0218,
+      "fake_score": 0.6219,
+      "score_gap": 8.3999,
+      "collapsed": false
+    },
+    {
+      "epoch": 24,
+      "input_gradient_norm": 0.43768174,
+      "gradient_penalty": 3.162018,
+      "real_score": 1.4133,
+      "fake_score": -8.9173,
+      "score_gap": 10.3306,
+      "collapsed": false
+    },
+    {
+      "epoch": 25,
+      "input_gradient_norm": 0.3720687,
+      "gradient_penalty": 3.942977,
+      "real_score": 2.558,
+      "fake_score": -2.2984,
+      "score_gap": 4.8564,
+      "collapsed": false
+    },
+    {
+      "epoch": 26,
+      "input_gradient_norm": 0.20461241,
+      "gradient_penalty": 6.326414,
+      "real_score": -5.5984,
+      "fake_score": -9.9709,
+      "score_gap": 4.3725,
+      "collapsed": false
+    },
+    {
+      "epoch": 27,
+      "input_gradient_norm": 0.41579906,
+      "gradient_penalty": 3.412907,
+      "real_score": -0.1709,
+      "fake_score": -8.6257,
+      "score_gap": 8.4547,
+      "collapsed": false
+    },
+    {
+      "epoch": 28,
+      "input_gradient_norm": 0.33853042,
+      "gradient_penalty": 4.37542,
+      "real_score": -3.4268,
+      "fake_score": -10.2854,
+      "score_gap": 6.8586,
+      "collapsed": false
+    },
+    {
+      "epoch": 29,
+      "input_gradient_norm": 0.51940924,
+      "gradient_penalty": 2.309675,
+      "real_score": -5.0532,
+      "fake_score": -16.1838,
+      "score_gap": 11.1306,
+      "collapsed": false
+    }
+  ]
+}

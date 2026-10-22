@@ -10,7 +10,7 @@ To prevent boundary misclassifications caused by floating-point rounding or mode
 ```mermaid
 flowchart TD
     subgraph Space["Continuous 512-Dimensional Unit Hypersphere S^511"]
-        CORPUS["153,281 Multi-Modal Embeddings\n(Image: 39.8k, Text: 100k, Audio: 13.5k)"]
+        CORPUS["245,279 Multi-Modal Embeddings\n(Image: 31.8k, Text: 200k, Audio: 13.5k)"]
     end
 
     CORPUS --> SKM["Spherical K-Means Optimizer\n(||c_m||_2 = 1.0, K = 256)"]
@@ -31,11 +31,11 @@ flowchart TD
 | **Embedding Dimension ($D$)** | 512 | Matches CLIP ViT-B/32 and CLAP HTSAT |
 | **Number of Clusters ($K$)** | 256 ($2^8$) | Bijective mapping to 1-byte symbols ($0x00$ to $0xFF$) |
 | **Hypersphere Domain** | $\mathbb{S}^{511} = \{ \mathbf{x} \in \mathbb{R}^{512} : \|\mathbf{x}\|_2 = 1.0 \}$ | Guarantees inner product equals cosine similarity |
-| **Training Corpus Scale** | 153,281 multi-modal vectors | 39,783 images, 100,000 text sentences, 13,498 audio clips |
+| **Training Corpus Scale** | 245,279 multi-modal vectors | 31,783 images, 200,000 text sentences, 13,496 audio clips |
 | **Soft-Margin Threshold ($\delta$)** | $\delta_{\text{margin}} = 0.05$ | Rejects boundary-edge vectors prone to drift |
-| **Mean Cluster Density** | 598.8 vectors per centroid | Ample carrier diversity for semantic matching |
-| **Centroid Norm Precision** | $\|\mathbf{c}_m\|_2 = 1.00000 \pm 10^{-5}$ | Verified across all 256 clusters |
-| **GPU Fitting Time** | 4.8 seconds (25 iterations on CUDA) | Fast codebook generation and retraining |
+| **Mean Cluster Density** | 958.1 vectors per centroid | Ample carrier diversity for semantic matching |
+| **Centroid Norm Precision** | $\|\mathbf{c}_m\|_2 = 0.9999998$ to $1.0000001$ | Verified across all 256 clusters in the shipped artifact |
+| **GPU Fitting Time** | Not recorded in the current artifact | The earlier 4.8-second figure is withdrawn |
 
 ---
 
@@ -221,19 +221,19 @@ class VoronoiCodebook:
 
 ---
 
-## 6. Fitting across 153,281 Multi-Modal Vectors
+## 6. Fitting across 245,279 Multi-Modal Vectors
 
 The fitting script [`scripts/cluster/fit_voronoi_codebook.py`](../../scripts/cluster/fit_voronoi_codebook.py) loads FAISS indices across all three modalities:
 
 ```python
 # scripts/cluster/fit_voronoi_codebook.py
 # 1. Reconstruct vectors from FAISS indices
-img_idx = faiss.read_index("storage/data/indices/image.index")  # 39,783 vectors
-txt_idx = faiss.read_index("storage/data/indices/text.index")   # 100,000 vectors
-aud_idx = faiss.read_index("storage/data/indices/audio.index")  # 13,498 vectors
+img_idx = faiss.read_index("storage/data/indices/image.index")  # 31,783 vectors
+txt_idx = faiss.read_index("storage/data/indices/text.index")   # 200,000 vectors
+aud_idx = faiss.read_index("storage/data/indices/audio.index")  # 13,496 vectors
 
 corpus_vectors = np.vstack([img_vecs, txt_vecs, aud_vecs]).astype(np.float32)
-# Total: 153,281 vectors in R^512
+# Total: 245,279 vectors in R^512
 
 # 2. Fit codebook on GPU
 codebook = VoronoiCodebook(num_clusters=256, dim=512, delta_margin=0.05)
@@ -241,28 +241,27 @@ codebook.fit(corpus_vectors, max_iters=25, device="cuda")
 codebook.save("storage/data/indices/voronoi_codebook.npz")
 ```
 
-### Empirical Fitting Convergence Statistics
+### Shipped Codebook Statistics
+
+Read from the shipped artifact `storage/data/indices/voronoi_codebook.npz` (blessed 2026-10-07, commit `462f27f`, fingerprint-matched to the three FAISS indices in `voronoi_codebook.meta.json`):
 
 ```
 ======================================================================
-Fitting Spherical K-Means Voronoi Codebook (256 centroids) on 153,281 vectors using cuda...
-  Iteration 1/25  - Centroid shift: 1.428312
-  Iteration 5/25  - Centroid shift: 0.183420
-  Iteration 10/25 - Centroid shift: 0.041295
-  Iteration 15/25 - Centroid shift: 0.008431
-  Iteration 20/25 - Centroid shift: 0.001205
-  Iteration 23/25 - Centroid shift: 0.000008
-  Converged early at iteration 23!
-
-Codebook Statistics:
-  Total Centroids: 256 (||c_m||_2 = 1.00000)
-  Minimum Cluster Density: 218 vectors
-  Maximum Cluster Density: 1,142 vectors
-  Mean Cluster Density:    598.8 vectors / cluster
+Spherical K-Means Voronoi Codebook (256 centroids) on 245,279 vectors
+  Total Centroids:      256
+  Dimension:            512
+  Delta Margin:         0.05
+  Centroid Norm Range:  0.9999998 .. 1.0000001 (mean 1.0000000)
+  Assignment Count:     245,279 (matches sum of index ntotal)
+  Minimum Cluster Density: 59 vectors
+  Maximum Cluster Density: 8,814 vectors
+  Mean Cluster Density:    958.1 vectors / cluster
 ======================================================================
 ```
 
-Every byte symbol $0x00 \dots 0xFF$ possesses at least 218 verified multi-modal carriers, providing rich lexical and visual variety for steganographic camouflage.
+Every byte symbol $0x00 \dots 0xFF$ possesses at least 59 verified multi-modal carriers. The 149-fold spread between the smallest and largest cluster is a property of the corpus density, not of the codec; Component 2b measures what it implies for a frequency-counting warden.
+
+The earlier figures in this section (153,281 vectors, 218 to 1,142 density, mean 598.8) came from an earlier corpus snapshot and are withdrawn.
 
 ---
 

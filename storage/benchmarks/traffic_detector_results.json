@@ -1,0 +1,84 @@
+{
+  "schema": "traffic-detector-v1",
+  "seed": 42,
+  "device": "cuda",
+  "epochs": 10,
+  "batch_size": 24,
+  "lr": 0.0002,
+  "bot_multiplier": 1,
+  "corpus": {
+    "human_sessions": 12000,
+    "bot_sessions": 8400,
+    "source": "storage/data/traffic/{human_traffic,real_human_traffic}.json plus synthesized bot sessions"
+  },
+  "split": {
+    "train": 16800,
+    "calibration": 3600,
+    "holdout": 3600,
+    "human_train": 8400,
+    "human_calibration": 1800,
+    "human_holdout": 1800,
+    "note": "the split is over the human sessions; each subset's bot sessions are synthesized only from the human sessions in that same subset, so no held-out human session has a perturbed twin in the training set"
+  },
+  "calibration": {
+    "threshold": 0.3367931411991119,
+    "target_fpr": 0.05,
+    "calibration_fpr": 0.049444444444444444,
+    "calibration_tpr": 0.9822222222222222,
+    "calibration_human_n": 1800,
+    "calibration_bot_n": 1800,
+    "calibration_human_max": 0.9830458760261536,
+    "calibration_human_p95": 0.3346606284379958
+  },
+  "holdout": {
+    "n": 3600,
+    "bot_fraction": 0.5,
+    "bot_probability_auc": 0.9982672839506173,
+    "anomaly_mean_auc": 0.9982685185185185,
+    "bot_probability_best_accuracy": 0.5,
+    "anomaly_mean_best_accuracy": 0.5
+  },
+  "history": [
+    {
+      "epoch": 0,
+      "loss": 0.3255018306363906
+    },
+    {
+      "epoch": 1,
+      "loss": 0.2034423010330647
+    },
+    {
+      "epoch": 2,
+      "loss": 0.17100888239386092
+    },
+    {
+      "epoch": 3,
+      "loss": 0.15959621851931194
+    },
+    {
+      "epoch": 4,
+      "loss": 0.1642707980144769
+    },
+    {
+      "epoch": 5,
+      "loss": 0.16011187935248017
+    },
+    {
+      "epoch": 6,
+      "loss": 0.12850065244328496
+    },
+    {
+      "epoch": 7,
+      "loss": 0.12716425093581035
+    },
+    {
+      "epoch": 8,
+      "loss": 0.12028404013153964
+    },
+    {
+      "epoch": 9,
+      "loss": 0.11420870180657533
+    }
+  ],
+  "note": "The human corpus is the project's own traffic data. Its time-of-day distribution is uniform and its delay values are bounded, so it is a synthetic surrogate rather than recorded human browsing. This detector therefore measures how well a supervised detector separates the two traffic families present in the repository, not how detectable DCASS traffic is to a real network observer. The 'calibration' block holds the detector's own threshold, set on the trainer's calibration split. The Component 3 benchmark re-calibrates the soft branch on its own population, which includes bursts drawn from the benchmark's synthetic surrogate, and records that threshold and its measured false-positive rate in component_3_results.json under 'soft_branch_calibration'. The two are different populations, not contradictory numbers."
+}

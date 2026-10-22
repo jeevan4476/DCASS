@@ -1,0 +1,22 @@
+% Component 2b: Transmitted cluster usage and mechanism null
+\begin{table*}[htbp]
+\centering
+\caption{Transmitted Voronoi cluster usage over 200 fresh DSSC messages (10,800 slots). The mechanism null is the structural expectation of the DSSC selection pipeline replayed on the observed chunk schedule; permutation p-values come from the same simulated draws. (n = 200 DSSC messages, 10,800 carrier slots; scope = cluster usage against the pipeline's own mechanism null; the uniform null is rejected, so this is not uniform-indistinguishability; commit = 536808a8f8c1046e3802cf9ef094ef54d93a9908)}
+\label{tab:cluster_uniformity}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lc}
+\toprule
+Statistic & Value \\
+\midrule
+Carriers (slots) & 10,800 \\
+Unique media / repeat factor & 10,152 / 1.0638 \\
+Observed entropy (slots) & 7.7935 bits \\
+Observed entropy (unique media) & 7.7873 bits \\
+Per-modality H (image, text, audio) & 6.3029, 6.0157, 6.3144 \\
+Modality mixing term & 1.5847 bits \\
+Chi-square vs uniform & 3,253.4 (perm p=0.0005) \\
+Chi-square vs mechanism & 268.6 (perm p=0.208) \\
+Max positive z, mechanism null & 2.62 (perm p=0.796) \\
+\bottomrule
+\end{tabular}}
+\end{table*}

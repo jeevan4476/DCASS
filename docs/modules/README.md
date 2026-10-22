@@ -15,7 +15,7 @@ This directory contains deep technical, mathematical, and intuitive specificatio
  │ File: docs/modules/01_REED_SOLOMON_ECC_MODULE.md                                              │
  │ Code: src/engine/ecc.py (RSErrorCorrection)                                                   │
  │ Math: Galois Field GF(2^8), Generator G(x), Syndrome S_i, Berlekamp-Massey, Chien/Forney      │
- │ Purpose: Absorbs continuous vector quantization drift noise -> 0% Bit Error Rate (BER)       │
+ │ Purpose: Corrects within the RS budget; clean-channel CRC verified; dropout unrecoverable     │
  └───────────────────────────────────────────────────────────────────────────────────────────────┘
                                                  │
                                                  ▼
@@ -33,7 +33,7 @@ This directory contains deep technical, mathematical, and intuitive specificatio
  │ File: docs/modules/03_UNIFIED_MULTIMODAL_INDEXING.md                                          │
  │ Code: src/corpus/index/unified_index.py (UnifiedIndex, MediaItem)                             │
  │ Math: CLIP ViT-B/32 (Images/Text) + CLAP HTSAT (Audio), L2-Norm, FAISS IndexFlatIP            │
- │ Purpose: Unified 153,281-vector corpus with exact local disk file path resolution             │
+ │ Purpose: Unified 245,279-vector corpus with exact local disk file path resolution             │
  └───────────────────────────────────────────────────────────────────────────────────────────────┘
                                                  │
                                                  ▼
@@ -59,8 +59,8 @@ This directory contains deep technical, mathematical, and intuitive specificatio
  │ MODULE 6: INFORMATION-THEORETIC SECURITY & ZERO-MODIFICATION STEGANALYSIS DEFENSE             │
  │ File: docs/modules/06_SECURITY_AND_STEGANALYSIS_DEFENSE.md                                    │
  │ Code: Zero-Modification Carrier Transmission Architecture                                     │
- │ Math: Relative Entropy D_KL(P_cover || P_stego) = 0.000 bits, Cachin Epsilon=0, ROC AUC=0.500 │
- │ Purpose: Renders deep convolutional steganalysts (SRNet, Zhu-Net, Ye-Net) mathematically blind│
+ │ Math: Carrier-content D_KL = 0; measured AUC 0.4973-0.4993 is a negative control            │
+ │ Purpose: Removes the content-residual signal; does not cover selection or timing            │
  └───────────────────────────────────────────────────────────────────────────────────────────────┘
                                                  │
                                                  ▼
@@ -68,7 +68,7 @@ This directory contains deep technical, mathematical, and intuitive specificatio
  │ MODULE 7: PPO REINFORCEMENT LEARNING CLOSED-LOOP STEALTH SCHEDULER                            │
  │ File: docs/modules/07_PPO_REINFORCEMENT_LEARNING_SCHEDULER.md                                 │
  │ Code: src/stealth/rl/agent.py (PPOAgent, ActorCritic), src/stealth/rl/environment.py          │
- │ Math: Multi-Objective R_t, Action Masking, GAE-lambda, Path Entropy H(p)=1.57/1.58 bits      │
+ │ Math: Multi-Objective R_t, Action Masking, GAE-lambda; path entropy not recorded in C3       │
  │ Purpose: Closed-loop multi-platform channel hopping with live cooldown and backpressure handling│
  └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ===================================================================================================

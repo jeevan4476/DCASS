@@ -9,13 +9,13 @@
 
 ## 1. Executive Summary & Vision
 
-DCASS is a next-generation **Coverless Multi-Modal Semantic Steganography** system. Unlike traditional steganography that alters pixel bits (LSB) or transforms DCT coefficients—which leaves statistical anomalies detectable by deep learning steganalysts (SRNet, Zhu-Net)—DCASS transmits **100% authentic, untouched carrier media items** (Images, Text, and Audio) selected from a 153,281-item public corpus.
+DCASS is a next-generation **Coverless Multi-Modal Semantic Steganography** system. Unlike traditional steganography that alters pixel bits (LSB) or transforms DCT coefficients—which leaves statistical anomalies detectable by deep learning steganalysts (SRNet, Zhu-Net)—DCASS transmits **100% authentic, untouched carrier media items** (Images, Text, and Audio) selected from a 245,279-item public corpus.
 
 To bridge semantic carrier selection with exact message recovery and covert channel traffic security, DCASS integrates six core pillars:
-1. **Algebraic Error Correction**: Reed-Solomon $GF(2^8)$ block coding to achieve a **0% Bit Error Rate (BER)**.
+1. **Algebraic Error Correction**: Reed-Solomon $GF(2^8)$ block coding, which records **0% clean-channel BER within the $t=4$ correction budget**. Errors beyond the budget and carrier dropout are not recovered by the current wire format.
 2. **Deterministic Geometric Quantization**: Spherical K-Means Voronoi Codebook Partitioning (VCP) across 256 unit-norm centroids on $\mathbb{S}^{511}$.
 3. **Multi-Modal Hypersphere Search**: Unified 512-dimensional CLIP (Image & Text) and CLAP (Audio) FAISS vector spaces.
-4. **Zero-Modification Steganalytic Defense**: Relative entropy $D_{\text{KL}}(P_{\text{cover}} \parallel P_{\text{stego}}) = 0.000$ bits.
+4. **Zero Content-Modification**: The carrier-content conditional divergence is zero because transmitted bytes are corpus-identical. This is not a full-system $D_{\text{KL}}=0$ claim; selection and timing are separate surfaces.
 5. **Generative Traffic Mimicry (GAN)**: WGAN-GP learning human social-media posting distributions (burstiness and circadian rhythms).
 6. **Adaptive Active-Warden Evaluation (RL)**: Proximal Policy Optimization (PPO) dynamically scheduling packets to match genuine human browsing distributions.
 
@@ -54,7 +54,7 @@ The complete pipeline from Alice's raw secret payload string to Bob's exact reco
  ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
  │ STEP 3: DUAL-CONSTRAINT VORONOI CODEBOOK PARTITIONING (VCP) SEARCH                                                 │
  │   • Source: src/corpus/cluster/voronoi_codebook.py & src/engine/encoder.py                                         │
- │   • FAISS searches 153,281 unified 512d vectors under dual constraints:                                            │
+ │   • FAISS searches 245,279 unified 512d vectors under dual constraints:                                            │
  │       x* = argmax_{x ∈ V(c_m)} cos_similarity(v_chunk, x)                                                          │
  │   • Soft-Margin Filter rejects boundary-edge candidates: delta_margin = top1_sim - top2_sim >= 0.05               │
  └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -107,7 +107,7 @@ The complete pipeline from Alice's raw secret payload string to Bob's exact reco
 ## 3. Deep Component Breakdown: Why We Used It & How It Is Implemented
 
 ### 3.1 Reed-Solomon Error Correction Code ($GF(2^8)$)
-- **Why We Used It**: Continuous high-dimensional embedding spaces ($\mathbb{S}^{511}$) suffer from floating-point rounding, cosine similarity boundary noise, and vector quantization drift. Without ECC, raw semantic decoding reaches an empirical ceiling of 70–85% character accuracy (~15–30% bit error rate). Reed-Solomon algebraic block coding over Galois Field $GF(2^8)$ completely absorbs vector retrieval noise and guarantees **0% Bit Error Rate (100% exact message reconstruction)**.
+- **Why We Used It**: Continuous high-dimensional embedding spaces ($\mathbb{S}^{511}$) suffer from floating-point rounding, cosine similarity boundary noise, and vector quantization drift. Without ECC, raw semantic decoding reaches an empirical ceiling of 70–85% character accuracy (~15–30% bit error rate). Reed-Solomon block coding over $GF(2^8)$ corrects up to $t=4$ damaged bytes per block. The recorded clean-channel campaign reaches **0% BER**; this is not unconditional, because 5% carrier substitution drops exact recovery to 61.2–70% and carrier dropout is unrecoverable in the current wire format.
 - **Mathematical Formulation**:
   - Primitive Field Polynomial: $p(x) = x^8 + x^4 + x^3 + x^2 + 1 \quad (\texttt{0x11D})$.
   - Codeword Construction: $C(x) = M(x) \cdot x^{2t} + P(x)$, where $R = 2t = 8$ parity bytes.
@@ -124,7 +124,7 @@ The complete pipeline from Alice's raw secret payload string to Bob's exact reco
     $$\mathbf{c}_m^{(t+1)} = \frac{\sum_{\mathbf{x}_i \in \mathcal{V}_m} \mathbf{x}_i}{\left\| \sum_{\mathbf{x}_i \in \mathcal{V}_m} \mathbf{x}_i \right\|_2} \implies \|\mathbf{c}_m\|_2 = 1.000000$$
   - Soft-Margin Boundary Buffering:
     $$\Delta_{\text{margin}}(\mathbf{x}_i) = \langle \mathbf{x}_i, \mathbf{c}_m \rangle - \max_{j \neq m} \langle \mathbf{x}_i, \mathbf{c}_j \rangle \ge \delta_{\text{margin}} \quad (\delta_{\text{margin}} = 0.05)$$
-- **Implementation**: Implemented in [`src/corpus/cluster/voronoi_codebook.py`](file:///home/jeevan/projects/DCASS/src/corpus/cluster/voronoi_codebook.py) and trained across 153,281 multi-modal vectors in [`scripts/cluster/fit_voronoi_codebook.py`](file:///home/jeevan/projects/DCASS/scripts/cluster/fit_voronoi_codebook.py).
+- **Implementation**: Implemented in [`src/corpus/cluster/voronoi_codebook.py`](file:///home/jeevan/projects/DCASS/src/corpus/cluster/voronoi_codebook.py) and trained across 245,279 multi-modal vectors in [`scripts/cluster/fit_voronoi_codebook.py`](file:///home/jeevan/projects/DCASS/scripts/cluster/fit_voronoi_codebook.py).
 
 ---
 
@@ -141,7 +141,7 @@ The complete pipeline from Alice's raw secret payload string to Bob's exact reco
 
 ### 3.4 Zero-Modification Steganalytic Defense ($D_{\text{KL}} = 0.0$)
 - **Why It Does NOT Violate Semantic Steganography**: Traditional steganography alters pixel bits or audio samples ($P_{\text{stego}} \neq P_{\text{cover}}$), which creates residual noise detected by deep convolutional steganalysts (SRNet, Zhu-Net) with $>95\%$ accuracy.
-- **Mathematical Proof**: Because DCASS transmits **100% authentic, untouched public media files** from Flickr30k, Wikipedia, and LibriTTS:
+- **Scoped argument**: Because DCASS transmits **100% authentic, untouched public media files** from Flickr30k, Wikipedia, and `libretta`:
   $$P_{\text{stego}}(x) \equiv P_{\text{cover}}(x) \implies D_{\text{KL}}(P_{\text{cover}} \parallel P_{\text{stego}}) = \sum_x P_{\text{cover}}(x) \log \frac{P_{\text{cover}}(x)}{P_{\text{stego}}(x)} = 0.000 \text{ bits}$$
   SRNet / Ye-Net steganalysis detection ROC AUC is identically **0.500 (pure random guessing)**.
 
@@ -154,9 +154,9 @@ The complete pipeline from Alice's raw secret payload string to Bob's exact reco
 
 ## 4. Next Phase: Covert Traffic Stealth (GAN & RL Systems)
 
-While the semantic steganography engine guarantees 0% BER and $D_{\text{KL}} = 0.0$ per media file, an active network monitor (the **Warden**) can analyze **traffic timing patterns** (packet frequency, burst intervals, and channel distribution).
+The semantic steganography engine records 0% clean-channel BER within the correction budget, and its carrier-content conditional divergence is zero. Neither result covers traffic timing. An active network monitor (the **Warden**) can analyze inter-arrival patterns, burst intervals, and channel distribution, so DCASS adds GAN and RL scheduling as an attempt to reduce that signal. A trained traffic detector flags the WGAN and Hybrid schedules at 100% against a threshold calibrated on held-out human traffic, and the retrained PPO arm is not flagged; the human side of that comparison is a synthetic corpus, so evasion is not demonstrated.
 
-To defeat traffic-flow statistical analysis, DCASS incorporates **Generative Adversarial Networks (GAN)** and **Reinforcement Learning (RL)**:
+The scheduling components are **Generative Adversarial Networks (GAN)** and **Reinforcement Learning (RL)**:
 
 ```
                                   STEALTH TRAFFIC SCHEDULING PIPELINE
@@ -215,8 +215,8 @@ To defeat traffic-flow statistical analysis, DCASS incorporates **Generative Adv
 
 | Stage | Subsystem | Implementation Target | Status |
 | :---: | :--- | :--- | :---: |
-| **Phase 1** | **Multi-Modal FAISS Corpus** | 153,281 Vectors (Image, Text, Audio) on RTX 4050 GPU | ✅ **COMPLETE** |
-| **Phase 2** | **Reed-Solomon RS-ECC $GF(2^8)$** | `src/engine/ecc.py` with Berlekamp-Massey decoding (0% BER) | ✅ **COMPLETE** |
+| **Phase 1** | **Multi-Modal FAISS Corpus** | 245,279 Vectors (Image, Text, Audio) on RTX 4050 GPU | ✅ **COMPLETE** |
+| **Phase 2** | **Reed-Solomon RS-ECC $GF(2^8)$** | `src/engine/ecc.py` with Berlekamp-Massey decoding (0% clean-channel BER within $t=4$) | ✅ **COMPLETE** |
 | **Phase 3** | **Spherical K-Means VCP** | `src/corpus/cluster/voronoi_codebook.py` (256 unit centroids) | ✅ **COMPLETE** |
 | **Phase 4** | **Full-Stack UI & File Path Mapping** | Next.js 14 Dashboard + FastAPI REST endpoints with file paths | ✅ **COMPLETE** |
 | **Phase 5** | **WGAN-GP Traffic Generator** | Pre-train `TemporalPatternGenerator` on social media timestamps | 🔄 **READY TO TRAIN** |

@@ -1,0 +1,19 @@
+% Component 3b: Warden score quantiles per scheduler
+\begin{table*}[htbp]
+\centering
+\caption{Stored composite warden score quantiles over 50 launches per scheduler. Interception is the share of scores at or above the row's flag threshold; the historical row was scored by the superseded warden and is on a different scale. (n = 6 configurations x 50 launches; scope = stored per-trial composite warden scores; the historical row was scored by the superseded warden, see C3\_WARDEN\_DIAGNOSTIC.md; commit = 9b02563f956c5bbfb39201fea39965be1348b5b4)}
+\label{tab:warden_score_quantiles}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+Scheduler & Min & P25 & Median & P75 & Max & Flagged \\
+\midrule
+Static Cadence & 0.980 & 0.980 & 0.980 & 0.980 & 0.980 & 50/50 \\
+Stochastic Poisson & 0.004 & 0.004 & 0.710 & 0.755 & 0.890 & 27/50 \\
+DCASS Temporal WGAN & 0.330 & 0.981 & 0.994 & 0.994 & 0.994 & 50/50 \\
+DCASS Hybrid Engine & 0.398 & 0.900 & 0.990 & 0.994 & 0.994 & 50/50 \\
+DCASS PPO RL Agent & 0.004 & 0.004 & 0.004 & 0.004 & 0.005 & 0/50 \\
+PPO RL Agent, conservative config & 0.349 & 0.364 & 0.369 & 0.370 & 0.980 & 3/50 \\
+\bottomrule
+\end{tabular}}
+\end{table*}

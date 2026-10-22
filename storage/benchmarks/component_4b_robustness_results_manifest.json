@@ -1,0 +1,121 @@
+{
+  "component": "component_4b_robustness",
+  "generated_utc": "2026-10-21T11:18:28.252581+00:00",
+  "command": "benchmark_4b_robustness.py",
+  "argv": [
+    "scripts/analysis/benchmark_4b_robustness.py"
+  ],
+  "git": {
+    "commit": "536808a8f8c1046e3802cf9ef094ef54d93a9908",
+    "branch": "feature/gan-rl-pipeline",
+    "dirty": true,
+    "dirty_paths": [
+      "M storage/benchmarks/component_1_fold1.json",
+      " M storage/benchmarks/component_2b_cluster_usage_results.json",
+      " M storage/benchmarks/component_4a_capacity_results.json",
+      " M storage/benchmarks/component_4b_robustness_results.json",
+      " M storage/benchmarks/plots/fig_4a_capacity_comparison.png",
+      " M storage/benchmarks/plots/fig_4b_permutation_scaling.png",
+      " M storage/benchmarks/tables/table2b_cluster_uniformity.tex",
+      " M storage/benchmarks/tables/table4a_capacity.tex",
+      " M storage/benchmarks/tables/table4b_codec_robustness.tex",
+      "?? storage/benchmarks/component_1_fold2.json",
+      "?? storage/benchmarks/component_2b_cluster_usage_results_manifest.json",
+      "?? storage/benchmarks/component_4a_capacity_results_manifest.json"
+    ]
+  },
+  "python": {
+    "version": "3.12.8",
+    "implementation": "CPython"
+  },
+  "platform": "Linux-7.2.10-200.fc44.x86_64-x86_64-with-glibc2.43",
+  "packages": {
+    "torch": "2.14.1+cu126",
+    "numpy": "1.26.4",
+    "scipy": "1.17.1",
+    "sklearn": "1.9.1",
+    "faiss": "1.15.1",
+    "matplotlib": "3.11.2"
+  },
+  "seeds": {
+    "seed": 42
+  },
+  "inputs": [
+    {
+      "path": "storage/data/indices/audio.index",
+      "bytes": 27639853,
+      "sha256": "cde5ee5500341167df293d7b8fae312e5c727092156200be5706844af92d4a49"
+    },
+    {
+      "path": "storage/data/indices/image.index",
+      "bytes": 65091629,
+      "sha256": "05457ef9e70df3737b77cf357f30e49a95b0c521a27f4f7be7eed58bfb823d84"
+    },
+    {
+      "path": "storage/data/indices/text.index",
+      "bytes": 409600045,
+      "sha256": "1096e2bccaebdcae8a74511556abdd4158ef1fdc57d7de696039a58aca37c94e"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "storage/benchmarks/component_4b_robustness_results.json",
+      "bytes": 8181,
+      "sha256": "a79b3037756812acda29c398137ebe0dfe15434ff3245fc94fcfd6333a88ab6f"
+    },
+    {
+      "path": "storage/benchmarks/tables/table4b_codec_robustness.tex",
+      "bytes": 1920,
+      "sha256": "06b323ab3babd1559f82a13afd1cd3d2c12117f6c8140e6b813fdc7e5efcff36"
+    },
+    {
+      "path": "storage/benchmarks/plots/fig_4b_permutation_scaling.png",
+      "bytes": 147683,
+      "sha256": "a231173f8e8368bfdbd9986ad700a0818a653e37e7c029a5dabd6200a00cb998"
+    },
+    {
+      "path": "storage/benchmarks/plots/fig_4b_ecc_recovery_curve.png",
+      "bytes": 147270,
+      "sha256": "2644d2e1d2443b9521a09acb2863136f7f3af7e528214f32147a432e9f516804"
+    },
+    {
+      "path": "storage/benchmarks/plots/fig_4b_key_separation.png",
+      "bytes": 85667,
+      "sha256": "baa66489c7689887895d891d0e27f7f9979cb1bf4ba169c0f3b01637fa17773d"
+    }
+  ],
+  "extra": {
+    "config": {
+      "seed": 42,
+      "device": "cuda",
+      "candidate_sizes": [
+        1000,
+        5000,
+        10000,
+        20000,
+        35000
+      ],
+      "permutation_trials": 100,
+      "permutation_warmup_trials": 1,
+      "ecc_error_rates": [
+        0.0,
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.25
+      ],
+      "ecc_trials_per_rate": 20,
+      "payload_bytes": 50,
+      "parity_bytes": 8,
+      "modalities": [
+        "image",
+        "text",
+        "audio"
+      ],
+      "framing_policy": "Framed payloads are required whenever ECC is enabled; legacy raw payloads remain decodable only when ECC is off.",
+      "key_separation_random_trials": 100,
+      "key_separation_bit_flip_trials": 256
+    }
+  }
+}

@@ -16,6 +16,7 @@ import sys
 import json
 import argparse
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 import numpy as np
 from pathlib import Path
 
@@ -65,7 +66,7 @@ def load_trained_warden(gan_checkpoint: Path, num_channels: int = 3, device: str
         warden.eval()
         return warden
 
-    ckpt = torch.load(gan_checkpoint, map_location=device, weights_only=False)
+    ckpt = load_trained_checkpoint(gan_checkpoint, map_location=device,)
     config = ckpt.get("config")
     if config is not None and not isinstance(config, dict):
         hidden_dim = getattr(config, "hidden_dim", 256)

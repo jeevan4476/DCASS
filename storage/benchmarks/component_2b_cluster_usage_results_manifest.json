@@ -1,0 +1,76 @@
+{
+  "component": "component_2b_transmitted_cluster_usage",
+  "generated_utc": "2026-10-21T10:57:14.854944+00:00",
+  "command": "benchmark_2b_transmitted_cluster_usage.py",
+  "argv": [
+    "scripts/analysis/benchmark_2b_transmitted_cluster_usage.py"
+  ],
+  "git": {
+    "commit": "536808a8f8c1046e3802cf9ef094ef54d93a9908",
+    "branch": "feature/gan-rl-pipeline",
+    "dirty": true,
+    "dirty_paths": [
+      "M storage/benchmarks/component_1_fold1.json",
+      " M storage/benchmarks/component_2b_cluster_usage_results.json",
+      " M storage/benchmarks/tables/table2b_cluster_uniformity.tex"
+    ]
+  },
+  "python": {
+    "version": "3.12.8",
+    "implementation": "CPython"
+  },
+  "platform": "Linux-7.2.10-200.fc44.x86_64-x86_64-with-glibc2.43",
+  "packages": {
+    "torch": "2.14.1+cu126",
+    "numpy": "1.26.4",
+    "scipy": "1.17.1",
+    "sklearn": "1.9.1",
+    "faiss": "1.15.1",
+    "matplotlib": "3.11.2"
+  },
+  "seeds": {
+    "seed": 42
+  },
+  "inputs": [
+    {
+      "path": "storage/data/indices/audio.index",
+      "bytes": 27639853,
+      "sha256": "cde5ee5500341167df293d7b8fae312e5c727092156200be5706844af92d4a49"
+    },
+    {
+      "path": "storage/data/indices/image.index",
+      "bytes": 65091629,
+      "sha256": "05457ef9e70df3737b77cf357f30e49a95b0c521a27f4f7be7eed58bfb823d84"
+    },
+    {
+      "path": "storage/data/indices/text.index",
+      "bytes": 409600045,
+      "sha256": "1096e2bccaebdcae8a74511556abdd4158ef1fdc57d7de696039a58aca37c94e"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "storage/benchmarks/component_2b_cluster_usage_results.json",
+      "bytes": 21580,
+      "sha256": "f2d12f55b8c811c39fa6072a4b86a9536c831601047c05e784d2778a4b44703c"
+    },
+    {
+      "path": "storage/benchmarks/tables/table2b_cluster_uniformity.tex",
+      "bytes": 1184,
+      "sha256": "1147e3e6796ace13a5b041fbe179a2f199a868511ca43500a68de3895b4f69af"
+    },
+    {
+      "path": "storage/benchmarks/plots/fig_2b_cluster_usage.png",
+      "bytes": 226107,
+      "sha256": "44d15d82ae62c669fc8c6d749db4e7c47f6e98dde9b323f718ff0da2a3b115a7"
+    }
+  ],
+  "extra": {
+    "config": {
+      "seed": 42,
+      "device": "cuda",
+      "num_messages": 200,
+      "sim_reps": 2000
+    }
+  }
+}

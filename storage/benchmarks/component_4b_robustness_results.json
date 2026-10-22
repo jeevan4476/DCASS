@@ -1,0 +1,254 @@
+{
+  "schema": "component4b-robustness-v2",
+  "provenance": {
+    "retrospective": false,
+    "git_commit": "536808a8f8c1046e3802cf9ef094ef54d93a9908",
+    "git_dirty": true,
+    "timestamp": "2026-10-21T16:48:27+05:30",
+    "torch": "2.14.1+cu126",
+    "device": "cuda",
+    "gpu": "NVIDIA GeForce RTX 4050 Laptop GPU",
+    "python": "3.12.8",
+    "platform": "Linux-7.2.10-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "script": "scripts/analysis/benchmark_4b_robustness.py",
+    "command": "scripts/analysis/benchmark_4b_robustness.py",
+    "seed": 42,
+    "index": {
+      "loaded": true,
+      "device": "cuda",
+      "modalities": {
+        "image": {
+          "loaded": true,
+          "count": 31783
+        },
+        "text": {
+          "loaded": true,
+          "count": 200000
+        },
+        "audio": {
+          "loaded": true,
+          "count": 13496
+        }
+      },
+      "base_path": "/home/img1/projects/DCASS/storage/data/indices"
+    }
+  },
+  "config": {
+    "seed": 42,
+    "device": "cuda",
+    "candidate_sizes": [
+      1000,
+      5000,
+      10000,
+      20000,
+      35000
+    ],
+    "permutation_trials": 100,
+    "permutation_warmup_trials": 1,
+    "ecc_error_rates": [
+      0.0,
+      0.05,
+      0.1,
+      0.15,
+      0.2,
+      0.25
+    ],
+    "ecc_trials_per_rate": 20,
+    "payload_bytes": 50,
+    "parity_bytes": 8,
+    "modalities": [
+      "image",
+      "text",
+      "audio"
+    ],
+    "framing_policy": "Framed payloads are required whenever ECC is enabled; legacy raw payloads remain decodable only when ECC is off.",
+    "key_separation_random_trials": 100,
+    "key_separation_bit_flip_trials": 256
+  },
+  "metric_definitions": {
+    "key_separation_acceptance": "A false acceptance is any decode for which the CRC gate returns success under an unauthorized key, whether or not the plaintext equals the original. Exact message matches are recorded separately.",
+    "false_acceptance_upper_95_pct": "Wilson 95 percent upper bound on the per-attempt acceptance rate. A zero observed count does not by itself demonstrate the 2^-16 CRC bound.",
+    "carrier_substitution": "The selected carrier is replaced with a different random corpus ID. Some replacements map to the same VCP symbol; symbol_change_pct records the share that actually changed the decoded symbol."
+  },
+  "permutation_benchmarks": [
+    {
+      "candidate_size": 1000,
+      "num_trials": 100,
+      "total_time_ms": 5.754262016125722,
+      "time_per_permutation_ms": 0.05754262016125722,
+      "time_per_permutation_p50_ms": 0.05756899918196723,
+      "time_per_permutation_std_ms": 0.010594989021919732,
+      "determinism_passed": true,
+      "key_sensitivity_rho": 0.043504903504903505
+    },
+    {
+      "candidate_size": 5000,
+      "num_trials": 100,
+      "total_time_ms": 16.727348003769293,
+      "time_per_permutation_ms": 0.16727348003769293,
+      "time_per_permutation_p50_ms": 0.1749319999362342,
+      "time_per_permutation_std_ms": 0.031564412589473706,
+      "determinism_passed": true,
+      "key_sensitivity_rho": -0.0167757775670311
+    },
+    {
+      "candidate_size": 10000,
+      "num_trials": 100,
+      "total_time_ms": 15.749134014185984,
+      "time_per_permutation_ms": 0.15749134014185984,
+      "time_per_permutation_p50_ms": 0.1291524986299919,
+      "time_per_permutation_std_ms": 0.05921607669758261,
+      "determinism_passed": true,
+      "key_sensitivity_rho": 0.004497900008979001
+    },
+    {
+      "candidate_size": 20000,
+      "num_trials": 100,
+      "total_time_ms": 30.12920098262839,
+      "time_per_permutation_ms": 0.3012920098262839,
+      "time_per_permutation_p50_ms": 0.3411310008232249,
+      "time_per_permutation_std_ms": 0.06945534551103466,
+      "determinism_passed": true,
+      "key_sensitivity_rho": -0.0023274405658186012
+    },
+    {
+      "candidate_size": 35000,
+      "num_trials": 100,
+      "total_time_ms": 40.55802402217523,
+      "time_per_permutation_ms": 0.4055802402217523,
+      "time_per_permutation_p50_ms": 0.3610775002016453,
+      "time_per_permutation_std_ms": 0.08792712346449796,
+      "determinism_passed": true,
+      "key_sensitivity_rho": -0.0019819569339094697
+    }
+  ],
+  "ecc_recovery_benchmarks": [
+    {
+      "carrier_error_rate": 0.0,
+      "num_trials": 20,
+      "num_recovered": 20,
+      "recovery_rate_pct": 100.0,
+      "recovery_ci_low_pct": 83.88698745050667,
+      "recovery_ci_high_pct": 100.0,
+      "mean_ber_pct": 0.0,
+      "mean_fixed_errors": 0.0,
+      "mean_latency_ms": 585.2433385984114,
+      "parity_bytes": 8,
+      "num_decoder_successes": 20,
+      "num_false_acceptances": 0,
+      "num_corrupted_carriers": 0,
+      "num_symbol_changes": 0,
+      "symbol_change_pct": 0.0
+    },
+    {
+      "carrier_error_rate": 0.05,
+      "num_trials": 20,
+      "num_recovered": 14,
+      "recovery_rate_pct": 70.0,
+      "recovery_ci_low_pct": 48.102322377102055,
+      "recovery_ci_high_pct": 85.4524726031006,
+      "mean_ber_pct": 30.0,
+      "mean_fixed_errors": 2.7,
+      "mean_latency_ms": 554.9170941492775,
+      "parity_bytes": 8,
+      "num_decoder_successes": 14,
+      "num_false_acceptances": 0,
+      "num_corrupted_carriers": 40,
+      "num_symbol_changes": 40,
+      "symbol_change_pct": 100.0
+    },
+    {
+      "carrier_error_rate": 0.1,
+      "num_trials": 20,
+      "num_recovered": 0,
+      "recovery_rate_pct": 0.0,
+      "recovery_ci_low_pct": 0.0,
+      "recovery_ci_high_pct": 16.113012549493323,
+      "mean_ber_pct": 100.0,
+      "mean_fixed_errors": 0.0,
+      "mean_latency_ms": 533.1700880491553,
+      "parity_bytes": 8,
+      "num_decoder_successes": 0,
+      "num_false_acceptances": 0,
+      "num_corrupted_carriers": 80,
+      "num_symbol_changes": 79,
+      "symbol_change_pct": 98.75
+    },
+    {
+      "carrier_error_rate": 0.15,
+      "num_trials": 20,
+      "num_recovered": 0,
+      "recovery_rate_pct": 0.0,
+      "recovery_ci_low_pct": 0.0,
+      "recovery_ci_high_pct": 16.113012549493323,
+      "mean_ber_pct": 100.0,
+      "mean_fixed_errors": 0.0,
+      "mean_latency_ms": 529.911941750288,
+      "parity_bytes": 8,
+      "num_decoder_successes": 0,
+      "num_false_acceptances": 0,
+      "num_corrupted_carriers": 120,
+      "num_symbol_changes": 120,
+      "symbol_change_pct": 100.0
+    },
+    {
+      "carrier_error_rate": 0.2,
+      "num_trials": 20,
+      "num_recovered": 0,
+      "recovery_rate_pct": 0.0,
+      "recovery_ci_low_pct": 0.0,
+      "recovery_ci_high_pct": 16.113012549493323,
+      "mean_ber_pct": 100.0,
+      "mean_fixed_errors": 0.0,
+      "mean_latency_ms": 511.8737978003992,
+      "parity_bytes": 8,
+      "num_decoder_successes": 0,
+      "num_false_acceptances": 0,
+      "num_corrupted_carriers": 140,
+      "num_symbol_changes": 140,
+      "symbol_change_pct": 100.0
+    },
+    {
+      "carrier_error_rate": 0.25,
+      "num_trials": 20,
+      "num_recovered": 0,
+      "recovery_rate_pct": 0.0,
+      "recovery_ci_low_pct": 0.0,
+      "recovery_ci_high_pct": 16.113012549493323,
+      "mean_ber_pct": 100.0,
+      "mean_fixed_errors": 0.0,
+      "mean_latency_ms": 444.03461730016716,
+      "parity_bytes": 8,
+      "num_decoder_successes": 0,
+      "num_false_acceptances": 0,
+      "num_corrupted_carriers": 180,
+      "num_symbol_changes": 179,
+      "symbol_change_pct": 99.44444444444444
+    }
+  ],
+  "key_separation_benchmarks": [
+    {
+      "test_type": "random_wrong_keys",
+      "num_trials": 100,
+      "num_false_acceptances": 0,
+      "num_exact_message_matches": 0,
+      "false_acceptance_rate": 0.0,
+      "false_acceptance_upper_95_pct": 3.699480747600191,
+      "rejection_rate_pct": 100.0
+    },
+    {
+      "test_type": "single_bit_flipped_keys",
+      "num_trials": 256,
+      "num_false_acceptances": 0,
+      "num_exact_message_matches": 0,
+      "false_acceptance_rate": 0.0,
+      "false_acceptance_upper_95_pct": 1.4784391721725851,
+      "rejection_rate_pct": 100.0
+    }
+  ],
+  "plot_paths": {
+    "permutation_scaling": "storage/benchmarks/plots/fig_4b_permutation_scaling.png",
+    "ecc_recovery_curve": "storage/benchmarks/plots/fig_4b_ecc_recovery_curve.png",
+    "key_separation": "storage/benchmarks/plots/fig_4b_key_separation.png"
+  }
+}

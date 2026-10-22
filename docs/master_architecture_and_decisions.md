@@ -12,7 +12,7 @@
 
 **Dynamic Context-Aware Semantic Steganography (DCASS)** is a zero-modification semantic steganography and information-hiding research framework. Unlike classical steganography—which imperceptibly modifies media files (e.g., LSB replacement, DCT coefficient perturbation, deep neural generative synthesis) and inevitably creates detectable statistical artifacts—DCASS leaves carrier media **100% unaltered**. 
 
-DCASS transmits authentic, public media files (images, audio clips, text captions) from a synchronized corpus of **256,366 carriers**. The secret payload is encoded strictly in the **discrete semantic sequence, spatial hypersphere Voronoi partitions, and state-space permutations** of the selected carriers.
+DCASS transmits authentic, public media files (images, audio clips, text captions) from a synchronized corpus of **245,279 carriers**. The secret payload is encoded strictly in the **discrete semantic sequence, spatial hypersphere Voronoi partitions, and state-space permutations** of the selected carriers.
 
 ---
 
@@ -66,7 +66,7 @@ DCASS transmits authentic, public media files (images, audio clips, text caption
  +-------------------------+                                           +-----------+-------------+
  | 5. Carrier Selection &  |       PUBLIC UNMODIFIED MEDIA STREAM      | 5. Carrier Feature Ext. |
  |    Decoy Topic Ranking  | ----------------------------------------> |    (CLIP / CLAP Embed)  |
- |    (Zero Topic Leakage) |    [Img#4912, Aud#812, Txt#9104, ...]     |    512-D Unit Sphere    |
+ |    (Reduced Topic Leakage) |    [Img#4912, Aud#812, Txt#9104, ...]     |    512-D Unit Sphere    |
  +-------------------------+                                           +-------------------------+
 ```
 
@@ -79,7 +79,7 @@ DCASS transmits authentic, public media files (images, audio clips, text caption
 +------------------------+        +------------------------+       +---------------------------+
 | semantic_legacy        |  ===>  | exact_vcp              | ===>  | DSSC Mode                 |
 | Keyword scoring        |        | 256 Voronoi Centroids  |       | Multi-Bit Permutations    |
-| Fuzzy (~80% cosine)    |        | 100% Bit-Exact Recovery|       | 100% Bit-Exact Recovery   |
+| Fuzzy (~80% cosine)    |        | Bit-exact within t=4   |       | Bit-exact within t=4      |
 | Severe Topic Leakage   |        | 1 Byte / Carrier       |       | ~15 Bits / Carrier        |
 | High Carrier Overhead  |        | 28 Carriers            |       | 14 Carriers (-50% Traffic)|
 +------------------------+        +------------------------+       +---------------------------+
@@ -95,8 +95,8 @@ DCASS transmits authentic, public media files (images, audio clips, text caption
 ### Generation 2: `exact_vcp` (Voronoi Constellation Partitioning)
 - **Mechanism:** Partitioned the 512-D hypersphere into 256 discrete Voronoi cells. Embedded Reed-Solomon RS(N,K) algebraic error correction + CRC-16 CCITT framing.
 - **Breakthroughs:**
-  1. **100% Bit-Exact Recovery:** Every byte maps deterministically to a centroid.
-  2. **Zero Topic Leakage ($I(S; M) = 0$):** Decoupled carrier selection from secret text via neutral cover stories.
+  1. **Bit-Exact Recovery Within the Correction Budget:** Every byte maps deterministically to a centroid, and the recorded clean-channel campaign reaches 0% BER. Carrier dropout is unrecoverable in the current wire format.
+  2. **Reduced Topic Leakage ($I(S; M) = 0$ in theory, conditional on the key):** Carrier selection is decoupled from the secret text via neutral cover stories, under a PRF assumption that no recorded artifact verifies.
   3. **Self-Healing:** Automatically repaired up to 4 symbol substitution errors / boundary drifts.
 
 ### Generation 3: `dssc` (Dynamic Semantic State-Space Coding - Current State of the Art)
@@ -112,13 +112,13 @@ DCASS transmits authentic, public media files (images, audio clips, text caption
 
 | Metric / Dimension | Generation 1 (semantic_legacy) | Generation 2 (exact_vcp) | Generation 3 (DSSC Mode) |
 |---|---|---|---|
-| **Corpus Scale & Modality** | 46,858 (Image only) | 256,366 (Multimodal) | 256,366 (Multimodal) |
-| **Message Recovery Rate** | ~81.6% Cosine (Fuzzy approx) | **100% Exact Bit Recovery** | **100% Exact Bit Recovery** |
+| **Corpus Scale & Modality** | 46,858 (Image only) | 245,279 (Multimodal) | 245,279 (Multimodal) |
+| **Message Recovery Rate** | ~81.6% Cosine (Fuzzy approx) | **Bit-exact within the t=4 budget** | **Bit-exact within the t=4 budget** |
 | **Information Density** | ~0.20 BLEU-1 | 8.0 bits / carrier (1 Byte) | **~15.0 bits / carrier (Multi-bit)** |
 | **Carriers for "Sample message"** | ~15 items (approx meaning) | 28 items (bit-exact + ECC) | **14 items (50.0% traffic reduction)** |
 | **Error Correction & Framing** | None (Lost on noise) | Reed-Solomon RS(N,K) + CRC-16 | Reed-Solomon RS(N,K) + CRC-16 |
-| **Topic Leakage Defense** | High (Matched secret words) | **Zero (Cover-story decoy)** | **Zero (HMAC session permutation)** |
-| **Steganalysis Footprint** | AUC = 0.50 (Unmodified) | AUC = 0.50 (Unmodified) | AUC = 0.50 (Unmodified) |
+| **Topic Leakage Defense** | High (Matched secret words) | **Reduced (cover-story decoy, theory)** | **Reduced (HMAC session permutation, theory)** |
+| **Steganalysis Footprint** | 0.4973-0.4993 (Unmodified) | 0.4973-0.4993 (Unmodified) | 0.4973-0.4993 (Unmodified) |
 | **Security & Authentication** | None (Public search) | Codebook Centroid Partition | **HMAC-SHA256 Session Keyed** |
 | **Status in Codebase** | Deprecated / Removed | Operational Mode 1 | **Operational Mode 2 (Default)** |
 

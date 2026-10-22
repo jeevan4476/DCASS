@@ -1,0 +1,369 @@
+{
+  "schema": "generator-detector-adversary-probe-v1",
+  "epochs": 40,
+  "adversary": "storage/models/traffic_detector.pt",
+  "evaluator": "storage/models/traffic_detector_eval.pt",
+  "note": "The generator's objective is the adversary's bot probability, which is bounded, so the unbounded Wasserstein race that diverged cannot happen. The held-out evaluator is a detector the generator never trained against.",
+  "history": [
+    {
+      "epoch": 0,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.37674,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 1,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.44603,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 2,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.40055,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 3,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.41491,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 4,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.45045,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 5,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.42582,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 6,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.39711,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 7,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.3956,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 8,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.35889,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 9,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.42799,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 10,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.44609,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 11,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.48032,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 12,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.39291,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 13,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.39471,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 14,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.39027,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 15,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.33443,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 16,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.43993,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 17,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.42529,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 18,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.41994,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 19,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.47545,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 20,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.38523,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 21,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.35208,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 22,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.38292,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 23,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.4668,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 24,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.39549,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 25,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.45071,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 26,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.43952,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 27,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.41563,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 28,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.38649,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 29,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.39272,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 30,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.39397,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 31,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.41401,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 32,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.45366,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 33,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.42164,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 34,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.39638,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 35,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.45587,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 36,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.4004,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 37,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.43891,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 38,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.41906,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    },
+    {
+      "epoch": 39,
+      "adversary_bot_probability": 0.999977,
+      "held_out_evaluator_bot_probability": 0.994493,
+      "generator_delay_std": 0.37428,
+      "mapped_delay_median": 30.0,
+      "mapped_delay_p95": 30.0,
+      "mapped_delay_max": 30.0
+    }
+  ]
+}

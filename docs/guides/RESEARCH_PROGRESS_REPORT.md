@@ -3,13 +3,13 @@
 ## 1. Executive Summary & Capstone Goals
 
 ### 1.1 Executive Summary
-Dynamic Context-Aware Semantic Steganography (DCASS) is an advanced multi-modal steganography framework designed to encode covert secret messages into dynamic, natural, multi-modal carrier media streams (images, text, audio) without altering the physical underlying bytes or feature signals of the carrier media itself. By leveraging unified vector spaces (CLIP, Sentence-Transformers, CLAP) indexed with Facebook AI Similarity Search (FAISS), DCASS maps secret message payloads into nearest-neighbor semantic carrier selections that are indistinguishable from normal user activity.
+Dynamic Context-Aware Semantic Steganography (DCASS) is an advanced multi-modal steganography framework designed to encode covert secret messages into dynamic, natural, multi-modal carrier media streams (images, text, audio) without altering the physical underlying bytes or feature signals of the carrier media itself. By leveraging unified vector spaces (CLIP, Sentence-Transformers, CLAP) indexed with Facebook AI Similarity Search (FAISS), DCASS maps secret message payloads into nearest-neighbor semantic carrier selections that are intended to resemble normal user activity. Selection and timing are evaluated separately; the recorded C3 traffic result is negative/limited, not demonstrated indistinguishability.
 
 ### 1.2 Capstone Goals & Objectives
 1. **Multi-Modal Semantic Indexing**: Construct scalable FAISS vector databases across image, text, and audio corpora totaling over 150,000 vectors and 170,000 raw media assets.
 2. **GPU-Accelerated Feature Extraction & Retrieval**: Eliminate CPU embedding extraction bottlenecks by optimizing batching on dedicated GPU hardware (NVIDIA GeForce RTX 4050 Laptop GPU, CUDA 12.1).
-3. **Zero Bit-Error-Rate (0% BER) Decoding Guarantee**: Overcome the inherent 70-85% accuracy plateau of continuous vector quantization drift by introducing Reed-Solomon Error Correcting Codes (RS-ECC) over Galois Field $GF(2^8)$.
-4. **Context-Aware Dynamic Keying & Stealth Scheduling**: Synthesize dynamic public context feeds and GAN-based behavioral scheduling to prevent traffic flow analysis and statistical anomaly detection.
+3. **Bounded-Error Decoding**: Reduce the 70–85% accuracy plateau of continuous vector quantization drift with Reed-Solomon Error Correcting Codes (RS-ECC) over $GF(2^8)$. The recorded result is 0% BER on clean channels and within the $t=4$ byte budget; 5% substitution drops exact recovery to 61.2–70%, and carrier dropout is unrecoverable in the current wire format.
+4. **Context-Aware Dynamic Keying & Stealth Scheduling**: Synthesize dynamic public context feeds and GAN-based behavioral scheduling to attempt to reduce traffic-analysis signal. A trained traffic detector flags the WGAN and Hybrid schedules at 100% against a threshold calibrated on held-out human traffic, and the retrained PPO arm is not flagged; the human side of that comparison is a synthetic corpus, so evasion is not demonstrated.
 
 ---
 
@@ -20,17 +20,17 @@ The DCASS framework integrates three heterogeneous media modalities to support d
 
 | Modality | Datasets / Sources | Raw Media Items | FAISS Vectors | Embedding Model | Vector Dimension |
 | :--- | :--- | :---: | :---: | :--- | :---: |
-| **Image Channel** | Flickr30k + Flickr8k | 63,566 `.jpg` images | 39,785 vectors | OpenAI CLIP (`ViT-B/32`) | **512** |
-| **Text Channel** | Wikipedia + Captions | 100,000 raw sentences | 100,000 vectors | OpenAI CLIP Text Encoder (`ViT-B/32`) | **512** |
-| **Audio Channel** | LibriTTS / Libretta TTS | 13,496 `.wav` clips | 13,496 vectors | LAION CLAP (`clap-htsat-unfused`) | **512** |
-| **Total System Volume** | **Multi-Modal Integration** | **177,062 media items** | **153,281 FAISS vectors** | **Unified CLIP/CLAP Stack** | **512 (Unified)** |
+| **Image Channel** | Flickr30k + Flickr8k | 31,783 `.jpg` images | 31,783 vectors | OpenAI CLIP (`ViT-B/32`) | **512** |
+| **Text Channel** | Wikipedia + Captions | 200,000 raw sentences | 200,000 vectors | OpenAI CLIP Text Encoder (`ViT-B/32`) | **512** |
+| **Audio Channel** | `libretta` TTS | 13,496 `.wav` clips | 13,496 vectors | LAION CLAP (`clap-htsat-unfused`) | **512** |
+| **Total System Volume** | **Multi-Modal Integration** | **245,279 media items** | **245,279 FAISS vectors** | **Unified CLIP/CLAP Stack** | **512 (Unified)** |
 
 ### 2.2 Ingestion & FAISS Vector Pipeline Diagram
 ```mermaid
 flowchart TD
-    subgraph Raw_Corpora["Raw Media Storage (177,062 Items)"]
-        IMG["Flickr30k + Flickr8k\n(63,566 .jpg Images)"]
-        TXT["Wikipedia + Captions\n(100,000 Sentences)"]
+    subgraph Raw_Corpora["Raw Media Storage (245,279 Indexed Items)"]
+        IMG["Flickr30k + Flickr8k\n(31,783 .jpg Images)"]
+        TXT["Wikipedia + Captions\n(200,000 Sentences)"]
         AUD["Libretta TTS\n(13,496 .wav Clips)"]
     end
 
@@ -40,9 +40,9 @@ flowchart TD
         CLAP_AUD["LAION CLAP Audio Encoder\n(~80 clips/sec)"]
     end
 
-    subgraph Vector_DB["FAISS Unified Multi-Modal Index (153,281 Vectors)"]
-        IDX_IMG["Image Index\n(39,785 Vectors, 512-d)"]
-        IDX_TXT["Text Index\n(100,000 Vectors, 512-d)"]
+    subgraph Vector_DB["FAISS Unified Multi-Modal Index (245,279 Vectors)"]
+        IDX_IMG["Image Index\n(31,783 Vectors, 512-d)"]
+        IDX_TXT["Text Index\n(200,000 Vectors, 512-d)"]
         IDX_AUD["Audio Index\n(13,496 Vectors, 512-d)"]
     end
 
@@ -103,8 +103,8 @@ Where:
 
 $$t = \left\lfloor \frac{n - k}{2} \right\rfloor$$
 
-#### Achieving 0% Bit Error Rate (0% BER)
-By appending $2t$ parity bytes prior to semantic embedding lookup, even if vector search suffers up to a **15-20% byte error rate** during carrier retrieval, the RS Berlekamp-Massey decoding algorithm mathematically reconstructs $M(x)$ with **100% exact fidelity (0% BER)**. Crucially, parity bytes are encoded as standard semantic carriers—preserving total imperceptibility and media authenticity.
+#### Clean-Channel 0% BER Within the Correction Budget
+By appending $2t$ parity bytes prior to semantic embedding lookup, the RS Berlekamp-Massey decoder reconstructs $M(x)$ exactly while the damaged-byte count stays at or below $t=4$. The recorded clean-channel campaign reaches **0% BER**. This is not a guarantee for a 15–20% byte-error channel or for carrier dropout: 5% carrier substitution drops exact recovery to 61.2–70%, and deletion is unrecoverable in the current wire format. Parity bytes are encoded as standard semantic carriers.
 
 ```mermaid
 sequenceDiagram
@@ -125,7 +125,7 @@ sequenceDiagram
     Channel->>Receiver: Received Carrier Media Sequence
     Receiver->>FAISS: Extract Vector Indices -> Erroneous Codeword C'(x)
     Receiver->>RS: Decode C'(x) via Berlekamp-Massey Algorithm
-    RS-->>Receiver: 100% Bit-Exact Payload M(x) [0% BER]
+    RS-->>Receiver: Bit-exact payload within t=4 [clean-channel BER 0%]
 ```
 
 ---

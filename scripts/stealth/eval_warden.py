@@ -28,7 +28,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 from src.stealth.gan.generator import TemporalPatternGenerator
 from src.stealth.gan.trainer import HumanTrafficDataset, compute_warden_auc
@@ -36,7 +36,7 @@ from src.analysis.adversarial.warden import DeepPacketInspectionWarden
 
 
 def _load_models(checkpoint_path: Path, num_channels: int, device: str):
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    ckpt = load_trained_checkpoint(checkpoint_path, map_location=device,)
     config = ckpt.get("config")
     if config is not None and not isinstance(config, dict):
         latent_dim = getattr(config, "latent_dim", 128)

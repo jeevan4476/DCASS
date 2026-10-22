@@ -1,0 +1,31 @@
+{
+  "schema": "checkpoint-manifest-v1",
+  "generated": "2026-10-22",
+  "note": "Model checkpoints are untracked by git (they are ~118 MB and a tamperable supply-chain surface). This manifest pins their sha256 at untracking time; checkpoint_io refuses full-pickle loads of any checkpoint whose hash is not pinned here. Regenerate by training and re-record the hash when a checkpoint is replaced.",
+  "checkpoints": {
+    "storage/models/gan_generator.pt": {
+      "sha256": "1e74f03e09346b1c9d13aedc6efff5ba3b303fe99991a1f6b588728e3bedec47",
+      "bytes": 65738309
+    },
+    "storage/models/gan_generator_detector_adversary.pt": {
+      "sha256": "3082081567f4fe79aada94750c09eb9f10759fb419e8282b96278175559574c3",
+      "bytes": 5217635
+    },
+    "storage/models/rl_agent.pt": {
+      "sha256": "02991c52e001e6c330d47ceec3fecc6905c86e1e4372913013dfdfce073e23f7",
+      "bytes": 2316617
+    },
+    "storage/models/traffic_detector.pt": {
+      "sha256": "f0475e4a6048fd541c03664416a4b2f62653941facb625b0968df11c8048c7a8",
+      "bytes": 16830357
+    },
+    "storage/models/traffic_detector_eval.pt": {
+      "sha256": "7ad8985ca6b434aec12cbfb61366ac57a9114c2a395dca86a0bb06911344a124",
+      "bytes": 16830757
+    },
+    "storage/models/warden.pt": {
+      "sha256": "2094d58283bc83eeeced547b53642364da568685dc6366ab39d624763a9963c3",
+      "bytes": 16814649
+    }
+  }
+}

@@ -8,10 +8,10 @@
 **Dynamic Semantic State-Space Coding (DSSC)** is a high-capacity, zero-modification multi-modal steganographic architecture designed for the DCASS (Dynamic Context-Aware Semantic Steganography) platform.
 
 Unlike classical steganography (which modifies media pixels or audio samples, leaving detectable statistical footprints) or early semantic steganography (which suffered from fuzzy message recovery and topic leakage), DSSC achieves:
-1. **100% Bit-Exact Lossless Reconstruction:** Guaranteed by combining algebraic Reed-Solomon $\text{RS}(N,K)$ error correction over Galois Field $\text{GF}(2^8)$ with CRC-16 CCITT framing.
+1. **Bit-Exact Reconstruction Within the Correction Budget:** Reed-Solomon $\text{RS}(N,K)$ error correction over Galois Field $\text{GF}(2^8)$ with CRC-16 CCITT framing gives 0% BER on clean channels and up to $t=4$ damaged bytes per block. Beyond that budget, and under carrier dropout, the decoder reports failure rather than recovering.
 2. **High Information Capacity (~15 bits/carrier):** Achieves over **50.0% traffic compaction** compared to Voronoi Constellation Partitioning (VCP) by indexing into candidate state-spaces of size $N = 32,768$.
-3. **Information-Theoretic Cover Privacy ($I(S; M) = 0$):** Decouples carrier visual/semantic content from secret keywords using session-keyed HMAC-SHA256 family routing and decoy query ranking.
-4. **Steganalysis Immunity ($\text{AUC} = 0.50$):** Transmits 100% real, unaltered public media (Images, Text, Audio) selected from a 256,366-item multi-modal corpus.
+3. **Cover Privacy (theory, $I(S; M) = 0$ under the PRF assumption):** Session-keyed HMAC-SHA256 family routing and decoy query ranking decouple carrier visual/semantic content from secret keywords. This is an argument that holds when the key is secret and the PRF is indistinguishable from random; it is not a measured result, and it says nothing about the carrier selection distribution seen in Component 2.
+4. **Content-Residual Blindness (Negative Control):** Transmits unaltered public media (Images, Text, Audio) selected from a 245,279-item multi-modal corpus. The measured image-detector AUC is 0.4973 to 0.4993 across SRNet, ZhuNet, and YeNet, which is the expected result for zero content modification and is not a full-system undetectability claim.
 
 ---
 
@@ -50,7 +50,7 @@ Unlike classical steganography (which modifies media pixels or audio samples, le
               ▼
   ┌────────────────────────┐
   │ Layer 5: Decoy Cover   │  Reranks Carriers using Neutral Decoy Query (e.g., "European Travel")
-  │ Story Reranker         │  Guarantees Zero Topic Leakage: I(S; M) = 0
+  │ Story Reranker         │ Reduces topic leakage: I(S; M) = 0 under the PRF assumption
   └───────────┬────────────┘
               │
               ▼
@@ -84,7 +84,7 @@ Unlike classical steganography (which modifies media pixels or audio samples, le
               ▼
   ┌────────────────────────┐
   │ 5. CRC-16 CCITT Check  │  Validates CRC-16 Checksum == 0x0000; strips [0x01, len] header
-  │ & Unframing            │  Emits 100% Bit-Exact Plaintext: "Sample message"
+  │ & Unframing            │  Emits bit-exact plaintext: "Sample message" (clean channel)
   └────────────────────────┘
 ```
 
@@ -118,7 +118,7 @@ $$G_{\text{CRC}}(x) = x^{16} + x^{12} + x^5 + 1 \quad (\text{Hex: } \mathtt{0x10
 
 ### Layer 2: Algebraic Error Correction over Galois Field $\text{GF}(2^8)$
 
-To ensure 100% exact bit reconstruction under transmission noise, carrier drops, or centroid boundary shifts, DCASS applies non-binary algebraic **Reed-Solomon $\text{RS}(N, K)$** coding.
+To recover exact bits under transmission noise and centroid boundary shifts within the correction budget, DCASS applies non-binary algebraic **Reed-Solomon $\text{RS}(N, K)$** coding. It does not recover from carrier drops in the current wire format, because the format carries no per-carrier sequence markers.
 
 #### 1. Galois Field $\text{GF}(2^8)$ Construction
 Elements of $\text{GF}(2^8)$ are polynomials of degree $< 8$ over $\text{GF}(2)$, modulo the primitive irreducible polynomial:
@@ -157,17 +157,17 @@ A fundamental architectural question is: **Why did we partition the 256 Voronoi 
 ```
                   THE CORPUS PARTITIONING SWEET-SPOT
 
-    Total Multi-Modal Indexed Corpus = 256,366 carriers
+    Total Multi-Modal Indexed Corpus = 245,279 carriers
     DSSC Target Bit Capacity per Carrier = 15 bits (2^15 = 32,768 states)
 
     ┌─────────────────┬──────────────────────┬──────────────────────┬──────────────────────────────────┐
     │ Families (|F|)  │ Avg Items / Family   │ Power-of-2 Capacity  │ Architectural Outcome            │
     ├─────────────────┼──────────────────────┼──────────────────────┼──────────────────────────────────┤
-    │ 1 Family        │ 256,366 items        │ 17 bits (131,072)    │ No semantic diversity; giant bag │
-    │ 4 Families      │ 64,091 items         │ 15 bits (32,768)     │ Coarse semantic clustering       │
-    │ 6 Families      │ 42,727 items         │ 15 bits (32,768)     │ ★ OPTIMAL CAPACITY & SEMANTICS   │
-    │ 8 Families      │ 32,045 items         │ 14 bits (16,384)     │ CAPACITY DROPS TO 14 BITS        │
-    │ 16 Families     │ 16,022 items         │ 14 bits (16,384)     │ Capacity lost; 15 bits fails     │
+    │ 1 Family        │ 245,279 items        │ 17 bits (131,072)    │ No semantic diversity; giant bag │
+    │ 4 Families      │ 61,320 items         │ 15 bits (32,768)     │ Coarse semantic clustering       │
+    │ 6 Families      │ 40,880 items         │ 15 bits (32,768)     │ ★ OPTIMAL CAPACITY & SEMANTICS   │
+    │ 8 Families      │ 30,660 items         │ 14 bits (16,384)     │ CAPACITY DROPS TO 14 BITS        │
+    │ 16 Families     │ 15,330 items         │ 14 bits (16,384)     │ Capacity lost; 15 bits fails     │
     └─────────────────┴──────────────────────┴──────────────────────┴──────────────────────────────────┘
 ```
 
@@ -176,10 +176,10 @@ A fundamental architectural question is: **Why did we partition the 256 Voronoi 
    To encode $C = 15\text{ bits}$ per carrier without risk of boundary overflow or aliasing, each candidate subspace must satisfy:
    $$N_{\text{family}} \ge 2^{15} = \mathbf{32,768\text{ items}}$$
 2. **The Maximum Number of Coherent Families:**
-   Given our total corpus $M = 256,366$:
-   $$|F|_{\max} = \left\lfloor \frac{M}{2^{15}} \right\rfloor = \left\lfloor \frac{256,366}{32,768} \right\rfloor = \lfloor 7.82 \rfloor = \mathbf{7\text{ families}}$$
+   Given our total corpus $M = 245,279$:
+   $$|F|_{\max} = \left\lfloor \frac{M}{2^{15}} \right\rfloor = \left\lfloor \frac{245,279}{32,768} \right\rfloor = \lfloor 7.49 \rfloor = \mathbf{7\text{ families}}$$
 3. **The 6 Semantic Domain Alignments:**
-   By choosing $|F| = 6$, each family has an average of $N = \frac{256,366}{6} \approx \mathbf{42,727\text{ items}}$, safely exceeding the 32,768 threshold while mapping directly to 6 distinct, semantically coherent macro-domains across human language and perception:
+   By choosing $|F| = 6$, each family has an average of $N = \frac{245,279}{6} \approx \mathbf{40,880\text{ items}}$, exceeding the 32,768 threshold while mapping directly to 6 distinct, semantically coherent macro-domains across human language and perception:
    - **Family 0 (Landscapes & Outdoor Nature):** High green/blue visual features, acoustic outdoor soundscapes, geographical text.
    - **Family 1 (Human Dialogue & Social Interaction):** Portrait imagery, conversational speech clips, dialogue text.
    - **Family 2 (Architecture, Cities & Infrastructure):** Structural photographs, urban ambient noise, engineering Wikipedia articles.
@@ -230,7 +230,7 @@ In classical steganography, transmitting media matching secret keywords creates 
    Because family selection $f_i$ and permutation $\Pi_i$ are driven exclusively by the HMAC pseudo-random function of $K_{\text{session}}$:
    $$P(M = m \mid S = s) = P(M = m) = \frac{1}{N}$$
    $$H(M \mid S) = H(M) \implies I(S; M) = H(M) - H(M \mid S) = \mathbf{0.0\text{ bits}}$$
-   An adversary observing the public media stream gains **zero mutual information** regarding the secret text.
+   Under those assumptions an adversary observing the public media stream gains zero mutual information about the secret text from the carrier choices alone. The assumption is not verified in the recorded artifacts, and the selection distribution that a frequency-counting warden could exploit is measured separately in Component 2.
 
 ---
 
@@ -263,7 +263,7 @@ When Bob receives the sequence of public media IDs $\mathcal{M} = [m_0, m_1, \do
  Step 5: CRC-16 Verification & Output
    Verify CRC16(Recovered_Data) == Expected_CRC16
    Strip Magic Byte [0x01] and Length Header [0x00, 0x0E]
-   Output: 100% Bit-Exact "Sample message"
+   Output: bit-exact "Sample message" on a clean channel
 ```
 
 ---
@@ -282,8 +282,8 @@ When Bob receives the sequence of public media IDs $\mathcal{M} = [m_0, m_1, \do
 | **15-Bit Slices** | $S_0=18421, S_1=4892, S_2=29104, \dots, S_{14}=8320$ | 15 Symbols |
 | **Gen 2 VCP Carriers** | 1 Byte / Carrier + Sync | **28 Carriers** |
 | **Gen 3 DSSC Carriers** | 15 Bits / Carrier | **14–15 Carriers (50.0% Traffic Reduction)** |
-| **Recovery Accuracy** | Bit Error Rate $(\text{BER}) = 0.00\%$ | **100% Bit-Exact Recovery** |
-| **Steganalysis AUC** | $\text{AUC} = 0.50$ (Zero media modification) | **Perfect Indistinguishability** |
+| **Recovery Accuracy** | Bit Error Rate $(\text{BER}) = 0.00\%$ on a clean channel | **Bit-exact within the $t=4$ budget; dropout unrecoverable** |
+| **Steganalysis AUC** | 0.4973 to 0.4993 measured for SRNet, ZhuNet, and YeNet | **Content-residual negative control, not full-system indistinguishability** |
 
 ---
 

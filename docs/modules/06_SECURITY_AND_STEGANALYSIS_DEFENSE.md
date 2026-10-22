@@ -16,9 +16,9 @@ Consider how traditional steganography works compared to DCASS:
 Alice buys a postcard of the Eiffel Tower. To hide a secret message, she takes a microscope and alters the ink pigments in thousands of tiny dots across the sky. When she mails the postcard, an inspector in the postal service places the card under a spectral microscope. The inspector immediately spots the microscopic chemical irregularities in the ink. Even if the message text is not visible to the naked eye, the physical alteration is obvious, and the postcard is intercepted.
 
 **DCASS (The Catalog Selection)**:  
-Alice and Bob share a public catalog of all 153,281 postcards, quotes, and audio recordings available in a city library. Each item in the catalog corresponds to a specific numerical coordinate in a mathematical codebook. To transmit her secret, Alice does not touch a single drop of ink or modify a single pixel. She walks into the gift shop, buys the genuine, factory-printed postcard #253320564, and mails it completely untouched.
+Alice and Bob share a public catalog of all 245,279 postcards, quotes, and audio recordings available in a city library. Each item in the catalog corresponds to a specific numerical coordinate in a mathematical codebook. To transmit her secret, Alice does not touch a single drop of ink or modify a single pixel. She walks into the gift shop, buys the genuine, factory-printed postcard #253320564, and mails it completely untouched.
 
-When the postal inspector analyzes the postcard with high-magnification microscopes, convolutional neural networks, and statistical tests, the postcard is 100% genuine because it is a factory-original item. The inspector finds zero modifications, zero noise artifacts, and zero statistical anomalies.
+When the postal inspector analyzes the postcard with high-magnification microscopes, convolutional neural networks, and statistical tests, the postcard is byte-identical to a factory-original item. The inspector finds no content-embedding modifications or noise artifacts. Whether the sequence of postcards and its timing look natural is a separate question, addressed in Components 2 and 3.
 
 ```mermaid
 flowchart TD
@@ -30,16 +30,16 @@ flowchart TD
     end
     
     subgraph DCASS["DCASS (Pure Semantic Selection)"]
-        PublicCorpus["Public Corpus Index\n(153,281 Authentic Files)"] --> SelectOriginal["Sequence Selection Algorithm\n(Untouched Existing Item)"]
+        PublicCorpus["Public Corpus Index\n(245,279 Authentic Files)"] --> SelectOriginal["Sequence Selection Algorithm\n(Untouched Existing Item)"]
         SelectOriginal --> TransmittedMedia["Transmitted Carrier Media\n(100% Byte-Identical to Public File)"]
         TransmittedMedia --> SteganalysisDetectorDCASS["Deep CNN Steganalyst\n(SRNet / Ye-Net)"]
-        SteganalysisDetectorDCASS --> Immune["Detection Probability = 50.0%\n(Pure Random Guess / Undetectable)"]
+        SteganalysisDetectorDCASS --> Immune["Content-Residual Detection ~ Chance\n(Negative Control; Not Full-System Undetectability)"]
     end
 ```
 
 ---
 
-## 2. Why DCASS Is Immune to Deep Convolutional Steganalysis
+## 2. Why DCASS Removes the Content-Residual Signal
 
 ### 2.1 The Vulnerability of Pixel-Modification Systems
 Deep neural network steganalysts such as **SRNet (Spatial ResNet)**, **Zhu-Net**, **Ye-Net**, and **Xu-Net** operate by applying high-pass spatial filtering kernels (such as the 30 spatial rich model filter residuals) to strip away image semantics and expose high-frequency noise residuals:
@@ -55,15 +55,15 @@ $$\mathbb{P}(X_{i,j} - X_{i,j+1} = d)$$
 Convolutional residual architectures detect these minute statistical skews with over **95% to 99% accuracy**.
 
 ### 2.2 The Zero-Modification Invariance in DCASS
-DCASS completely removes pixel-level embedding. Media items selected from the corpus (images from Flickr30k/Flickr8k, text sentences from Wikipedia, and audio files from LibriTTS) are transmitted in their exact, pristine byte form:
+DCASS completely removes pixel-level embedding. Media items selected from the corpus (images from Flickr30k/Flickr8k, text sentences from Wikipedia, and audio files from `libretta`) are transmitted in their exact, pristine byte form:
 
 $$\mathbf{X}_{\text{transmitted}} \equiv \mathbf{X}_{\text{corpus}}$$
 
-Because no filtering, pixel alteration, or sample requantization occurs, the spatial residual $\mathbf{R}_{\text{transmitted}}$ is identically equal to the natural cover residual $\mathbf{R}_{\text{cover}}$. Deep convolutional layers receive natural image gradients, rendering all spatial and frequency-domain steganalysts mathematically blind.
+Because no filtering, pixel alteration, or sample requantization occurs, the spatial residual $\mathbf{R}_{\text{transmitted}}$ is identically equal to the natural cover residual $\mathbf{R}_{\text{cover}}$. This removes the signal that content-residual steganalysts were trained to find. It does not address selection patterns or traffic timing; those are separate attack surfaces and are not covered by this argument.
 
 ---
 
-## 3. Mathematical Proof of Information-Theoretic Security
+## 3. Scoped Information-Theoretic Argument for Carrier Content
 
 ### 3.1 Relative Entropy (Kullback-Leibler Divergence) Proof
 Let $\mathcal{X}$ denote the universe of all digital media files. Let $P_{\text{cover}}(\mathbf{x})$ represent the continuous probability density function of natural, unmodified media files circulating across the Internet.
@@ -156,7 +156,7 @@ The DCASS architecture enforces zero-modification policies across all three medi
 - **Transmission**: The exact unaltered string is transmitted or rendered on the public social feed.
 
 ### 4.3 Audio Modality Guarantee
-- **Source**: LibriTTS 16-bit PCM WAV audio clips (`.wav`).
+- **Source**: `libretta` 16-bit PCM WAV audio clips (`.wav`; 13,496 clips).
 - **Processing**: Encoded using LAION CLAP (`clap-htsat-unfused`) into 512d vectors.
 - **Transmission**: Audio clips are streamed in their pristine waveform encoding without re-encoding, sample rate conversion, or pitch shifting.
 
@@ -180,20 +180,15 @@ def verify_zero_modification(source_path: Path, transmitted_bytes: bytes) -> boo
 
 ## 5. Comparative Defense Analysis Against Modern Steganalysis Architectures
 
-| Steganalysis Framework | Detection Target | Traditional LSB / J-UNIWARD | DCASS (unmodified carriers) |
+| Steganalysis Framework | Detection Target | Traditional control (recorded) | DCASS carriers (recorded) |
 | :--- | :--- | :---: | :---: |
-| **SRNet (Spatial ResNet)** | High-pass pixel residuals | **> 96.5% Detection** | ~50% expected (no residual signal to detect)* |
-| **Ye-Net / Zhu-Net** | Truncated linear unit DCT noise | **> 98.2% Detection** | ~50% expected* |
-| **Spatial Rich Models (SRM)** | 30 handcrafted co-occurrence filters | **> 94.1% Detection** | ~50% expected* |
-| **Deep Audio Steganalysis** | Waveform PCM phase & LSB tweaking | **> 91.8% Detection** | ~50% expected* |
-| **Deep Packet Inspection (DPI)** | Inter-packet timing & burst regularity | **> 99.0% Detection** | Mimicry reduces signal; not proven at chance level |
+| **SRNet (Spatial ResNet)** | High-pass pixel residuals | 93.67% [92.88, 94.39] | AUC 0.4973 [0.4830, 0.5143] |
+| **Ye-Net / Zhu-Net** | Truncated linear unit DCT noise | 93.97% [93.19, 94.67] / 95.05% [94.33, 95.68] | AUC 0.4993 for both, intervals covering 0.5000 |
+| **Spatial Rich Models (SRM)** | 30 handcrafted co-occurrence filters | 50.15% (blind to the control; disclosure foil) | Excluded under the positive-control gate; not testimony about DCASS |
+| **Deep Audio Steganalysis** | Waveform PCM phase & LSB tweaking | not rerun in the recorded protocol | ~50% theoretical* |
+| **Deep Packet Inspection (DPI)** | Inter-packet timing & burst regularity | legacy estimate only | Mimicry reduces signal; not proven at chance level |
 
-\* *These are theoretical expectations from the absence of an embedding
-signal, not measured benchmark results on this codebase. Because DCASS never
-modifies carrier files, content-residual detectors have no embedding noise to
-find; a detector applied to individual carriers should perform no better than
-random guessing. Selection-pattern and traffic-level analysis remain open
-attack surfaces and are treated in modules 05 and 08.*
+\* *The image rows are the recorded results of the Component 1 schema-v2 rerun: three image-level folds over a 2,000-image pool with a per-fold 0.90 positive-control gate; see `BENCHMARK_DEEP_EXPLANATION.md`, Section 1. The audio row remains a theoretical expectation: DCASS transmits unmodified corpus audio, so a content-residual detector should perform no better than random guessing, but no audio rerun is recorded yet. Selection-pattern and traffic-level analysis remain open attack surfaces and are treated in modules 05 and 08.*
 
 ---
 
@@ -204,15 +199,15 @@ To maintain academic rigor, the DCASS security defense separates the adversary's
 
 1. **Content-Residual Steganalysis (Passive Media Inspector)**:
    - *Adversary Goal*: Detect minute pixel perturbations, DCT coefficient alterations, or audio phase shifts in individual media files.
-   - *DCASS Defense*: Transmits unmodified, authentic public files ($X_{\text{transmitted}} \equiv X_{\text{corpus}}$). Because no modifications occur, spatial residuals $R = X \ast K_{\text{high-pass}}$ contain zero embedding noise. This achieves $D_{\text{KL}}^{\text{content}}(P_{\text{cover}} \parallel P_{\text{stego}}) = 0.000$ bits and ROC AUC = $0.5000$ against SRNet, Zhu-Net, Ye-Net, Xu-Net, and SRM.
+   - *DCASS Defense*: Transmits unmodified, authentic public files ($X_{\text{transmitted}} \equiv X_{\text{corpus}}$). Because no modifications occur, spatial residuals $R = X \ast K_{\text{high-pass}}$ contain zero embedding noise. The recorded C1 result is AUC 0.4973–0.4993 for the three gated detectors (SRNet, ZhuNet, YeNet), with every 95% interval covering 0.5000. This is a content-residual negative control, not a claim about Xu-Net, SRM, selection patterns, or timing.
 
 2. **Behavioral & Network-Level Surveillance (Deep Packet Inspector / DPI Warden)**:
    - *Adversary Goal*: Detect robotic periodicity, abnormal account burstiness, or channel rate flooding.
-   - *DCASS Defense*: Defended by the WGAN-GP temporal generator and PPO closed-loop scheduler, dynamically mimicking human circadian cycles and maintaining high path entropy across multiple egress platforms ($H = 1.57 / 1.58\text{ bits}$).
+   - *DCASS Defense*: The WGAN-GP temporal generator and PPO scheduler attempt to reduce timing regularity. The current recorded C3 result is negative/limited: a trained traffic detector flags the WGAN and Hybrid schedules at 100% against a threshold calibrated on held-out human traffic, while the retrained PPO arm is not flagged, the human side of that comparison is the repository's own synthetic traffic corpus, and no circadian adaptation was measured. Do not describe this layer as demonstrated evasion.
 
 ### 6.2 Summary Table (scoped claims)
 1. **Zero Pixel/Sample Modification**: Transmitted files are byte-for-byte identical to public dataset files ($\text{SHA-256}$ verified).
 2. **$D_{\text{KL}}^{\text{content}} = 0.000$ Bits**: Relative entropy between cover and stego *media content* is strictly zero - the carrier files are unmodified.
 3. **Cachin $\epsilon$-Security on Carrier Content**: $\epsilon = 0.0$ holds for content-residual analysis of the carriers themselves. It does not cover selection patterns or traffic timing.
 4. **Content Detectors Have No Signal**: With no embedding noise, content-residual steganalysts should not exceed chance on individual carriers (theoretical expectation; validate empirically before publication).
-5. **DPI Behavioral Camouflage**: WGAN-GP and PPO scheduling reduce timing regularity, but this is measured mimicry, not a proof of indistinguishability. See module 08 for the traffic-cost trade-off and module `ContextKeyManager` for payload-confidentiality keying.
+5. **DPI Behavioral Camouflage: Not Demonstrated**: WGAN-GP and PPO scheduling attempt to reduce timing regularity, but the recorded C3 result is negative/limited. A trained traffic detector flags the WGAN and Hybrid schedules at 100% against a threshold calibrated on held-out human traffic, while the retrained PPO arm is not flagged, and the human side of that comparison is the repository's own synthetic traffic corpus rather than recorded human browsing, so the result says nothing about real-world detectability. See module 08 for the traffic-cost trade-off and module `ContextKeyManager` for payload-confidentiality keying.

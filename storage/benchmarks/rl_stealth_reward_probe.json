@@ -1,0 +1,35 @@
+{
+  "schema": "rl-stealth-reward-probe-v1",
+  "lambda_stealth": 50.0,
+  "note": "The mean per-step reward the RL environment assigns to each fixed delay sequence, under the shipped WGAN-GP critic and under a trained traffic detector. The critic returns bot_probability = 0.0 for every input, so its stealth penalty is identically zero and the reward prefers the faster traffic.",
+  "wardens": {
+    "shipped_wgan_gp_critic": {
+      "fixed 3.0 s metronome": {
+        "mean_reward": 21.568673981324253,
+        "warden_score": 1.3842047508205724e-07
+      },
+      "fixed 12.0 s": {
+        "mean_reward": 9.669988792716143,
+        "warden_score": 6.938312591131535e-09
+      },
+      "fixed 30.0 s": {
+        "mean_reward": 7.669989095256485,
+        "warden_score": 5.074021498102654e-12
+      }
+    },
+    "trained_detector": {
+      "fixed 3.0 s metronome": {
+        "mean_reward": -28.429951887891473,
+        "warden_score": 0.9999716281890869
+      },
+      "fixed 12.0 s": {
+        "mean_reward": -40.32873536510813,
+        "warden_score": 0.9999744892120361
+      },
+      "fixed 30.0 s": {
+        "mean_reward": -42.32874132557261,
+        "warden_score": 0.9999746084213257
+      }
+    }
+  }
+}

@@ -13,7 +13,7 @@ A naive steganographic approach would alter pixel least significant bits (LSBs) 
 
 DCASS takes an entirely different approach:
 1. It splits the message into logical semantic concepts: *"Meet at dusk"* and *"near river bank"*.
-2. It searches a public database of 153,281 authentic media files to find items that naturally discuss or depict nighttime and river banks.
+2. It searches a public database of 245,279 authentic media files to find items that naturally discuss or depict nighttime and river banks.
 3. It selects media items whose mathematical vector cluster coordinates simultaneously match the exact cryptographic byte symbols of the message.
 
 An observer reading the public social media thread sees a photo of a serene river bank at dusk, a quote about midnight stillness, and a short audio clip of flowing river water. The sequence appears completely natural, harmless, and contextually consistent, while the receiver extracts the exact message with zero bit errors.
@@ -95,7 +95,7 @@ Subject to:
 2. **Semantic Similarity Condition (Stealth)**: $\mathbf{x}^*$ must maximize the inner product (cosine similarity) with the secret semantic chunk $\mathbf{v}_{\text{chunk}}$ among all candidate items contained within $\mathcal{V}(\mathbf{c}_{m_i})$.
 3. **Soft-Margin Safety Condition**: $\Delta_{\text{margin}}(\mathbf{x}^*) = \langle \mathbf{x}^*, \mathbf{c}_{m_i} \rangle - \max_{j \neq m_i} \langle \mathbf{x}^*, \mathbf{c}_j \rangle \ge \delta_{\text{margin}}$, with default threshold $\delta_{\text{margin}} = 0.05$.
 
-Because each Voronoi cell contains on average $\bar{\rho} \approx 598.8$ candidate media items across image, text, and audio channels, the optimization space within each cell is dense enough to find an item with high topical affinity to $\mathbf{v}_{\text{chunk}}$.
+Because each Voronoi cell contains on average $\bar{\rho} \approx 958.1$ candidate media items across image, text, and audio channels, the optimization space within each cell is dense enough to find an item with high topical affinity to $\mathbf{v}_{\text{chunk}}$.
 
 ---
 
@@ -236,7 +236,7 @@ DCASS provides a two-tiered extraction capability depending on whether the recei
 | Property | Tier 1: Exact Payload Reconstruction | Tier 2: Semantic Summary Extraction |
 | :--- | :--- | :--- |
 | **Extraction Mechanism** | Voronoi Symbol Decoder + RS-ECC Berlekamp-Massey | Metadata extraction (`extract_semantic_content`) |
-| **Mathematical Precision** | **100.0% bit-exact match (0% Bit Error Rate)** | High-level contextual story gist |
+| **Mathematical Precision** | **100% clean-channel bit-exact match (CRC-verified); 0% exact recovery under $\ge2\%$ dropout** | High-level contextual story gist |
 | **Output Type** | Exact ASCII/UTF-8 plaintext byte string | Joined string of captions and text lines |
 | **Required Assets** | Codebook centroids (`voronoi_codebook.npz`) + RS parameters | Public corpus index metadata |
 | **Example Output** | `"Meet at dusk near river bank"` | `"A river bank at sunset | Night stillness over water"` |
@@ -251,7 +251,7 @@ flowchart TD
     PathA --> FAISSVectorLookup["FAISS 512d Vector Retrieval"]
     FAISSVectorLookup --> VCPCentroid["VCP Centroid Nearest Neighbor -> Raw Byte Stream"]
     VCPCentroid --> RSECC["Reed-Solomon GF(2^8) Error Recovery"]
-    RSECC --> ExactPlaintext["Exact Plaintext Recovered\n'Meet at dusk near river bank'\n(0% BER / Bit-Exact)"]
+    RSECC --> ExactPlaintext["Exact Plaintext Recovered\n'Meet at dusk near river bank'\n(CRC-verified; clean-channel bit-exact)"]
     
     PathB --> MetadataLookup["Corpus Caption & Metadata Extraction"]
     MetadataLookup --> SemanticGist["Topical Narrative Summary\n'A calm river bank at dusk | Nighttime in the forest'\n(Plausible Public Social Post)"]
@@ -268,4 +268,4 @@ flowchart TD
 | **Maximum Chunk Length** | 60 characters | [`src/engine/chunker.py`](../src/engine/chunker.py) |
 | **Soft-Margin Threshold ($\delta_{\text{margin}}$)** | 0.05 | [`src/corpus/cluster/voronoi_codebook.py`](../src/corpus/cluster/voronoi_codebook.py) |
 | **Default Modalities** | `["image", "text", "audio"]` | [`src/engine/encoder.py`](../src/engine/encoder.py) |
-| **Corpus Scale** | 153,281 indexed vectors | [`storage/data/indices/`](../storage/data/indices/) |
+| **Corpus Scale** | 245,279 indexed vectors | [`storage/data/indices/`](../storage/data/indices/) |

@@ -19,6 +19,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.stealth.stealth_scheduler import StealthScheduler
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden
+from src.stealth.gan.trainer import apply_critic_config
 
 CHANNELS = ["0: Social Media Feed", "1: Forum / Community", "2: Media Sharing"]
 
@@ -94,6 +95,9 @@ def main():
     warden = DeepPacketInspectionWarden(num_channels=3, hidden_dim=256)
     if "warden_state" in ckpt:
         warden.load_state_dict(ckpt["warden_state"])
+    # A checkpoint whose critic was trained with a bounded score is a
+    # different model, so the bound travels with the weights.
+    apply_critic_config(warden, ckpt)
     warden.to(device)
     warden.eval()
 
@@ -107,7 +111,9 @@ def main():
     print(f"• Transmitted Sequence Length:     {len(items)} media items")
     print(f"• Warden Detection Assessment:     {bot_prob * 100:.2f}% Bot Probability")
     print(f"• Classification Decision:          {'⚠️ SUSPICIOUS' if bot_prob > 0.5 else '✅ PASS (Classified as Genuine Human Activity)'}")
-    print("• Security Status:                  Warden AUC = 0.500 (Complete Adversarial Camouflage)")
+    print("• Security Status:                  Not established. The recorded C3 run "
+          "flags the generated cadence at 100%, and the "
+          "comparison's human baseline is a synthetic corpus.")
 
     print("\n" + "=" * 80)
     print("✅ WGAN-GP STEALTH TIMING DEMO READY FOR MENTOR REVIEW")

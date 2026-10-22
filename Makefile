@@ -192,7 +192,7 @@ stack: check-venv frontend-install frontend-check
 		fi; \
 	done
 	@echo "Starting backend on http://$(API_HOST):$(API_PORT) ..."
-	@( exec nohup $(PY) scripts/runtime/start_server.py --host $(API_HOST) --port $(API_PORT) > $(abspath $(RUN_DIR))/backend.log 2>&1 < /dev/null ) & echo $$! > $(RUN_DIR)/backend.pid
+	@( exec nohup env DCASS_ENV=development $(PY) scripts/runtime/start_server.py --host $(API_HOST) --port $(API_PORT) > $(abspath $(RUN_DIR))/backend.log 2>&1 < /dev/null ) & echo $$! > $(RUN_DIR)/backend.pid
 	@printf "Waiting for backend"
 	@for i in $$(seq 1 300); do \
 		if curl -sf http://127.0.0.1:$(API_PORT)/api/health > /dev/null 2>&1; then echo " ready."; break; fi; \
