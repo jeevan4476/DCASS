@@ -139,6 +139,10 @@ class AudioEmbedder:
             ).to(self.device)
 
             embedding = self._model.get_text_features(**inputs)
+            if hasattr(embedding, "pooler_output"):
+                embedding = embedding.pooler_output
+            elif hasattr(embedding, "text_embeds"):
+                embedding = embedding.text_embeds
             embedding = embedding / embedding.norm(dim=-1, keepdim=True)
             return embedding.cpu().numpy().astype("float32").squeeze()
 
@@ -167,6 +171,10 @@ class AudioEmbedder:
                 ).to(self.device)
 
                 embeddings = self._model.get_text_features(**inputs)
+                if hasattr(embeddings, "pooler_output"):
+                    embeddings = embeddings.pooler_output
+                elif hasattr(embeddings, "text_embeds"):
+                    embeddings = embeddings.text_embeds
                 embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
                 all_embeddings.append(embeddings.cpu().numpy())
 
@@ -199,6 +207,12 @@ class AudioEmbedder:
             ).to(self.device)
 
             embedding = self._model.get_audio_features(**inputs)
+            if hasattr(embedding, "pooler_output"):
+                embedding = embedding.pooler_output
+            elif hasattr(embedding, "audio_embeds"):
+                embedding = embedding.audio_embeds
+            elif hasattr(embedding, "embeds"):
+                embedding = embedding.embeds
             embedding = embedding / embedding.norm(dim=-1, keepdim=True)
             return embedding.cpu().numpy().astype("float32").squeeze()
 

@@ -93,10 +93,11 @@ def find_flickr30k_files(data_dir: Path) -> Tuple[Optional[Path], Optional[Path]
     # Find images directory
     for img_dir in image_dirs:
         if img_dir.exists() and img_dir.is_dir():
-            jpg_files = list(img_dir.glob("*.jpg"))[:5]  # Quick check
+            jpg_files = [f for f in img_dir.glob("*.jpg") if not f.name.startswith(".")][:5]  # Quick check
             if jpg_files:
                 found_images_dir = img_dir
-                print(f"  Found images: {img_dir} ({len(list(img_dir.glob('*.jpg')))} .jpg files)")
+                actual_count = len([f for f in img_dir.glob("*.jpg") if not f.name.startswith(".")])
+                print(f"  Found images: {img_dir} ({actual_count} .jpg files)")
                 break
 
     # Find captions file
@@ -259,11 +260,11 @@ def build_flickr30k_index(
 
     # Collect image files
     print(f"\nScanning images in {images_dir}...")
-    image_files = sorted(images_dir.glob("*.jpg"))
+    image_files = sorted([f for f in images_dir.glob("*.jpg") if not f.name.startswith(".")])
 
     if not image_files:
         # Try .png as well
-        image_files = sorted(images_dir.glob("*.png"))
+        image_files = sorted([f for f in images_dir.glob("*.png") if not f.name.startswith(".")])
 
     if not image_files:
         print("No image files found!")
@@ -287,9 +288,6 @@ def build_flickr30k_index(
     images_with_captions = 0
     images_without_captions = 0
 
-    # Calculate total batches
-    (len(image_files) + batch_size - 1) // batch_size
-
     # Create progress bar
     pbar = tqdm(
         total=len(image_files),
@@ -301,49 +299,62 @@ def build_flickr30k_index(
 
     for i in range(0, len(image_files), batch_size):
         batch_files = image_files[i:i + batch_size]
-        # ImageEmbedder expects List[Union[str, Path]]
         batch_paths: List[Union[str, Path]] = [Path(p) for p in batch_files]
 
         try:
-            # Encode batch
+            # Try fast batch encoding
             embeddings = embedder.encode_images(batch_paths, show_progress=False)
-
-            if embeddings is not None and len(embeddings) > 0:
-                all_embeddings.append(embeddings)
-
-                # Build metadata for each image
-                for idx, img_path in enumerate(batch_files):
-                    filename = img_path.name
-                    img_captions = captions.get(filename, [])
-
-                    # Track caption stats
-                    if img_captions:
-                        images_with_captions += 1
-                    else:
-                        images_without_captions += 1
-
-                    # Create unique ID (prefix with flickr30k to distinguish from flickr8k)
-                    img_id = f"flickr30k_{img_path.stem}"
-
-                    # Use relative path from project root (matches Flickr8k format)
-                    relative_path = f"storage/data/raw/flickr30k/images/{filename}"
-
-                    # Content should be the first caption (for search), not the path
-                    first_caption = img_captions[0] if img_captions else ""
-
-                    all_metadata.append({
-                        "id": img_id,
-                        "index": len(all_metadata),  # Will be updated after merge
-                        "path": relative_path,
-                        "captions": img_captions,
-                        "content": first_caption  # Used for search display
-                    })
-
+            valid_files = batch_files
         except Exception as e:
-            failed_images += len(batch_files)
-            if failed_images < 10:  # Only show first few errors
-                tqdm.write(f"  Warning: Failed to encode batch {i}: {e}")
-            continue
+            # Fall back to item-by-item to isolate any damaged image
+            item_embeddings = []
+            valid_files = []
+            for img_path in batch_files:
+                try:
+                    emb = embedder.encode_images([img_path], show_progress=False)
+                    item_embeddings.append(emb)
+                    valid_files.append(img_path)
+                except Exception as img_err:
+                    failed_images += 1
+                    if failed_images < 10:
+                        tqdm.write(f"  Warning: Skipping invalid image {img_path.name}: {img_err}")
+            if item_embeddings:
+                embeddings = np.vstack(item_embeddings)
+            else:
+                pbar.update(len(batch_files))
+                continue
+
+        if embeddings is not None and len(embeddings) > 0:
+            all_embeddings.append(embeddings)
+
+            # Build metadata for each successfully encoded image
+            for idx, img_path in enumerate(valid_files):
+                filename = img_path.name
+                img_captions = captions.get(filename, [])
+
+                # Track caption stats
+                if img_captions:
+                    images_with_captions += 1
+                else:
+                    images_without_captions += 1
+
+                # Create unique ID (prefix with flickr30k to distinguish from flickr8k)
+                img_id = f"flickr30k_{img_path.stem}"
+
+                # Use relative path from project root (matches Flickr8k format)
+                relative_path = f"storage/data/raw/flickr30k/images/{filename}"
+
+                first_caption = img_captions[0] if img_captions else ""
+
+                all_metadata.append({
+                    "id": img_id,
+                    "index": len(all_metadata),  # Will be updated after merge/indexing
+                    "path": relative_path,
+                    "caption": first_caption,
+                    "captions": img_captions,
+                    "content": first_caption or relative_path,
+                    "modality": "image"
+                })
 
         # Update progress bar
         pbar.update(len(batch_files))
@@ -472,6 +483,21 @@ def build_flickr30k_index(
     print(f"Saving metadata to {metadata_path}...")
     with open(metadata_path, 'w', encoding='utf-8') as f:
         json.dump(final_metadata, f, indent=2)
+
+    # Also sync storage/data/embeddings if it exists
+    embeddings_dir = output_dir.parent / "embeddings"
+    if embeddings_dir.exists():
+        try:
+            emb_file = embeddings_dir / "image_embeddings.npy"
+            ids_file = embeddings_dir / "image_ids.txt"
+            print(f"Saving raw embeddings to {emb_file}...")
+            np.save(str(emb_file), final_embeddings)
+            print(f"Saving image IDs to {ids_file}...")
+            with open(ids_file, "w", encoding="utf-8") as f:
+                for m in final_metadata:
+                    f.write(f"{m['id']}\n")
+        except Exception as e:
+            print(f"  Warning: Could not save embeddings cache: {e}")
 
     # Calculate total time
     total_time = time.time() - start_time

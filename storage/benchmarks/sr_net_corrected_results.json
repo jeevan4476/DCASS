@@ -1,0 +1,10 @@
+{
+  "name": "sr_net_corrected",
+  "citation": "Boroumand et al., \"Deep Residual Network for Steganalysis\", TIFS 2018 (Corrected)",
+  "traditional_accuracy": 0.9478672985781991,
+  "traditional_auc": 0.9943181818181818,
+  "dcass_accuracy": 0.945,
+  "dcass_auc": 0.5,
+  "d_kl": 2.4471852845743705,
+  "converged": true
+}

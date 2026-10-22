@@ -52,7 +52,8 @@ class VoronoiCodebook:
         max_iters: int = 25,
         batch_size: int = 4096,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
-        seed: int = 42
+        seed: int = 42,
+        stratified_offsets: Optional[List[int]] = None
     ) -> Dict[str, float]:
         """
         Fit 256 Spherical K-Means centroids on input vector embeddings.
@@ -63,6 +64,7 @@ class VoronoiCodebook:
             batch_size: Processing batch size
             device: Computation device ('cuda' or 'cpu')
             seed: Random seed for initial centroids
+            stratified_offsets: Optional list of modality slice boundary offsets [0, n1, n1+n2, ..., N]
 
         Returns:
             Dict containing convergence metrics (final inertia, mean cluster size)
@@ -80,8 +82,23 @@ class VoronoiCodebook:
         X = torch.from_numpy(embeddings).float().to(device)
         X = X / torch.norm(X, dim=1, keepdim=True).clamp(min=1e-12)
 
-        # Initialize centroids randomly from data points
-        init_indices = torch.randperm(N)[:self.num_clusters]
+        # Initialize centroids randomly or with stratified distribution across slices
+        if stratified_offsets is not None and len(stratified_offsets) >= 2:
+            n_slices = len(stratified_offsets) - 1
+            base_k = self.num_clusters // n_slices
+            rem = self.num_clusters % n_slices
+            chosen = []
+            for s in range(n_slices):
+                start = stratified_offsets[s]
+                end = stratified_offsets[s + 1]
+                k_s = base_k + (1 if s < rem else 0)
+                slice_len = end - start
+                perm = torch.randperm(slice_len)[:k_s] + start
+                chosen.append(perm)
+            init_indices = torch.cat(chosen)
+        else:
+            init_indices = torch.randperm(N)[:self.num_clusters]
+
         centroids = X[init_indices].clone()
         centroids = centroids / torch.norm(centroids, dim=1, keepdim=True).clamp(min=1e-12)
 

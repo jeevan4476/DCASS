@@ -52,12 +52,19 @@ def main():
         print("Error: No indices found in storage/data/indices!")
         return
 
+    # Track modality boundaries for stratified centroid initialization
+    stratified_offsets = [0]
+    running_offset = 0
+    for emb in all_embeddings:
+        running_offset += len(emb)
+        stratified_offsets.append(running_offset)
+
     corpus_vectors = np.vstack(all_embeddings).astype(np.float32)
     print(f"\nTotal Unified Multi-Modal Vectors: {corpus_vectors.shape[0]:,} (Dimension: {corpus_vectors.shape[1]})")
 
-    # 2. Fit Voronoi Codebook
+    # 2. Fit Voronoi Codebook with balanced initialization across modalities
     codebook = VoronoiCodebook(num_clusters=256, dim=512, delta_margin=0.05)
-    codebook.fit(corpus_vectors, max_iters=25, device="cuda")
+    codebook.fit(corpus_vectors, max_iters=25, device="cuda", stratified_offsets=stratified_offsets)
 
     # 3. Save Codebook
     save_path = INDICES_DIR / "voronoi_codebook.npz"
