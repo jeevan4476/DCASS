@@ -142,8 +142,13 @@ def main() -> int:
     human = load_human_sessions()
     print()
 
-    # 1. Held-out corpus human sessions.
-    heldout = human[-300:]
+    # 1. Held-out corpus human sessions: the trainer's own random 15 % split
+    #    (70/15/15), preserved in the checkpoint as holdout_human_indices so
+    #    that any downstream consumer scores rows the detector never trained
+    #    on. A positional tail slice would silently recreate training rows,
+    #    because the corpus list order is not the split order.
+    hold_idx = list(ckpt["holdout_human_indices"])
+    heldout = [human[i] for i in hold_idx]
     a_corpus = report(
         "corpus human (held-out rows)",
         [
@@ -227,8 +232,12 @@ def main() -> int:
     results_path.write_text(
         json.dumps(
             {
-                "schema": "traffic-detector-generalization-v1",
+                "schema": "traffic-detector-generalization-v2",
                 "detector": "storage/models/traffic_detector.pt",
+                "corpus_human_heldout_source": (
+                    "checkpoint.holdout_human_indices over load_human_sessions() "
+                    f"(n={len(hold_idx)})"
+                ),
                 "note": (
                     "The detector's score on six traffic populations. The "
                     "independent human generator is a Weibull-mixture model the "

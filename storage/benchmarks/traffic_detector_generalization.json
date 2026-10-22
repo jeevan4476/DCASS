@@ -1,15 +1,16 @@
 {
-  "schema": "traffic-detector-generalization-v1",
+  "schema": "traffic-detector-generalization-v2",
   "detector": "storage/models/traffic_detector.pt",
+  "corpus_human_heldout_source": "checkpoint.holdout_human_indices over load_human_sessions() (n=1800)",
   "note": "The detector's score on six traffic populations. The independent human generator is a Weibull-mixture model the detector has never seen in any form, so it measures generalization rather than memorization of the training corpus. The human corpus is the repository's own traffic data, whose time-of-day distribution is uniform and whose delay values are bounded, so it is a synthetic surrogate rather than recorded human browsing.",
   "populations": {
     "corpus_human_heldout": {
-      "n": 300,
-      "mean": 0.019306485769338907,
-      "p05": 0.004843634949065745,
-      "p50": 0.0052984405774623156,
-      "p95": 0.056346913613379006,
-      "max": 0.5753737688064575
+      "n": 1800,
+      "mean": 0.04057267572032288,
+      "p05": 0.004831115226261317,
+      "p50": 0.005461184307932854,
+      "p95": 0.33661624640226306,
+      "max": 0.9500603079795837
     },
     "benchmark_synthetic_surrogate": {
       "n": 300,
