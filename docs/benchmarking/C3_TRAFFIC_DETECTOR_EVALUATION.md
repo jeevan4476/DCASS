@@ -42,6 +42,13 @@ adversarial signal came from the same collapsed critic.
 Fixing the measurement was not enough. The RL path had four defects that
 had to be fixed before an agent's evasion could mean anything.
 
+Three of the four defects below are quantified by percentages — 98.3,
+31.4, and 23.5 — that are **code-derived, not measurements**: they were
+computed from the archived code path's arithmetic rather than recorded
+into a benchmark artifact, and no artifact of that intermediate state
+exists. The fourth (the raw-signal defect itself) is established by
+`rl_stealth_reward_probe.json`.
+
 ### 2.1 The agent optimized delays that never reached the network
 
 The environment scored the agent's **raw** delay. The scheduler put
@@ -135,8 +142,9 @@ corpus the detector was trained on is bounded at 120 seconds. So
 essentially every surrogate burst was outside the detector's training
 distribution, and the detector scored them at 0.9696 instead of 0.0174.
 
-The consequences were real. Including the surrogate in the threshold
-calibration put the threshold at 0.97, at which the detector flags almost
+The consequences were real (this episode is narrative — the intermediate
+calibration run was not retained as an artifact). Including the surrogate
+in the threshold calibration put the threshold at 0.97, at which the detector flags almost
 nothing, which is not a meaningful operating point. And the KS reference
 was comparing a burst against a session mixture, so it was measuring the
 presence of session gaps rather than the timing fidelity of a burst.
