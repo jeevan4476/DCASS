@@ -25,7 +25,12 @@ class TimingSchedule:
     Output of the Generator.
 
     Attributes:
-        delays: Inter-transmission delays in seconds, shape (batch_size, sequence_length)
+        delays: Raw delay-band scalars straight from the model's
+            `raw_delay_band_transform` output (src/stealth/delay_contract.py),
+            shape (batch_size, sequence_length). These are NOT seconds: the
+            scheduler applies `canonical_delay_mapping`
+            (`src/stealth/delay_contract.canonical_delay_mapping`) before
+            they become inter-transmission delays.
         channel_logits: Channel selection logits, shape (batch_size, sequence_length, num_channels)
         confidence: Generator's confidence score, shape (batch_size,)
     """
@@ -276,6 +281,11 @@ class TemporalPatternGenerator(nn.Module):
         """
         Autoregressively stream (delay, channel) one packet at a time.
         Allows real-time transmission scheduling without memory overhead.
+
+        The yielded `delay` is a raw delay-band scalar from the model, NOT
+        seconds — the same value `TimingSchedule.delays` carries; apply
+        `canonical_delay_mapping` before treating it as a transmission
+        delay (the deployed scheduler path does exactly that).
         """
         if time_of_day is None:
             import datetime
