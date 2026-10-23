@@ -57,10 +57,15 @@ def test_cli_final_checkpoint_carries_critic_config(tmp_path):
             "--hidden-dim", "32",
             "--max-seq-len", "20",
             "--out", str(out),
+            # train_gan's --checkpoint-dir default is PROJECT_ROOT-anchored;
+            # redirect the per-epoch snapshot into the sandbox so the test
+            # run leaves nothing behind in the working tree.
+            "--checkpoint-dir", str(tmp_path / "snapshots"),
         ],
         capture_output=True,
         text=True,
-        cwd=_REPO_ROOT,
+        cwd=tmp_path,  # along with the explicit --checkpoint-dir, this keeps the
+        # CLI run's output entirely inside the test's sandbox
     )
     assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
 
