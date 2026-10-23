@@ -44,6 +44,7 @@ from src.stealth.delay_contract import (  # noqa: E402
     canonical_delay_mapping_torch,
 )
 from src.stealth.gan.generator import TemporalPatternGenerator  # noqa: E402
+from src.stealth.gan.trainer import apply_critic_config  # noqa: E402
 
 # The measurement is small, and a busy GPU is a reason to run it on
 # the CPU rather than to fail.
@@ -187,13 +188,12 @@ def main() -> int:
     # --- The critic's input gradient ------------------------------------
     critic_state = ckpt.get("warden_state")
     if critic_state is not None:
-        critic = DeepPacketInspectionWarden(
-            num_channels=3,
-            hidden_dim=256,
-            bounded_critic=bool(ckpt.get("critic_bounded", False)),
-            critic_score_bound=float(ckpt.get("critic_score_bound", 10.0)),
-        )
+        critic = DeepPacketInspectionWarden(num_channels=3, hidden_dim=256)
         critic.load_state_dict(critic_state)
+        # Bounded-critic semantics travel with the checkpoint (the absence
+        # behavior of apply_critic_config preserves this file's old
+        # unbounded default for pre-critic keys).
+        apply_critic_config(critic, ckpt)
         critic.to(DEVICE).eval()
 
         real_delays, real_channels = corpus_batch(size=N)

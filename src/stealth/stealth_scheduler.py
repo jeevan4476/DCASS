@@ -414,6 +414,7 @@ class StealthScheduler:
         from src.stealth.rl.agent import PPOAgent, PPOConfig
         from src.stealth.rl.environment import StealthEnvironment
         from src.analysis.adversarial.warden import DeepPacketInspectionWarden
+        from src.stealth.gan.trainer import apply_critic_config
 
         # The RL policy's learned behavior does not depend on this Warden
         # instance at inference time (the policy weights already encode
@@ -432,6 +433,7 @@ class StealthScheduler:
                 gan_ckpt = load_trained_checkpoint(
                     DEFAULT_GAN_CHECKPOINT, map_location=self.device,)
                 warden.load_state_dict(gan_ckpt["warden_state"])
+                apply_critic_config(warden, gan_ckpt)
             except Exception as exc:  # noqa: BLE001 - diagnostics-only fallback
                 print(
                     f"[StealthScheduler] Could not load trained Warden for RL "

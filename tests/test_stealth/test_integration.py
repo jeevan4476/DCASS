@@ -55,6 +55,8 @@ def _train_tiny_gan(tmp_path: Path) -> Path:
             "warden_state": trainer.warden.state_dict(),
             "config": trainer.config,
             "metrics_history": trainer.metrics_history,
+            "critic_bounded": trainer.warden.bounded_critic,
+            "critic_score_bound": trainer.warden.critic_score_bound,
         },
         gan_checkpoint,
     )

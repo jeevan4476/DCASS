@@ -173,6 +173,13 @@ def main() -> None:
         "warden_optimizer": trainer.warden_optimizer.state_dict(),
         "config": trainer.config,
         "metrics_history": trainer.metrics_history,
+        # The critic's scoring configuration is part of the model (the
+        # same two keys save_checkpoint writes): a checkpoint whose
+        # critic was bounded is not the same model as one whose critic
+        # was not, even though their parameters have the same shapes, so
+        # it is recorded and restored by every loader downstream.
+        "critic_bounded": trainer.warden.bounded_critic,
+        "critic_score_bound": trainer.warden.critic_score_bound,
     }
     torch.save(checkpoint, args.out)
     print(f"\n✓ Final checkpoint written to {args.out}")

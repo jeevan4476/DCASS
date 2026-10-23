@@ -37,6 +37,7 @@ from src.utils.checkpoint_io import load_trained_checkpoint
 
 from src.stealth.gan.generator import TemporalPatternGenerator
 from src.stealth.gan.trainer import HumanTrafficDataset, compute_warden_auc
+from src.stealth.gan.trainer import apply_critic_config
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden
 
 
@@ -65,6 +66,7 @@ def _load_models(checkpoint_path: Path, num_channels: int, device: str):
 
     warden = DeepPacketInspectionWarden(num_channels=num_channels, hidden_dim=hidden_dim)
     warden.load_state_dict(ckpt["warden_state"])
+    apply_critic_config(warden, ckpt)
     warden.to(device)
     warden.eval()
 

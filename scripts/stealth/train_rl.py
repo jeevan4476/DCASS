@@ -36,6 +36,7 @@ import torch
 from src.utils.checkpoint_io import load_trained_checkpoint
 
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden
+from src.stealth.gan.trainer import apply_critic_config
 from src.stealth.rl.agent import PPOAgent, PPOConfig
 from src.stealth.rl.environment import StealthEnvironment
 
@@ -74,6 +75,10 @@ def load_frozen_warden(
             f"{checkpoint_path} has neither 'warden_state' nor 'state_dict'; "
             "it is not a usable reward model"
         )
+    # The critic's scoring configuration is part of the model: restore it
+    # (a bounded-critic checkpoint loaded unbounded scores differently
+    # than the model the RL agent was trained against).
+    apply_critic_config(warden, ckpt)
     warden.to(device)
     warden.eval()
     for p in warden.parameters():

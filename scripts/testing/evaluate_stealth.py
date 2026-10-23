@@ -17,6 +17,7 @@ import json
 import argparse
 import torch
 from src.utils.checkpoint_io import load_trained_checkpoint
+from src.stealth.gan.trainer import apply_critic_config
 import numpy as np
 from pathlib import Path
 
@@ -96,6 +97,7 @@ def load_trained_warden(gan_checkpoint: Path, num_channels: int = 3, device: str
 
     warden = DeepPacketInspectionWarden(num_channels=num_channels, hidden_dim=hidden_dim)
     warden.load_state_dict(ckpt["warden_state"])
+    apply_critic_config(warden, ckpt)
     warden.to(device)
     warden.eval()
     return warden
