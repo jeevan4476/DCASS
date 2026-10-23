@@ -214,3 +214,127 @@ def test_schedule_contract_holds_for_wgan_modes():
         assert len(schedule["delays"]) == 6
         assert len(schedule["channels"]) == 6
         assert all(d >= 0 for d in schedule["delays"])
+
+
+# ----------------------------------------------------------------------
+# The RL export path: timeout behavior + cooldown-safe tail (FIX-A)
+# ----------------------------------------------------------------------
+
+class _StubRLEnv:
+    """Scripted StealthEnvironment stand-in for `_schedule_rl`.
+
+    `script` is a list of step results already shaped like the env's
+    return: (next_state, reward, done, info). Sent steps carry an
+    env-reported delay; the timeout step carries only a reason, exactly
+    like the real environment (the item was never sent).
+    """
+
+    state_dim = 8
+
+    def __init__(self, script):
+        self._script = list(script)
+        self.i = 0
+        self.state = object()
+
+    def reset(self, media_ids, start_hour=None):
+        self.state = object()
+        self.i = 0
+        return self.state
+
+    def get_action_mask(self):
+        return np.ones(3, dtype=np.float32)
+
+    def step(self, action):
+        out = self._script[self.i]
+        self.i += 1
+        return out
+
+
+class _StubRLAgent:
+    """Agent-side stand-in: fixed action, clearable buffer, scripted env."""
+
+    def __init__(self, action, env):
+        self.action = action          # the agent's raw (unbackoffed) choice
+        self.env = env
+        self._buffer = []
+
+        class _Buffer:
+            def clear(self_inner):
+                self._buffer.clear()
+
+        self.buffer = _Buffer()
+
+    def select_action(self, state, channel_mask=None):
+        return self.action, 0.0, 0.0
+
+
+def _rl_stub_scheduler(script, action=None):
+    scheduler = StealthScheduler(num_channels=3, device="cpu")
+    data = script if script is not None else [
+        # Sent steps: the env transmits on the ACTION's channel, so the
+        # stub's action must agree with what the steps describe.
+        (object(), 0.0, False, {"delay": 5.0, "channel": 2}),
+        (object(), 0.0, False, {"delay": 5.0, "channel": 2}),
+        # Timeout: episode ends, NO transmission happened, and the env
+        # reports no delay at all (matches environment.py:290-296 in
+        # spirit; the real info dict is {"reason": "timeout"}).
+        (object(), -50.0, True, {"reason": "timeout"}),
+    ]
+    env = _StubRLEnv(data)
+    scheduler._rl_agent = _StubRLAgent(
+        action or {"delay": 2.0, "channel": 2}, env
+    )
+    return scheduler
+
+
+def test_schedule_rl_exports_no_phantom_delay_on_timeout():
+    """The timeout step appended the agent's raw, un-backoffed action delay
+    (its `info` has no `delay` key, so the bare `action["delay"]` fallback
+    fired). Only env-confirmed transmissions belong on the wire.
+    """
+    scheduler = _rl_stub_scheduler(None)
+    media_ids = [f"doc_{i}" for i in range(5)]
+
+    schedule = scheduler._schedule_rl(media_ids, base_delay=2.0, checkpoint=None)
+
+    assert schedule["mode_used"] == "rl"
+    delays = [float(d) for d in schedule["delays"]]
+    assert len(delays) == 5
+    # The raw action delay of the timeout step must never appear on the wire.
+    assert 2.0 not in delays
+    # Env-reported transmissions are preserved verbatim.
+    np.testing.assert_allclose(delays[:2], [5.0, 5.0])
+
+
+def test_schedule_rl_tail_respects_cooldowns():
+    """The padded tail must obey the per-channel cooldowns the benchmark
+    measures: every landing gap on a channel >= that channel's cooldown,
+    and every delay stays inside the canonical pacing window.
+    """
+    from src.stealth.rl.pacing import RL_DELAY_MIN
+    from src.stealth.stealth_scheduler import (
+        CHANNEL_COOLDOWNS,
+    )
+
+    scheduler = _rl_stub_scheduler(None)
+    media_ids = [f"doc_{i}" for i in range(6)]
+
+    schedule = scheduler._schedule_rl(media_ids, base_delay=2.0, checkpoint=None)
+
+    delays = np.array(schedule["delays"], dtype=np.float64)
+    channels = [int(c) for c in schedule["channels"]]
+
+    assert schedule["mode_used"] == "rl"
+    assert len(delays) == len(media_ids)
+    assert np.all(delays >= RL_DELAY_MIN)
+
+    t = np.cumsum(delays)
+    last = {}
+    for k, (c, tk) in enumerate(zip(channels, t)):
+        if c in last:
+            gap = float(tk) - float(last[c])
+            assert gap >= CHANNEL_COOLDOWNS[c], (
+                f"item {k} lands {gap:.6f}s after the previous landing "
+                f"on channel {c}, cooldown is {CHANNEL_COOLDOWNS[c]}"
+            )
+        last[c] = float(tk)

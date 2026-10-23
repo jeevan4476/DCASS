@@ -30,6 +30,13 @@ from src.stealth.delay_contract import (  # noqa: F401
 )
 from src.stealth.rl.pacing import RL_DELAY_MIN
 
+# Per-channel cooldowns, in seconds. The enterprise rate limits are
+# ch0 = 10/min (6 s), ch1 = 5/min (12 s), ch2 = 15/min (4 s). This is the
+# same table the Component 3 benchmark measures against and the RL
+# environment's channel clocks encode, so every executor and the
+# measurement share one constant.
+CHANNEL_COOLDOWNS = {0: 6.0, 1: 12.0, 2: 4.0}
+
 # Anchored to the project root so schedules work regardless of CWD.
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_GAN_CHECKPOINT = _PROJECT_ROOT / "storage" / "models" / "gan_generator.pt"
@@ -116,7 +123,8 @@ class StealthScheduler:
         mode="auto" runs the rl -> gan -> static cascade, matching the
         documented behaviour in scripts/runtime/run_sender.py.
         mode="hybrid" combines WGAN timing pauses with closed-loop channel
-        cooldown tracking to guarantee zero rate-limit violations.
+        cooldown tracking so every exported landing respects the per-channel
+        cooldowns the Component 3 benchmark measures.
 
         time_of_day pins the hour-of-day conditioning handed to the WGAN
         generator (0-23). When None, the GAN and hybrid paths draw a random
@@ -337,7 +345,8 @@ class StealthScheduler:
     ) -> dict:
         """
         Hybrid Mode: Combines WGAN generative temporal pauses with closed-loop
-        action-masked channel routing to guarantee zero rate-limit cooldown violations.
+        action-masked channel routing so every exported landing respects the
+        per-channel cooldowns (same table the benchmark measures).
         """
         if not self._load_generator(checkpoint):
             print("[StealthScheduler] GAN checkpoint not found for hybrid — falling back to static")
@@ -362,8 +371,7 @@ class StealthScheduler:
         channel_logits = schedule.channel_logits[0].cpu().numpy()
 
         # Closed-loop channel cooldown routing
-        # Enterprise cooldowns: ch0 = 6.0s (10/min), ch1 = 12.0s (5/min), ch2 = 4.0s (15/min)
-        cooldowns = {0: 6.0, 1: 12.0, 2: 4.0}
+        cooldowns = CHANNEL_COOLDOWNS
         t_last = {c: -100.0 for c in range(self.num_channels)}
         t_current = 0.0
         routed_channels = []
@@ -454,6 +462,14 @@ class StealthScheduler:
         state = env.reset(media_ids)
         delays, channels = [], []
 
+        # Landing-clock bookkeeping for the exported schedule, in the same
+        # terms the Component 3 benchmark measures: cumsum(delays)[k] is
+        # item k's landing time, prev_landing is the landing time of the
+        # item just placed, and last_landing[] is the last landing per
+        # channel (same -100 initial offset as the hybrid router).
+        prev_landing = 0.0
+        last_landing = {c: -100.0 for c in range(self.num_channels)}
+
         # A rate-limit violation consumes an iteration without sending an
         # item, so a plain `for` loop over the item count would finish with
         # fewer items than requested and leave a constant padded tail. The
@@ -479,6 +495,15 @@ class StealthScheduler:
                 state = next_state
                 continue
 
+            if info.get("reason") == "timeout":
+                # The episode clock expired before this item could be sent:
+                # the env returns before dequeuing media and the info dict
+                # carries no delay, so nothing reached the wire for this
+                # step. Export only confirmed transmissions; the tail is
+                # filled below by cooldown-aware routing rather than by a
+                # phantom delay.
+                break
+
             # The delay is the one the environment actually used, after any
             # rate-limit back-off. The agent clamps its action into the
             # deployment window before the environment scores it, and the
@@ -489,23 +514,38 @@ class StealthScheduler:
             # the network, and its 7 second floor collapsed 98.3 percent of
             # the agent's choices onto a single value, so the transmitted
             # traffic was a constant clock. See src/stealth/rl/pacing.py.
-            delays.append(float(info.get("delay", action["delay"])))
-            channels.append(int(action["channel"]) % self.num_channels)
+            delay_used = float(info.get("delay", action["delay"]))
+            chosen = int(action["channel"]) % self.num_channels
+            delays.append(delay_used)
+            channels.append(chosen)
+            last_landing[chosen] = prev_landing + delay_used
+            prev_landing = last_landing[chosen]
             state = next_state
             if done:
                 break
 
-        # Pad if RL ended early.
-        #
-        # A rate-limit violation consumes a loop iteration without sending
-        # an item, so the loop could finish with fewer items than requested.
-        # The padding used to be `base_delay`, which is outside the pacing
-        # window and produced a constant tail, and every constant tail is
-        # what a cadence detector flags. The pacing window's lower bound is
-        # used instead, so the tail stays inside the contract.
+        # Fill if RL ended early. The only current exit is the episode
+        # timeout, where the env sent nothing on the step that ended the
+        # episode. The remaining items are filled by per-channel cooldown
+        # routing, the same earliest-free-channel rule the hybrid router
+        # uses: each fill item lands at the earliest moment that respects
+        # both the pacing floor (RL_DELAY_MIN) and the cooldown clock of
+        # its channel, measured on the landing times the benchmark scores.
+        # The old fill appended RL_DELAY_MIN on channel 0 regardless, so
+        # a tail of more than one item violated channel 0's cooldown.
         while len(delays) < len(media_ids):
-            delays.append(RL_DELAY_MIN)
-            channels.append(0)
+            chosen = min(
+                range(self.num_channels),
+                key=lambda c: last_landing[c] + CHANNEL_COOLDOWNS[c],
+            )
+            gap = max(
+                RL_DELAY_MIN,
+                last_landing[chosen] + CHANNEL_COOLDOWNS[chosen] - prev_landing,
+            )
+            delays.append(gap)
+            channels.append(chosen)
+            last_landing[chosen] = prev_landing + gap
+            prev_landing += gap
 
         return {
             "items": media_ids,
