@@ -29,9 +29,17 @@ from src.stealth.gan.trainer import apply_critic_config  # noqa: E402
 from src.stealth.rl.environment import StealthEnvironment  # noqa: E402
 
 TRAFFIC = {
+    # The metronome row is extended by the environment's rate-limit
+    # back-offs: on the i%3 rotation the cooldowns are 6/12/4 s, so the
+    # channel-1 steps of a 3.0 s metronome are stretched past their
+    # nominal 3.0 s before they are scored. Disclosed on the quoted
+    # table (docs/benchmarking/C3_TRAFFIC_DETECTOR_EVALUATION.md).
     "fixed 3.0 s metronome": [3.0] * 20,
     "fixed 12.0 s": [12.0] * 20,
-    "fixed 30.0 s": [30.0] * 20,
+    # canonical_rl_delay clamps every step into the pacing window
+    # [0.5, 20.0] inside env.step, so this row scores as a fixed
+    # 20.0 s clock, not a 30 s one.
+    "fixed 20.0 s (30 clamped to the canonical window)": [30.0] * 20,
 }
 
 

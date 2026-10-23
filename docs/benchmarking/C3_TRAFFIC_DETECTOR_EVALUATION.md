@@ -29,7 +29,16 @@ diversity, which prefers fast traffic. Measured on the same episodes:
 | traffic | collapsed critic (shipped) | trained detector |
 | :--- | :--- | :--- |
 | fixed 3.0 s metronome | score 0.0000, reward **+21.57** | score 1.0000, reward **−28.43** |
-| fixed 30 s | score 0.0000, reward +7.67 | score 1.0000, reward −42.33 |
+| fixed 20.0 s (30 clamped to the canonical window) | score 0.0000, reward +7.67 | score 1.0000, reward −42.33 |
+
+Both rows disclosed: `canonical_rl_delay` clamps every step into the
+pacing window `[0.5, 20.0]` inside `env.step`, so the 30 s probe row
+scores as a fixed 20.0 s clock. The metronome row is stretched by the
+environment's rate-limit back-offs — on the `i%3` rotation the cooldowns
+are 6/12/4 s, so the channel-1 steps of a 3.0 s metronome land well past
+their nominal 3.0 s before they are scored. The frozen
+`rl_stealth_reward_probe.json` records the probes under their original
+labels and is not rewritten here.
 
 So the agent was not merely unstealthed. It was rewarded for the most
 bot-like traffic possible, and it is a throughput-and-diversity policy
