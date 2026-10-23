@@ -481,7 +481,7 @@ Every interception verdict is a threshold on a stored score distribution, and th
 | 20,000 | 0.3013 | 0.3411 | PASS | -0.002327 | 3,319 |
 | 35,000 | 0.4056 | 0.3611 | PASS | -0.001982 | 2,466 |
 
-**0.4056 ms per 35,000-candidate permutation**, about 616x faster than the roughly 250 ms pure-Python HMAC loop it replaced. Key-sensitivity correlation stays within ±0.044 at every size with no trend. The 20,000 row has a p50 slightly above its mean and the 35,000 row a p50 slightly below, so dispersion is small; the p50 column is the better central estimate under scheduler noise. These are wall-clock measurements on a shared machine and shift between runs; the key-sensitivity column does not.
+**0.4056 ms per 35,000-candidate permutation**, about 616x faster than the roughly 250 ms pure-Python HMAC loop it replaced; the 250 ms legacy base is an estimate, not a recorded measurement. Key-sensitivity correlation stays within ±0.044 at every size with no trend. The 20,000 row has a p50 slightly above its mean and the 35,000 row a p50 slightly below, so dispersion is small; the p50 column is the better central estimate under scheduler noise. These are wall-clock measurements on a shared machine and shift between runs; the key-sensitivity column does not.
 
 ### 6.3 ECC Recovery Under Carrier Substitution
 
@@ -697,9 +697,9 @@ These rows measure `SemanticEngine.encode` and `.decode` directly. They do not c
 
 | Worker Threads | Total Sessions Evaluated | Throughput (sessions/s) | p50 Latency (ms) | p90 Latency (ms) | p95 Latency (ms) | p99 Latency (ms) | Success Rate (%) | Observed Swap Rate (%) |
 |-------------------|-------------------------|-------------------|------------------|------------------|------------------|------------------|------------------|---------------------|
-| 10 | 100 | 2.00 | 4976.0 | 5502.0 | 5706.0 | 5978.9 | 100.0% | 0.000% |
-| 20 | 100 | 1.95 | 10089.0 | 11220.0 | 11455.0 | 11730.2 | 100.0% | 0.000% |
-| 50 | 100 | 1.89 | 24367.0 | 26989.0 | 27598.0 | 27948.6 | 100.0% | 0.000% |
+| 10 | 100 | 2.00 | 4975.6 | 5502.2 | 5705.7 | 5978.9 | 100.0% | 0.000% |
+| 20 | 100 | 1.95 | 10089.1 | 11220.0 | 11454.7 | 11730.2 | 100.0% | 0.000% |
+| 50 | 100 | 1.89 | 24367.5 | 26988.9 | 27597.6 | 27948.6 | 100.0% | 0.000% |
 
 The direct-engine test observed zero swapped marker payloads at all concurrency levels. The success column checks exact plaintext reconstruction, so corrupted payloads without the marker count as failures rather than swaps. The API transmit path is separate: the server now admits concurrent transmissions up to a bounded limit and answers HTTP 429 beyond it, and this benchmark does not exercise that path.
 

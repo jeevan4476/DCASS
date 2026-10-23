@@ -615,7 +615,7 @@ The permutation engine was rewritten from a pure-Python HMAC loop, which cost ro
 | 20,000 | 0.3013 ms | pass | -0.0023 | 3,319 per second |
 | 35,000 | 0.4056 ms | pass | -0.0020 | 2,466 per second |
 
-Determinism passes at every size, meaning encode and decode generate byte-identical permutations from the same key and salt. The Pearson correlation between permutation index arrays under different keys, computed with `np.corrcoef` in the generator script, hovers around zero with no trend, which is the expected signature of independence; a positive coefficient would indicate that a bit flip left the ordering partially intact. The 35,000 candidate case completes in 0.4056 ms, comfortably inside the under 0.65 ms target and about 616 times faster than the legacy loop.
+Determinism passes at every size, meaning encode and decode generate byte-identical permutations from the same key and salt. The Pearson correlation between permutation index arrays under different keys, computed with `np.corrcoef` in the generator script, hovers around zero with no trend, which is the expected signature of independence; a positive coefficient would indicate that a bit flip left the ordering partially intact. The 35,000 candidate case completes in 0.4056 ms, comfortably inside the under 0.65 ms target and about 616 times faster than the legacy loop; the roughly 250 ms legacy base behind that ratio is an estimate of the unrecorded old implementation, not a recorded measurement.
 
 ### 4.6 Panel defense script, word for word
 

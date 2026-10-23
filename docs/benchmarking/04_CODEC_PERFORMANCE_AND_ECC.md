@@ -59,7 +59,7 @@ The implementation derives a seed with a single HMAC-SHA256 call and expands it 
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ LEGACY: O(N) pure-Python HMAC loop over the candidate list:                 │
 │      for j in range(N): h = HMAC(K, f"salt:{j}")                            │
-│      -> roughly 250 ms per 35,000-candidate chunk                           │
+│      -> roughly 250 ms per 35,000-candidate chunk (base is an estimate)     │
 │                                                                             │
 │ CURRENT: HMAC-DRBG seed expanded by a vectorized NumPy PCG64 generator:     │
 │      seed = HMAC-SHA256(K, "dssc:{chunk}:{family}")[:8]  (big-endian)       │
@@ -82,7 +82,7 @@ The implementation derives a seed with a single HMAC-SHA256 call and expands it 
 
 * **Determinism:** encode and decode derive byte-identical permutations from the same key and salt at every size.
 * **Key sensitivity:** flipping bit 0 of byte 15 of the 32-byte key yields an uncorrelated permutation at every size. The Pearson correlation between the original and mutated index arrays stays inside $\pm 0.044$ with no trend, and at the two largest sizes it is inside $\pm 0.0024$.
-* **Throughput:** the 35,000-candidate case has a mean of 0.4056 ms and a median of 0.3611 ms, about 616 times faster than the roughly 250 ms pure-Python loop it replaced. Mean latency stays below 0.18 ms through 10,000 candidates and is 0.41 ms at the largest tested size. The 20,000 row has a p50 slightly above its mean and the 35,000 row a p50 slightly below, so dispersion is small; the p50 column is the better central estimate under scheduler noise.
+* **Throughput:** the 35,000-candidate case has a mean of 0.4056 ms and a median of 0.3611 ms, about 616 times faster than the roughly 250 ms pure-Python loop it replaced — the 250 ms legacy base is an estimate of the unrecorded implementation, not a measurement. Mean latency stays below 0.18 ms through 10,000 candidates and is 0.41 ms at the largest tested size. The 20,000 row has a p50 slightly above its mean and the 35,000 row a p50 slightly below, so dispersion is small; the p50 column is the better central estimate under scheduler noise.
 
 ---
 

@@ -122,110 +122,82 @@ graph TD
 
 ```
 dcass/
-├── config/
-│   ├── __init__.py
-│   ├── default.yaml          # All configuration parameters
-│   └── settings.py           # Singleton Config class (YAML loader)
-│
-├── data/
-│   ├── raw/
-│   │   ├── Captions.csv      # 12.8 MB — Flickr8k/30k captions
-│   │   ├── flickr8k/         # Flickr8k images + captions
-│   │   └── flickr30k/        # Flickr30k images + captions
-│   ├── indices/
-│   │   ├── image.index       # 65 MB FAISS index (CLIP 512-dim)
-│   │   ├── image_metadata.json  # 23 MB metadata
-│   │   ├── text.index        # 82 MB FAISS index (CLIP 512-dim)
-│   │   ├── text_metadata.json   # 11 MB metadata
-│   │   ├── audio.index       # 28 MB FAISS index (CLIP/CLAP 512-dim)
-│   │   └── audio_metadata.json  # 4.3 MB metadata
-│   ├── benchmarks/
-│   │   ├── test_messages.json # 60 test messages across 7 categories
-│   │   └── results/          # Benchmark output JSON files
-│   └── audio/                # Audio corpus data
+├── storage/                     # Generated data + artifacts (not all committed)
+│   ├── data/
+│   │   ├── indices/             # FAISS indices + metadata (details in §4.2)
+│   │   │   ├── image.index      # 65 MB FAISS index (CLIP ViT-B/32, 512-dim)
+│   │   │   ├── text.index       # 410 MB FAISS index (CLIP text encoder)
+│   │   │   ├── audio.index      # 28 MB FAISS index (CLAP htsat-unfused)
+│   │   │   ├── *_metadata.json  # Per-modality metadata
+│   │   │   └── voronoi_codebook.npz + voronoi_codebook.meta.json
+│   │   ├── raw/flickr30k/       # Flickr30k images + flickr_annotations_30k.csv
+│   │   ├── text/wikipedia/      # Wikipedia corpus
+│   │   ├── audio/               # Audio dataset metadata + cache
+│   │   └── traffic/             # Timing corpus used by the C3 benchmark
+│   ├── benchmarks/              # Benchmark output JSON files
+│   └── models/                  # Trained checkpoints + checkpoints_manifest.json
 │
 ├── src/
-│   ├── engine/               # Core encode/decode logic
-│   │   ├── encoder.py        # SemanticEncoder
-│   │   ├── decoder.py        # SemanticDecoder
-│   │   ├── chunker.py        # SemanticChunker
-│   │   └── context/          # Dynamic context sources (placeholder)
+│   ├── engine/                  # Core encode/decode logic
+│   │   ├── encoder.py           # SemanticEncoder
+│   │   ├── decoder.py           # SemanticDecoder
+│   │   ├── chunker.py           # SemanticChunker
+│   │   ├── ecc.py               # Reed-Solomon ECC
+│   │   ├── dssc_encoder.py, dssc_decoder.py, dssc_state_space.py
+│   │   ├── payload_framing.py, vcp_payload.py, semantic_engine.py
+│   │   └── context/             # Dynamic context sources
 │   │
-│   ├── corpus/               # Data loading, embedding, indexing
-│   │   ├── embedders/        # Embedding model wrappers
-│   │   │   ├── base_embedder.py
-│   │   │   ├── clip_embedder.py   # CLIP ViT-B/32 (512-dim)
-│   │   │   ├── image_embedder.py  # CLIP for images
-│   │   │   ├── text_embedder.py   # Sentence-Transformers (384-dim)
-│   │   │   ├── audio_embedder.py  # CLAP (512-dim)
-│   │   │   └── vector_engine.py   # Legacy FAISS wrapper
+│   ├── corpus/                  # Data loading, embedding, indexing
+│   │   ├── embedders/           # base_embedder.py, image_embedder.py (CLIP),
+│   │   │                        # audio_embedder.py (CLAP)
 │   │   ├── index/
-│   │   │   └── unified_index.py   # UnifiedSemanticIndex + ScoreNormalizer
-│   │   ├── loaders/
-│   │   │   ├── base_loader.py
-│   │   │   ├── flickr_loader.py   # Flickr8k/30k dataset loader
-│   │   │   └── wikipedia_loader.py # Wikipedia text loader
-│   │   └── preprocessors/
-│   │       └── chunker.py         # Text chunker for corpus prep
+│   │   │   └── unified_index.py # UnifiedSemanticIndex + ScoreNormalizer
+│   │   └── loaders/             # base_loader, flickr_loader, wikipedia_loader
 │   │
-│   ├── distribution/         # Multi-channel dispatch + timing
-│   │   ├── base_channel.py
-│   │   ├── console_channel.py
-│   │   ├── local_folder_channel.py
-│   │   ├── channel_registry.py
-│   │   ├── dispatcher.py     # Round-robin / fixed / alternating
-│   │   ├── scheduler.py      # Timed dispatch execution
-│   │   ├── noise.py          # Timing jitter & random skips
-│   │   └── profiles.py       # Behavioral profiles (casual, bursty, etc.)
+│   ├── distribution/            # Multi-channel dispatch + timing
+│   │   ├── base_channel.py, console_channel.py
+│   │   ├── local_folder_channel.py  # Default output dir phase3_out/ (created on demand)
+│   │   ├── channel_registry.py, dispatcher.py, scheduler.py
+│   │   └── noise.py, profiles.py    # Timing jitter, random skips, behavioral profiles
 │   │
-│   ├── stealth/              # AI-driven behavioral scheduling
+│   ├── stealth/                 # AI-driven behavioral scheduling
 │   │   ├── gan/
-│   │   │   ├── generator.py  # TemporalPatternGenerator (GRU + Attention)
-│   │   │   └── trainer.py    # GANTrainer adversarial loop
-│   │   └── rl/
-│   │       ├── agent.py      # PPOAgent (Actor-Critic)
-│   │       └── environment.py # StealthEnvironment (Gym-style)
+│   │   │   ├── generator.py     # TemporalPatternGenerator (GRU + Attention)
+│   │   │   └── trainer.py       # GANTrainer adversarial loop
+│   │   ├── rl/
+│   │   │   ├── agent.py         # PPOAgent (Actor-Critic)
+│   │   │   ├── environment.py   # StealthEnvironment (Gym-style)
+│   │   │   └── pacing.py        # Canonical pacing contract (agent/env/scheduler)
+│   │   ├── stealth_scheduler.py # Deployment-side delay scheduler
+│   │   └── delay_contract.py
 │   │
-│   ├── analysis/             # Evaluation & adversarial testing
-│   │   ├── adversarial/
-│   │   │   └── warden.py     # DeepPacketInspectionWarden (BiLSTM + Transformer)
-│   │   └── benchmarks/
-│   │       ├── metrics.py    # CLIPSimilarity, BERTScore, CombinedMetrics
-│   │       ├── semantic_benchmark.py # Full benchmark runner
-│   │       └── report.py     # Report generation
+│   ├── analysis/                # Evaluation & adversarial testing
+│   │   ├── adversarial/warden.py # DeepPacketInspectionWarden (BiLSTM + Transformer)
+│   │   ├── benchmarks/metrics.py, semantic_benchmark.py, report.py
+│   │   └── steganalysis_detectors.py
 │   │
-│   ├── cli/
-│   │   └── main.py           # Full CLI with encode/decode/demo/search/etc.
+│   ├── cli/                     # main.py + commands/ (encode/decode/demo/search/...)
 │   │
 │   └── utils/
-│       └── config.py         # Config helper
+│       └── checkpoint_io.py    # Fail-closed checkpoint loading
 │
-├── scripts/                  # Build/download/demo scripts
-│   ├── build_indices.py      # Build FAISS indices from raw data
-│   ├── build_flickr30k_index.py
-│   ├── download_flickr8k.py
-│   ├── download_wikipedia.py
-│   ├── add_wikipedia_to_index.py
-│   ├── audio_step1_download.py
-│   ├── audio_step2_build_index.py
-│   ├── demo_dcass.py
-│   ├── run_sender.py
-│   ├── run_receiver.py
-│   └── ...
+├── scripts/                     # Build/download/demo/runtime scripts
+│   ├── data/                    # build_indices.py, build_flickr30k_index.py,
+│   │                            # download_flickr8k/30k/wikipedia.py, ...
+│   ├── audio/                   # audio_step1_download.py, audio_step2_build_index.py
+│   ├── demo/                    # demo_wgan_stealth.py, run_gan_demo.py, ...
+│   ├── runtime/                 # run_pipeline.py, run_sender.py, run_receiver.py,
+│   │                            # start_server.py
+│   └── stealth/                 # train_gan.py, train_rl.py, eval_warden.py
 │
-├── audio/                    # Audio pipeline utilities
-│   ├── build_audio_faiss.py
-│   ├── encode_audio_clap.py
-│   ├── query_audio_faiss.py
-│   └── ...
-│
-├── tests/                    # Test suite
+├── tests/                       # Test suite
 │   ├── test_corpus/
 │   ├── test_distribution/
 │   ├── test_engine/
-│   └── test_stealth/
+│   ├── test_stealth/
+│   ├── test_analysis/
+│   └── test_diagnostics/
 │
-├── phase3_out/               # Distribution output (timestamped .txt files)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── Makefile
@@ -240,22 +212,24 @@ dcass/
 
 | File / Directory | Size | Description | Used By |
 |---|---|---|---|
-| `data/raw/Captions.csv` | 12.8 MB | Master CSV with image_id → caption mappings | `FlickrLoader` |
-| `data/raw/flickr8k/` | — | Flickr8k images + `Flickr8k.token.txt` or `captions.txt` | `FlickrLoader`, `build_indices.py` |
-| `data/raw/flickr30k/` | — | Flickr30k images directory | `build_flickr30k_index.py` |
-| `data/raw/wikipedia/` | — | Wikipedia `.txt` articles + `sentences.json` | `WikipediaLoader`, `add_wikipedia_to_index.py` |
-| `data/audio/` | — | Audio dataset files | Audio pipeline scripts |
+| `storage/data/raw/flickr30k/flickr_annotations_30k.csv` | ~5 MB | Master CSV with image_id → caption mappings | `FlickrLoader` |
+| `storage/data/raw/flickr30k/images/` | — | Flickr30k images directory | `ImageEmbedder`, `build_flickr30k_index.py` |
+| `storage/data/text/wikipedia/` | — | Wikipedia text articles | `WikipediaLoader`, `add_wikipedia_to_index.py` |
+| `storage/data/audio/` | — | Audio dataset metadata (`merged_metadata.json`) + cache | Audio pipeline scripts |
+| `data/` | — | Only a README remains here; the corpus moved to `storage/data/` | — |
 
 ### 4.2 FAISS Indices (Pre-built)
 
 | File | Size | Embedding Dim | # Vectors | Model |
 |---|---|---|---|---|
-| `data/indices/image.index` | 65 MB | 512 | ~31,000 | CLIP ViT-B/32 |
-| `data/indices/image_metadata.json` | 23 MB | — | ~31,000 | Flickr8k/30k IDs, paths, captions |
-| `data/indices/text.index` | 82 MB | 512 | ~40,000 | CLIP ViT-B/32 (text encoder) |
-| `data/indices/text_metadata.json` | 11 MB | — | ~40,000 | Flickr captions + Wikipedia sentences |
-| `data/indices/audio.index` | 28 MB | 512 | ~13,000 | CLAP htsat-unfused |
-| `data/indices/audio_metadata.json` | 4.3 MB | — | ~13,000 | Audio file paths + descriptions |
+| `storage/data/indices/image.index` | 65 MB | 512 | 31,783 | CLIP ViT-B/32 |
+| `storage/data/indices/image_metadata.json` | 24 MB | — | 31,783 | Flickr30k IDs, paths, captions |
+| `storage/data/indices/text.index` | 410 MB | 512 | 200,000 | CLIP ViT-B/32 (text encoder) |
+| `storage/data/indices/text_metadata.json` | 69 MB | — | 200,000 | Flickr captions + Wikipedia sentences |
+| `storage/data/indices/audio.index` | 28 MB | 512 | 13,496 | CLAP htsat-unfused |
+| `storage/data/indices/audio_metadata.json` | 4.4 MB | — | 13,496 | Audio file paths + descriptions |
+
+Vector counts are as recorded in `storage/data/indices/voronoi_codebook.meta.json:index_fingerprints`.
 
 > [!IMPORTANT]
 > **All three indices use 512-dimensional embeddings** that live in compatible vector spaces. Images and text both use **CLIP ViT-B/32**. Audio uses **CLAP** (which produces a similar 512-dim space). The `ScoreNormalizer` class handles calibration differences.
@@ -264,15 +238,14 @@ dcass/
 
 | File | Description |
 |---|---|
-| `data/benchmarks/test_messages.json` | 60 test messages across 7 categories: simple, commands, descriptions, abstract, conversational, complex, technical |
-| `data/benchmarks/results/` | Output directory for benchmark run JSON files |
+| `storage/benchmarks/` | Output directory for benchmark run JSON files (component results, manifests, generated tables and plots) |
+| `scripts/demo/` | Demo entry points (`demo_wgan_stealth.py`, `run_gan_demo.py`, `panel_showcase.py`, `mentor_live_demo.py`) |
 
 ### 4.4 Distribution Output
 
 | Directory | Description |
 |---|---|
-| `phase3_out/` | Contains 46+ timestamped `.txt` files from distribution runs. Each file contains `IMAGE_ID=<id>` plus metadata. Filenames encode timestamp + media_id. |
-| `audio/audio_paths.pkl` | Pickled list of audio file paths for the audio pipeline |
+| `phase3_out/` | Default output dir of `LocalFolderChannel`; created on demand and filled with timestamped `.txt` payload files. Each file contains `IMAGE_ID=<id>` plus metadata. Filenames encode timestamp + media_id. |
 
 ---
 
@@ -303,9 +276,9 @@ graph LR
 
 | Model | Library | Dimension | Used For | Files |
 |---|---|---|---|---|
-| **CLIP ViT-B/32** | `openai/clip` | **512** | Image encoding, Text encoding (for index building & querying) | `clip_embedder.py`, `image_embedder.py`, `unified_index.py` |
+| **CLIP ViT-B/32** | `openai/clip` | **512** | Image encoding, Text encoding (for index building & querying) | `image_embedder.py`, `unified_index.py` |
 | **CLAP htsat-unfused** | `transformers` | **512** | Audio encoding, Text-to-audio search | `audio_embedder.py` |
-| **all-MiniLM-L6-v2** | `sentence-transformers` | **384** | Legacy text embedding, BERTScore fallback | `text_embedder.py`, `vector_engine.py`, `metrics.py` |
+| **all-MiniLM-L6-v2** | `sentence-transformers` | **384** | Legacy text embedding, BERTScore fallback | `metrics.py` |
 | **DeBERTa-base-mnli** | `transformers` | — | BERTScore metric computation | `metrics.py` |
 
 ### 5.2 How Indices Are Built
@@ -316,7 +289,7 @@ The `scripts/data/build_indices.py` script (and related scripts) performs:
 2. **Generate CLIP embeddings** → `ImageEmbedder.encode_images()` for images, `ImageEmbedder.encode_text()` for captions
 3. **Build FAISS flat index** → `faiss.IndexFlatIP(512)` (Inner Product = Cosine Similarity on normalized vectors)
 4. **Save metadata JSON** → Each entry has `{id, content, caption, modality, ...}`
-5. **Write to disk** → `data/indices/{modality}.index` + `{modality}_metadata.json`
+5. **Write to disk** → `storage/data/indices/{modality}.index` + `{modality}_metadata.json`
 
 ### 5.3 How Indices Are Used at Runtime
 

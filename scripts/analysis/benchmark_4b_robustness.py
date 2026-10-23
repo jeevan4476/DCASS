@@ -665,15 +665,15 @@ def generate_latex_table(
             "\\multicolumn{6}{c}{\\textbf{Cryptographic Key Separation \\& Unforgeability}} \\\\\n"
         )
         handle.write(
-            "Test Type & Trials & Accepted & Exact & FAR & FAR 95\\% Upper \\\\\n"
+            "Test Type & Trials & Accepted & Exact & FAR (\\%) & FAR 95\\% Upper (\\%) \\\\\n"
         )
         handle.write("\\midrule\n")
         for result in key_results:
-            name = "Random Keys" if "random" in result.test_type else "1-Bit Flipped Keys"
+            name = "Random Keys" if "random" in result.test_type else "Single-Bit Flipped Keys"
             handle.write(
                 f"{name} & {result.num_trials} & {result.num_false_acceptances} & "
-                f"{result.num_exact_message_matches} & {result.false_acceptance_rate:.6f} & "
-                f"{result.false_acceptance_upper_95_pct / 100.0:.6f} \\\\\n"
+                f"{result.num_exact_message_matches} & {result.false_acceptance_rate * 100.0:.2f}\\% & "
+                f"{result.false_acceptance_upper_95_pct:.2f}\\% \\\\\n"
             )
         handle.write("\\bottomrule\n")
         handle.write("\\end{tabular}\n")

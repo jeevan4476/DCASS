@@ -172,7 +172,7 @@ The stored per-trial scores behind these rates are summarized in `component_3b_w
 | Pre-hardening dropout false accepts | 41/320 trials at 2 through 5 percent deletion, documented in the archived artifact |
 | **CRC-passing decodes (100 random wrong keys)** | **0/100; Wilson 95% upper 3.70%** |
 | **CRC-passing decodes (256 single-bit flips)** | **0/256; Wilson 95% upper 1.48%** |
-| Mean Key Sensitivity $\rho$ | -0.00198 ≈ 0.00 |
+| Key Sensitivity $\rho$ | -0.00198 at N = 35,000 ($\approx$ 0.00); the mean over the five recorded sizes is +0.0054 |
 
 **Component 4 metrics:** Codec capacity, substitution and dropout tolerance, and cryptographic isolation. Zero CRC-passing decodes were observed across all 356 unauthorized-key attempts. The intervals are wide enough that this campaign is consistent with, but does not resolve, the theoretical CRC-16 bound.
 
