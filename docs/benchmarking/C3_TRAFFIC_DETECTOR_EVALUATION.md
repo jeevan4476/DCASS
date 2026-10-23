@@ -29,7 +29,16 @@ diversity, which prefers fast traffic. Measured on the same episodes:
 | traffic | collapsed critic (shipped) | trained detector |
 | :--- | :--- | :--- |
 | fixed 3.0 s metronome | score 0.0000, reward **+21.57** | score 1.0000, reward **−28.43** |
-| fixed 30 s | score 0.0000, reward +7.67 | score 1.0000, reward −42.33 |
+| fixed 20.0 s (30 clamped to the canonical window) | score 0.0000, reward +7.67 | score 1.0000, reward −42.33 |
+
+Both rows disclosed: `canonical_rl_delay` clamps every step into the
+pacing window `[0.5, 20.0]` inside `env.step`, so the 30 s probe row
+scores as a fixed 20.0 s clock. The metronome row is stretched by the
+environment's rate-limit back-offs — on the `i%3` rotation the cooldowns
+are 6/12/4 s, so the channel-1 steps of a 3.0 s metronome land well past
+their nominal 3.0 s before they are scored. The frozen
+`rl_stealth_reward_probe.json` records the probes under their original
+labels and is not rewritten here.
 
 So the agent was not merely unstealthed. It was rewarded for the most
 bot-like traffic possible, and it is a throughput-and-diversity policy
@@ -174,6 +183,18 @@ also the only one that respects the platform's cooldowns: 15 violations
 across 50 trials, against 2,450 for the static baseline, which is a
 constant 3.0 second clock and therefore breaches the 12 second channel-1
 cooldown on nearly every step.
+
+One precision caveat about the violation column. Up to the 2026-10-23
+re-audit the counter accumulated the landing times in float32 (a cast
+between the exported schedule and the counting loop). Float32 rounding is
+not trustworthy at a cooldown boundary in either direction — it can erode
+an exact-boundary landing below the threshold and count a violation that
+never happened, or it can round a genuinely sub-threshold gap back onto
+the boundary and hide one; both directions were reproduced against seeded
+traffic when the finding was verified. The counter now measures in the
+float64 the executors produce. The table values above are the frozen
+recorded artifacts and are not re-measured here, so no claim is made
+about which of the recorded counts, if any, a float64 re-run would move.
 
 ### 5.1 What this does not establish
 

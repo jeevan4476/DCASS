@@ -1212,7 +1212,15 @@ def parse_args(argv=None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv=None) -> Optional[Dict[str, object]]:
+def gate_exit_code(summary: dict) -> int:
+    """Exit status for the C1 gate run: 0 iff the positive-control gates
+    passed. Before this existed the script always exited 0, so a failed
+    control could sit unnoticed in a pipeline while downstream artifacts
+    were regenerated from bad measurements."""
+    return 0 if summary["all_gates_passed"] else 1
+
+
+def main(argv=None) -> int:
     args = parse_args(argv)
     config: Dict[str, object] = {
         "images": args.images,
@@ -1265,7 +1273,7 @@ def main(argv=None) -> Optional[Dict[str, object]]:
             )
             if not present:
                 print("single-fold mode: aggregation deferred until every fold exists")
-                return None
+                return 0
 
     summary = aggregate(config)
     print("-" * 78)
@@ -1279,9 +1287,9 @@ def main(argv=None) -> Optional[Dict[str, object]]:
             f"[{d['auc_ci'][0]:.4f},{d['auc_ci'][1]:.4f}] | gate={'pass' if c['gate_pass_all'] else 'FAIL'}"
         )
     print(f"Artifacts: {relative(BENCHMARK_DIR / 'component_1_summary.json')}")
-    return summary
+    return gate_exit_code(summary)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
 

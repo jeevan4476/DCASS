@@ -28,10 +28,16 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# The real recorded traffic corpus. The previous default (`data/human_traffic.json`)
+# does not exist in the repository, so every run silently evaluated against
+# a missing reference unless the operator passed the path by hand.
+DEFAULT_HUMAN_DATA = PROJECT_ROOT / "storage" / "data" / "traffic" / "human_traffic.json"
+
 from src.utils.checkpoint_io import load_trained_checkpoint
 
 from src.stealth.gan.generator import TemporalPatternGenerator
 from src.stealth.gan.trainer import HumanTrafficDataset, compute_warden_auc
+from src.stealth.gan.trainer import apply_critic_config
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden
 
 
@@ -60,6 +66,7 @@ def _load_models(checkpoint_path: Path, num_channels: int, device: str):
 
     warden = DeepPacketInspectionWarden(num_channels=num_channels, hidden_dim=hidden_dim)
     warden.load_state_dict(ckpt["warden_state"])
+    apply_critic_config(warden, ckpt)
     warden.to(device)
     warden.eval()
 
@@ -76,7 +83,7 @@ def main() -> None:
     parser.add_argument(
         "--data",
         type=Path,
-        default=PROJECT_ROOT / "data" / "human_traffic.json",
+        default=DEFAULT_HUMAN_DATA,
         help="Must match the --data used at train time for the held-out split to line up",
     )
     parser.add_argument(

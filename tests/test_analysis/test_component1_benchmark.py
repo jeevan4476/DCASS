@@ -208,3 +208,14 @@ class TestScoreLoaderAlignment:
         assert cover.shape == (2,)
         assert stego.shape == (2,)
         assert np.all(stego > cover)
+
+
+class TestGateExitCode:
+    """The CLI exit status must say whether the positive-control gates
+    passed; before FIX-F the script always exited 0."""
+
+    def test_passing_summary_exits_zero(self):
+        assert mod.gate_exit_code({"all_gates_passed": True}) == 0
+
+    def test_failing_summary_exits_one(self):
+        assert mod.gate_exit_code({"all_gates_passed": False}) == 1

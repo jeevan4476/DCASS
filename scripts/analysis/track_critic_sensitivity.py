@@ -43,6 +43,7 @@ from src.analysis.adversarial.warden import (  # noqa: E402
 )
 from src.stealth.delay_contract import canonical_delay_mapping  # noqa: E402
 from src.stealth.gan.generator import TemporalPatternGenerator  # noqa: E402
+from src.stealth.gan.trainer import apply_critic_config  # noqa: E402
 
 CORPUS = PROJECT_ROOT / "storage" / "data" / "traffic" / "human_traffic.json"
 SEQUENCE = 60
@@ -116,6 +117,7 @@ def main() -> int:
 
         critic = DeepPacketInspectionWarden(num_channels=3, hidden_dim=256)
         critic.load_state_dict(checkpoint["warden_state"])
+        apply_critic_config(critic, checkpoint)
         critic.eval()
 
         generator = TemporalPatternGenerator(

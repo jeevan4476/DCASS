@@ -17,13 +17,22 @@ import json
 import argparse
 import torch
 from src.utils.checkpoint_io import load_trained_checkpoint
+from src.stealth.gan.trainer import apply_critic_config
 import numpy as np
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.analysis.adversarial.warden import DeepPacketInspectionWarden
+# The real recorded traffic corpus. The previous default (`data/human_traffic.json`)
+# does not exist in the repository, so every run silently dropped the
+# human-reference comparison unless the operator passed the path by hand.
+DEFAULT_HUMAN_DATA = PROJECT_ROOT / "storage" / "data" / "traffic" / "human_traffic.json"
+
+from src.analysis.adversarial.warden import (
+    DETECTOR_SEQ_LEN,
+    DeepPacketInspectionWarden,
+)
 from src.stealth.stealth_scheduler import StealthScheduler
 
 
@@ -36,16 +45,29 @@ def load_human_traffic(path: Path, max_sessions: int = 200):
 
 
 def evaluate_warden(warden, delays_list, channels_list):
-    """Run Warden on a batch and return average bot probability."""
-    max_len = max(len(d) for d in delays_list)
+    """Run Warden on a batch and return per-row bot probabilities.
+
+    Every row is padded to DETECTOR_SEQ_LEN (the detector module's own
+    scoring convention, shared with training and the Component 3
+    benchmark) and a validity mask marks the fabricated steps: the
+    transformer excludes them from attention and the pooling layer
+    ignores them. Padding to the batch's longest row without a mask —
+    the old behavior — let the fabricated steps contaminate the score,
+    so a row's result depended on how ragged its batch happened to be.
+    Padding to a fixed length plus the mask makes a row's score depend
+    only on its own traffic.
+    """
+    max_len = max(DETECTOR_SEQ_LEN, *(len(d) for d in delays_list))
     padded_d = [d + [0.0] * (max_len - len(d)) for d in delays_list]
     padded_c = [c + [0] * (max_len - len(c)) for c in channels_list]
+    mask = [[1.0] * len(d) + [0.0] * (max_len - len(d)) for d in delays_list]
 
     dt = torch.tensor(padded_d, dtype=torch.float32)
     ct = torch.tensor(padded_c, dtype=torch.long)
+    mt = torch.tensor(mask, dtype=torch.float32)
 
     with torch.no_grad():
-        verdict = warden(dt, ct)
+        verdict = warden(dt, ct, mask=mt)
     return verdict.bot_probability.tolist()
 
 
@@ -75,6 +97,7 @@ def load_trained_warden(gan_checkpoint: Path, num_channels: int = 3, device: str
 
     warden = DeepPacketInspectionWarden(num_channels=num_channels, hidden_dim=hidden_dim)
     warden.load_state_dict(ckpt["warden_state"])
+    apply_critic_config(warden, ckpt)
     warden.to(device)
     warden.eval()
     return warden
@@ -86,7 +109,7 @@ def main():
     parser.add_argument("--num-sequences", type=int, default=100)
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--human-data", type=Path,
-                        default=PROJECT_ROOT / "data" / "human_traffic.json")
+                        default=DEFAULT_HUMAN_DATA)
     parser.add_argument(
         "--gan-checkpoint",
         type=Path,
@@ -133,7 +156,14 @@ def main():
     print("=" * 55)
 
     # --- compare to human baseline ---------------------------------------
-    human = load_human_traffic(args.human_data)
+    # A missing file used to vanish silently (load_human_traffic returned
+    # None and the `if human:` block below simply never ran). Say what was
+    # skipped instead, then carry on with the tool's own report.
+    if not args.human_data.exists():
+        print(f"\nHUMAN BASELINE SKIPPED (file missing: {args.human_data})")
+        human = None
+    else:
+        human = load_human_traffic(args.human_data)
     if human:
         h_delays = [s["delays"] for s in human[:args.num_sequences]]
         h_channels = [s["channels"] for s in human[:args.num_sequences]]
