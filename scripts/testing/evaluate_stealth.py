@@ -23,6 +23,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# The real recorded traffic corpus. The previous default (`data/human_traffic.json`)
+# does not exist in the repository, so every run silently dropped the
+# human-reference comparison unless the operator passed the path by hand.
+DEFAULT_HUMAN_DATA = PROJECT_ROOT / "storage" / "data" / "traffic" / "human_traffic.json"
+
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden
 from src.stealth.stealth_scheduler import StealthScheduler
 
@@ -86,7 +91,7 @@ def main():
     parser.add_argument("--num-sequences", type=int, default=100)
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--human-data", type=Path,
-                        default=PROJECT_ROOT / "data" / "human_traffic.json")
+                        default=DEFAULT_HUMAN_DATA)
     parser.add_argument(
         "--gan-checkpoint",
         type=Path,
@@ -133,7 +138,14 @@ def main():
     print("=" * 55)
 
     # --- compare to human baseline ---------------------------------------
-    human = load_human_traffic(args.human_data)
+    # A missing file used to vanish silently (load_human_traffic returned
+    # None and the `if human:` block below simply never ran). Say what was
+    # skipped instead, then carry on with the tool's own report.
+    if not args.human_data.exists():
+        print(f"\nHUMAN BASELINE SKIPPED (file missing: {args.human_data})")
+        human = None
+    else:
+        human = load_human_traffic(args.human_data)
     if human:
         h_delays = [s["delays"] for s in human[:args.num_sequences]]
         h_channels = [s["channels"] for s in human[:args.num_sequences]]

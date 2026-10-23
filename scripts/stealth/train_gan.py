@@ -26,6 +26,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# The real recorded traffic corpus. The previous default (`data/human_traffic.json`)
+# does not exist in the repository, so every run silently trained on the
+# synthetic fallback unless the operator passed the path by hand.
+DEFAULT_HUMAN_DATA = PROJECT_ROOT / "storage" / "data" / "traffic" / "human_traffic.json"
+
 import torch
 
 from src.stealth.gan.trainer import GANTrainer, HumanTrafficDataset, TrainingConfig
@@ -41,7 +46,7 @@ def main() -> None:
     parser.add_argument(
         "--data",
         type=Path,
-        default=PROJECT_ROOT / "data" / "human_traffic.json",
+        default=DEFAULT_HUMAN_DATA,
         help="Path to real human-traffic JSON (synthetic fallback if missing)",
     )
     parser.add_argument("--epochs", type=int, default=20)
