@@ -472,30 +472,19 @@ class StealthScheduler:
         prev_landing = 0.0
         last_landing = {c: -100.0 for c in range(self.num_channels)}
 
-        # A rate-limit violation consumes an iteration without sending an
-        # item, so a plain `for` loop over the item count would finish with
-        # fewer items than requested and leave a constant padded tail. The
-        # loop is bounded by the item count plus a retry allowance instead,
-        # so every requested item is actually sent.
+        # Drive the policy with the closed-loop action mask (the same mask
+        # the training rollout used), so no transmission targets a channel
+        # that is still cooling down; env.step can end the episode only
+        # with the timeout or an empty queue, and a cooldown pick inside
+        # step() is a rate-limit back-off extension, never a rejection —
+        # the environment emits no "rate_limit_violation" outcome at all.
         max_steps = len(media_ids) * 3
         for _ in range(max_steps):
             if len(delays) >= len(media_ids):
                 break
-            # Pass the action mask so the policy doesn't pick a
-            # rate-limit-cooling channel at inference (it already does
-            # during training via collect_rollout). This also means
-            # "rate_limit_violation" steps should no longer occur here.
             mask = env.get_action_mask()
             action, _, _ = self._rl_agent.select_action(state, channel_mask=mask)
             next_state, _, done, info = env.step(action)
-
-            if info.get("reason") == "rate_limit_violation":
-                # The policy picked a channel that is still cooling down.
-                # Nothing was sent, so no phantom step may leak into the
-                # exported schedule. Retry with a fresh action rather than
-                # consuming an item slot.
-                state = next_state
-                continue
 
             if info.get("reason") == "timeout":
                 # The episode clock expired before this item could be sent:
