@@ -28,7 +28,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # human-reference comparison unless the operator passed the path by hand.
 DEFAULT_HUMAN_DATA = PROJECT_ROOT / "storage" / "data" / "traffic" / "human_traffic.json"
 
-from src.analysis.adversarial.warden import DeepPacketInspectionWarden
+from src.analysis.adversarial.warden import (
+    DETECTOR_SEQ_LEN,
+    DeepPacketInspectionWarden,
+)
 from src.stealth.stealth_scheduler import StealthScheduler
 
 
@@ -41,16 +44,29 @@ def load_human_traffic(path: Path, max_sessions: int = 200):
 
 
 def evaluate_warden(warden, delays_list, channels_list):
-    """Run Warden on a batch and return average bot probability."""
-    max_len = max(len(d) for d in delays_list)
+    """Run Warden on a batch and return per-row bot probabilities.
+
+    Every row is padded to DETECTOR_SEQ_LEN (the detector module's own
+    scoring convention, shared with training and the Component 3
+    benchmark) and a validity mask marks the fabricated steps: the
+    transformer excludes them from attention and the pooling layer
+    ignores them. Padding to the batch's longest row without a mask —
+    the old behavior — let the fabricated steps contaminate the score,
+    so a row's result depended on how ragged its batch happened to be.
+    Padding to a fixed length plus the mask makes a row's score depend
+    only on its own traffic.
+    """
+    max_len = max(DETECTOR_SEQ_LEN, *(len(d) for d in delays_list))
     padded_d = [d + [0.0] * (max_len - len(d)) for d in delays_list]
     padded_c = [c + [0] * (max_len - len(c)) for c in channels_list]
+    mask = [[1.0] * len(d) + [0.0] * (max_len - len(d)) for d in delays_list]
 
     dt = torch.tensor(padded_d, dtype=torch.float32)
     ct = torch.tensor(padded_c, dtype=torch.long)
+    mt = torch.tensor(mask, dtype=torch.float32)
 
     with torch.no_grad():
-        verdict = warden(dt, ct)
+        verdict = warden(dt, ct, mask=mt)
     return verdict.bot_probability.tolist()
 
 

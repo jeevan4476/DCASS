@@ -42,7 +42,10 @@ from src.stealth.stealth_scheduler import (
     StealthScheduler,
     canonical_delay_mapping as scheduler_canonical_delay_mapping,
 )
-from src.analysis.adversarial.warden import DeepPacketInspectionWarden
+from src.analysis.adversarial.warden import (
+    DETECTOR_SEQ_LEN,
+    DeepPacketInspectionWarden,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from traffic_corpus import corpus_files, traffic_dir  # noqa: E402
@@ -149,8 +152,9 @@ DETECTOR_PATH = PROJECT_ROOT / "storage" / "models" / "traffic_detector_eval.pt"
 # excludes padded steps from attention. A trial must therefore be padded
 # the same way before it is scored: feeding an unpadded sequence changes
 # the attention pattern and the statistical features, and the detector's
-# score for the same traffic changes with it.
-DETECTOR_SEQ_LEN = 64
+# score for the same traffic changes with it. DETECTOR_SEQ_LEN is the
+# detector module's own convention (imported above), so the benchmark and
+# every other consumer share the one definition.
 
 torch.manual_seed(SEED)
 np.random.seed(SEED)

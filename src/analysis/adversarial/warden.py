@@ -13,6 +13,14 @@ import torch.nn as nn
 from dataclasses import dataclass
 from typing import Optional
 
+# The scoring convention for this detector: every sequence is padded to
+# DETECTOR_SEQ_LEN steps and accompanied by a validity mask before it is
+# scored, because an unpadded (or differently padded) sequence changes the
+# attention pattern and therefore the score for the same traffic. The
+# Component 3 benchmark, the training loop, and the CLI evaluators all
+# import this one definition instead of keeping copies.
+DETECTOR_SEQ_LEN = 64
+
 
 @dataclass
 class WardenVerdict:
