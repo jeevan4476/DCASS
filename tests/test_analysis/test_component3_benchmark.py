@@ -172,6 +172,56 @@ def test_ks_statistic_is_recorded_but_does_not_score():
     assert res_a["score"] == pytest.approx(res_b["score"], abs=1e-9)
 
 
+def test_cooldown_violations_count_boundary_as_satisfied_in_float64():
+    """Boundary-exact cooldown landings are satisfied by the `>=` contract
+    every executor applies, so the counter must promise float64 semantics
+    regardless of the input buffer's storage dtype (FIX-B).
+
+    The recorded run cast schedules to float32 before counting, which
+    eroded exact-boundary landings below the cooldown: for [0.1, 6.0] on
+    channel 0 the float32 cumsum gap is 5.999999903142452 < 6.0 while the
+    float64 cumsum of the same two stored values rest at exactly 6.0.
+    A genuinely short gap (13.37 + 6.0 lands 5.9999...998 below 6.0 even
+    in float64) must still count as a violation."""
+    assert mod.count_cooldown_violations(
+        np.array([0.1, 6.0]), np.zeros(2, dtype=np.int64)
+    ) == 0
+    assert mod.count_cooldown_violations(
+        np.array([0.1, 6.0], dtype=np.float32), np.zeros(2, dtype=np.int64)
+    ) == 0
+    # A genuine violation is still a violation.
+    assert mod.count_cooldown_violations(
+        np.array([13.37, 6.0]), np.zeros(2, dtype=np.int64)
+    ) == 1
+
+
+def test_evaluate_dpi_warden_violation_count_stays_float64():
+    """The evaluation entry point counts violations through the shared
+    float64 helper, so even a caller whose storage dtype is float32 gets
+    an honest count.
+
+    The series below is legal by construction in float64: every pair gap
+    is at least 6.0 with a 0.5 s margin, and the two 6.0 s landmarks land
+    exactly on the cooldown boundary (satisfied by the `>=` contract).
+    Accumulated in float32, as the recorded run's casts produced, the
+    cumsum drifts one exact-boundary landing below the threshold and the
+    old path counted a violation that never happened.
+    """
+    rng = np.random.default_rng(1048)
+    n_fill = int(rng.integers(8, 20))
+    delays = np.asarray(
+        list(rng.uniform(6.5, 9.0, n_fill)) + [6.0, 6.5, 6.9, 6.0]
+        + list(rng.uniform(6.5, 9.0, n_fill))
+    )
+    res = mod.evaluate_dpi_warden(
+        delays.astype(np.float32),
+        np.zeros(len(delays), dtype=np.int64),
+        _StubWarden(),
+        _human(),
+    )
+    assert res["violations"] == 0
+
+
 def test_rate_limit_violations_are_recorded_and_not_scored():
     # Delays cycle [3, 4, 5] so that every channel reuse gap equals 12.0 s,
     # clearing the per-channel cooldowns {0: 6.0, 1: 12.0, 2: 4.0}. The dirty

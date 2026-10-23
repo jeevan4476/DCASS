@@ -175,6 +175,18 @@ across 50 trials, against 2,450 for the static baseline, which is a
 constant 3.0 second clock and therefore breaches the 12 second channel-1
 cooldown on nearly every step.
 
+One precision caveat about the violation column. Up to the 2026-10-23
+re-audit the counter accumulated the landing times in float32 (a cast
+between the exported schedule and the counting loop). Float32 rounding is
+not trustworthy at a cooldown boundary in either direction — it can erode
+an exact-boundary landing below the threshold and count a violation that
+never happened, or it can round a genuinely sub-threshold gap back onto
+the boundary and hide one; both directions were reproduced against seeded
+traffic when the finding was verified. The counter now measures in the
+float64 the executors produce. The table values above are the frozen
+recorded artifacts and are not re-measured here, so no claim is made
+about which of the recorded counts, if any, a float64 re-run would move.
+
 ### 5.1 What this does not establish
 
 The human side of the comparison is the repository's own traffic corpus

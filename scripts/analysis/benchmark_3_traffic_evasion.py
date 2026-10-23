@@ -69,6 +69,40 @@ PLOTS_DIR = BENCHMARK_DIR / "plots"
 # Enterprise DPI Channel Cooldown Timers (items/min -> min inter-arrival seconds)
 CHANNEL_COOLDOWNS = {0: 6.0, 1: 12.0, 2: 4.0}
 
+
+def count_cooldown_violations(
+    delays: np.ndarray,
+    channels: "np.ndarray | list[int]",
+    cooldowns: Dict[int, float] | None = None,
+) -> int:
+    """
+    Count landings that violate their channel's cooldown.
+
+    Item k's landing time is cumsum(delays)[k] -- the same quantity the
+    executors' clocks record -- and a landing is legal iff its gap to the
+    previous landing on the same channel is >= that channel's cooldown
+    (the boundary itself is satisfied). Every operation runs in float64,
+    regardless of the storage dtype the caller hands in.
+
+    Precision is a correctness property here, not a nicety: float32
+    accumulation drifts near-boundary landing gaps by several ulps and in
+    BOTH directions -- it can erode an exact-boundary landing below the
+    cooldown (counting a violation that never happened) and it can round
+    a genuinely sub-threshold gap back onto the boundary (hiding one).
+    Both directions were reproduced against seeded traffic, so the
+    counter measures in the float64 the executors produce.
+    """
+    table = CHANNEL_COOLDOWNS if cooldowns is None else cooldowns
+    timestamps = np.cumsum(np.asarray(delays, dtype=np.float64))
+    violations = 0
+    last_tx: Dict[int, float] = {}
+    for idx in range(len(timestamps)):
+        ch = int(channels[idx])
+        if ch in last_tx and (timestamps[idx] - last_tx[ch]) < table.get(ch, 6.0):
+            violations += 1
+        last_tx[ch] = float(timestamps[idx])
+    return violations
+
 # Soft-branch scoring.
 #
 # The recorded branch was `clip(0.10 * anomaly + 0.35 * ks, 0, 0.45)` against
@@ -296,13 +330,10 @@ def evaluate_dpi_warden(
     is_burst = (max_burst >= 6)
 
     # 3. Channel Rate-Limit Violations
-    violations = 0
-    last_tx = {}
-    for t, c in zip(timestamps, channels):
-        ch = int(c)
-        if ch in last_tx and (t - last_tx[ch]) < CHANNEL_COOLDOWNS.get(ch, 6.0):
-            violations += 1
-        last_tx[ch] = t
+    # Delegated to the shared counter, which measures the landing times in
+    # float64 (see its docstring for why float32 arithmetic cannot be
+    # trusted at the cooldown boundary).
+    violations = count_cooldown_violations(delays, channels)
 
     # 4. Statistical KS Test
     ks_stat, ks_pval = ks_2samp(delays, human_ref)
@@ -394,10 +425,14 @@ def run_scheduler_benchmark_multi(
 
     for trial in range(n_trials):
         if mode == "static":
-            delays = np.full(len(media_ids), base_delay, dtype=np.float32)
+            # All trial arrays stay in float64, the precision the
+            # executors produce: float32 storage erodes near-boundary
+            # landing gaps in both directions (see
+            # count_cooldown_violations).
+            delays = np.full(len(media_ids), base_delay, dtype=np.float64)
             channels = np.zeros(len(media_ids), dtype=np.int64)
         elif mode == "poisson":
-            delays = np.random.exponential(scale=base_delay, size=len(media_ids)).astype(np.float32)
+            delays = np.random.exponential(scale=base_delay, size=len(media_ids))
             channels = np.random.randint(0, NUM_CHANNELS, size=len(media_ids)).astype(np.int64)
         elif mode == "gan":
             # Drive the deployed scheduler path so the measured row is the
@@ -410,15 +445,15 @@ def run_scheduler_benchmark_multi(
                 base_delay=base_delay,
                 time_of_day=hour,
             )
-            delays = np.array(sched["delays"], dtype=np.float32)
+            delays = np.array(sched["delays"], dtype=np.float64)
             channels = np.array(sched["channels"], dtype=np.int64)
         elif mode == "hybrid":
             sched = scheduler.schedule(media_ids=media_ids, mode="hybrid", base_delay=base_delay)
-            delays = np.array(sched["delays"], dtype=np.float32)
+            delays = np.array(sched["delays"], dtype=np.float64)
             channels = np.array(sched["channels"], dtype=np.int64)
         elif mode == "rl":
             sched = scheduler.schedule(media_ids=media_ids, mode="rl", base_delay=base_delay)
-            delays = np.array(sched["delays"], dtype=np.float32)
+            delays = np.array(sched["delays"], dtype=np.float64)
             channels = np.array(sched["channels"], dtype=np.int64)
         else:
             raise ValueError(f"Unknown mode: {mode}")
@@ -481,7 +516,7 @@ def canonical_delay_mapping(raw: np.ndarray) -> np.ndarray:
     apart. Any hour-to-hour difference measured with this mapping is
     attributable to the generator's conditioning, not to analysis
     constants."""
-    return scheduler_canonical_delay_mapping(raw).astype(np.float32)
+    return scheduler_canonical_delay_mapping(raw)
 
 
 def evaluate_diurnal_circadian_split(
@@ -527,7 +562,7 @@ def evaluate_diurnal_circadian_split(
                 mode="gan",
                 time_of_day=hour,
             )
-            delays = np.array(sched["delays"], dtype=np.float32)
+            delays = np.array(sched["delays"], dtype=np.float64)
             channels = np.array(sched["channels"], dtype=np.int64)
             raw = np.array(sched["raw_delays"], dtype=np.float32)
 
