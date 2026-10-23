@@ -991,6 +991,8 @@ def generate_latex_table(
         scope=(
             "recorded composite warden; the soft branch is a trained traffic "
             "detector with a threshold calibrated on held-out human traffic, "
+            "with the human side being the repository's own synthetic traffic "
+            "corpus rather than recorded human browsing, "
             "so a not-flagged rate is a measurement and not an artifact"
         ),
         commit=commit

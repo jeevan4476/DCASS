@@ -254,7 +254,7 @@ Energy distance and RBF-kernel MMD² on the pooled 5,000 vs 5,000 balanced sampl
 | Text | 0.00010 | 0.004 | 8.36e-05 | 0.004 | 0.00016 | 0.001 |
 | Audio | -0.00003 | 0.574 | -3.28e-05 | 0.642 | -0.00004 | 0.683 |
 
-**Interpretation:** Audio is indistinguishable from a uniform corpus draw; small negative values are ordinary sampling noise for an unbiased statistic. Image and text carry small but resolved shifts, about one ten-thousandth of the embedding scale, and they persist on unique media, so the signal is distributional rather than a repeat artifact. The shifts match the family-restricted selection pools by design; Section 6 of the deep explanation shows the transmitted stream is statistically consistent with the mechanism's own structural prediction, so the detectable component is the public mechanism rather than key-dependent randomness.
+**Interpretation:** Audio is indistinguishable from a uniform corpus draw; small negative values are ordinary sampling noise for an unbiased statistic. Image and text carry small but resolved shifts, about one ten-thousandth of the embedding scale, and they persist on unique media, so the signal is distributional rather than a repeat artifact. Matching those shifts to the family-restricted selection pools is a design-level attribution — no artifact records the two-family schedule's pointwise predicted deviations — while the artifact-backed reading is the aggregate mechanism null: Section 6 of the deep explanation shows the transmitted stream is statistically consistent with the mechanism's own structural prediction, so the detectable component is the public mechanism rather than key-dependent randomness.
 
 #### 4.3.2 Wasserstein-1 on PC1 (Secondary)
 
@@ -276,7 +276,7 @@ Each modality screens all 512 embedding dimensions, 1,536 tests in total, with B
 | Text | 512 | 0.0163 | 0.0155 | 0.0363 | 0 | 0.148 | 0.0388 |
 | Audio | 512 | 0.0159 | 0.0155 | 0.0362 | 0 | 0.092 | 0.0378 |
 
-**Interpretation:** Zero coordinates reject after multiplicity control anywhere. The per-coordinate null center at these sample sizes is 0.0155 and the observed means land directly on it; the single largest gap, 0.0363, is a maximum over 512 correlated coordinates whose permutation null has a 95th percentile near 0.039, so it is not evidence of a coordinate shift.
+**Interpretation:** Zero coordinates reject after multiplicity control anywhere. The per-coordinate null center implied by these sample sizes is 0.0155 — a derived value from the asymptotic KS median $0.87/\sqrt{n_1 n_2/(n_1+n_2)}$, not a stored null — and the observed means land directly on it; the single largest gap, 0.0363, is a maximum over 512 correlated coordinates whose permutation null has a 95th percentile near 0.039, so it is not evidence of a coordinate shift.
 
 #### 4.3.4 Voronoi Cluster Entropy and Repeats
 
@@ -401,7 +401,7 @@ An earlier revision of this report listed 3.19 s daytime against 13.07 s night d
 - **No measurable diurnal adaptation** — hour-14 and hour-3 means are 3.89 s and 14.93 s under one identical mapping; the sign agrees with a dormancy policy but the training data has no hour-conditioned structure to learn it from. The earlier 3.19 s / 13.07 s split was an artifact of per-regime analysis constants
 - **Framework validated** — the surrogate reference is flagged at 12% (burst rule) and the detector's own held-out corpus sessions at 2%; the soft branch itself flags none of the 44 surrogate draws that reach it. The threshold is calibrated on 457 human bursts at a measured 4.60% false-positive rate
 - **The neural term now separates traffic** — the trained detector's bot probability is 0.004 to 0.006 on human traffic from an independent generator and 0.509 and 0.481 on the DCASS generators (`storage/benchmarks/traffic_detector_generalization.json`). The superseded WGAN-GP checkpoint was a constant 0.62493 on every input. The root cause of that collapse is documented in [`C3_WARDEN_DIAGNOSTIC.md`](C3_WARDEN_DIAGNOSTIC.md)
-- **The PPO arm is a stealth policy now, and was not before** — it is retrained against a working detector, and the retraining required fixing four defects in the RL path: the agent optimized delays the network never saw, the deployment transform collapsed 98.3% of its choices onto one value, the environment's cooldown test was more permissive than the benchmark's, and a rate-limit violation was priced below a soft failure. See [`C3_TRAFFIC_DETECTOR_EVALUATION.md`](C3_TRAFFIC_DETECTOR_EVALUATION.md) §2
+- **The PPO arm is a stealth policy now, and was not before** — it is retrained against a working detector, and the retraining required fixing four defects in the RL path: the agent optimized delays the network never saw, the deployment transform collapsed 98.3% of its choices onto one value (a code-derived figure from the archived transform's arithmetic, not an artifact measurement), the environment's cooldown test was more permissive than the benchmark's, and a rate-limit violation was priced below a soft failure. See [`C3_TRAFFIC_DETECTOR_EVALUATION.md`](C3_TRAFFIC_DETECTOR_EVALUATION.md) §2
 - **The scope of the result is bounded by the reference traffic** — the human side of the calibration is the repository's own traffic corpus, whose time-of-day distribution is uniform and whose delay values are bounded, so it is a synthetic surrogate rather than recorded human browsing. The measurement is separability from that corpus, not detectability to a real network observer
 
 ### 5.6 LaTeX Table Output
@@ -481,7 +481,7 @@ Every interception verdict is a threshold on a stored score distribution, and th
 | 20,000 | 0.3013 | 0.3411 | PASS | -0.002327 | 3,319 |
 | 35,000 | 0.4056 | 0.3611 | PASS | -0.001982 | 2,466 |
 
-**0.4056 ms per 35,000-candidate permutation**, about 616x faster than the roughly 250 ms pure-Python HMAC loop it replaced. Key-sensitivity correlation stays within ±0.044 at every size with no trend. The 20,000 row has a p50 slightly above its mean and the 35,000 row a p50 slightly below, so dispersion is small; the p50 column is the better central estimate under scheduler noise. These are wall-clock measurements on a shared machine and shift between runs; the key-sensitivity column does not.
+**0.4056 ms per 35,000-candidate permutation**, about 616x faster than the roughly 250 ms pure-Python HMAC loop it replaced; the 250 ms legacy base is an estimate, not a recorded measurement. Key-sensitivity correlation stays within ±0.044 at every size with no trend. The 20,000 row has a p50 slightly above its mean and the 35,000 row a p50 slightly below, so dispersion is small; the p50 column is the better central estimate under scheduler noise. These are wall-clock measurements on a shared machine and shift between runs; the key-sensitivity column does not.
 
 ### 6.3 ECC Recovery Under Carrier Substitution
 
@@ -697,9 +697,9 @@ These rows measure `SemanticEngine.encode` and `.decode` directly. They do not c
 
 | Worker Threads | Total Sessions Evaluated | Throughput (sessions/s) | p50 Latency (ms) | p90 Latency (ms) | p95 Latency (ms) | p99 Latency (ms) | Success Rate (%) | Observed Swap Rate (%) |
 |-------------------|-------------------------|-------------------|------------------|------------------|------------------|------------------|------------------|---------------------|
-| 10 | 100 | 2.00 | 4976.0 | 5502.0 | 5706.0 | 5978.9 | 100.0% | 0.000% |
-| 20 | 100 | 1.95 | 10089.0 | 11220.0 | 11455.0 | 11730.2 | 100.0% | 0.000% |
-| 50 | 100 | 1.89 | 24367.0 | 26989.0 | 27598.0 | 27948.6 | 100.0% | 0.000% |
+| 10 | 100 | 2.00 | 4975.6 | 5502.2 | 5705.7 | 5978.9 | 100.0% | 0.000% |
+| 20 | 100 | 1.95 | 10089.1 | 11220.0 | 11454.7 | 11730.2 | 100.0% | 0.000% |
+| 50 | 100 | 1.89 | 24367.5 | 26988.9 | 27597.6 | 27948.6 | 100.0% | 0.000% |
 
 The direct-engine test observed zero swapped marker payloads at all concurrency levels. The success column checks exact plaintext reconstruction, so corrupted payloads without the marker count as failures rather than swaps. The API transmit path is separate: the server now admits concurrent transmissions up to a bounded limit and answers HTTP 429 beyond it, and this benchmark does not exercise that path.
 

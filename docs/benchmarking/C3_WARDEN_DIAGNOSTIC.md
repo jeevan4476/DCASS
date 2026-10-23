@@ -314,7 +314,11 @@ task is not trivially separable.
 
 On a session-disjoint held-out split the detector reaches a bot-probability
 AUC of 0.9983. On human traffic from a generator it has never seen in any
-form, its bot probability is 0.004 to 0.006; on the DCASS generators, 1.000. The
+form, its bot probability is 0.004 to 0.006; on the DCASS generators it
+takes per-population means of 0.5086 (temporal WGAN, n = 20) and 0.4809
+(hybrid engine, n = 20), with individual scores up to 0.9996 — an earlier
+revision of this section recorded a constant 1.000 on the DCASS
+generators, which does not match the artifact it cites. The
 per-population scores are in `traffic_detector_generalization.json`.
 
 That is a real separation, and it is what the C3 benchmark now measures.

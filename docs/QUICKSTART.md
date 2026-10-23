@@ -18,9 +18,10 @@ Everything you need to run the full system: backend API, frontend UI, GAN+RL tra
 # From the project root
 cd DCASS
 
-# Create a virtual environment (skip if you already have one)
-python -m venv venv
-source venv/bin/activate
+# Create a virtual environment (the repository's own tooling uses .venv;
+# skip if you already have one)
+python -m venv .venv
+source .venv/bin/activate
 
 # Install all Python dependencies
 pip install -r requirements.txt
@@ -265,7 +266,7 @@ src/
     pipeline.py            # End-to-end round-trip module
     gan/trainer.py         # WGAN-GP trainer
     rl/environment.py      # PPO environment
-    rl/ppo_agent.py        # PPO agent
+    rl/agent.py            # PPO agent
   engine/
     semantic_engine.py     # Encode/decode engine (FAISS + codebook)
 

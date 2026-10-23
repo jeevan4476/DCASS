@@ -39,7 +39,7 @@ training sets, six epochs each, recording the losses, the gradient
 penalty, the generator's output spread, and the critic's sensitivity to
 its input (`wgan_training_data_probe.json`):
 
-| training set | generator loss | generator output spread | critic input sensitivity |
+| training set | generator loss | generator delay spread (`generator_delay_std`) | critic output spread (`critic_anomaly_spread`) |
 | :--- | ---: | ---: | ---: |
 | synthetic fallback | 83 → 418 | 1.03 → 6.21 | 3.3e-02 → 2.3e-02 |
 | traffic corpus | 239 → 130 | 1.93 → 5.62 | 3.2e-02 → 2.7e-02 |
@@ -66,6 +66,15 @@ reproduces the shipped checkpoint's behaviour exactly:
 From epoch 8 the gradient penalty sits at exactly `lambda_gp`, and the
 critic's sigmoid output is saturated at 1.000 on real data and on
 generated data alike.
+
+This 27-epoch trace and the loss figures quoted from the same run below
+(the `−132` by-epoch-7 spike in §7, the `−577.6` at-epoch-12 and the
+`−47` to `+13` envelopes in §7–8) are a narrative diagnostic: the
+divergence run was not retained as a benchmark artifact and is not
+re-executed by the repository's current scripts. The artifact-backed
+record of the same collapse is the epoch-by-epoch tracking cited in §8
+(`critic_sensitivity_final_run.json`, `critic_sensitivity_repaired_run.json`,
+and the four `critic_sensitivity_*` probes).
 
 ## 4. Why the penalty is inert
 
@@ -102,8 +111,8 @@ The trainer fed the critic two different things:
 
 | side | what the critic was given |
 | :--- | :--- |
-| real | corpus delays, in **seconds**, 0.5 to 120 |
-| fake | the generator's **raw** output, 0.5 to 2.68, never mapped |
+| real | corpus delays, in **seconds**, 0.5 to 60.0 |
+| fake | the generator's **raw** output, 0.500069 to 0.539126 on the corpus, never mapped |
 
 The generator's delays are turned into seconds by the canonical mapping
 `(raw - 0.5) * 1500 + 1.5`, clipped to `[0.5, 30]`, and the scheduler
@@ -114,9 +123,10 @@ So the critic never had a timing shape to learn. It could separate real
 from generated traffic on the range alone, which is a task with an
 uninformative solution, and it did. The generator, in turn, learned to put
 its raw output just above the corpus's lower bound, which is what the
-shipped checkpoint does: its raw output has a median of 0.50121 and a
-standard deviation of 0.00234, and its mapped delays run from 1.59 to
-30.0 seconds with a median of 3.31.
+shipped checkpoint does: its raw output has a median of 0.50118 and a
+standard deviation of 0.00172, and its mapped delays run from 1.60 to
+30.0 seconds with a median of 3.28
+(`generator_path_defects.json:unit_mismatch`).
 
 The gradient penalty interpolated between the two as well, so it was
 enforcing a Lipschitz constraint on a function of two differently scaled
@@ -207,11 +217,11 @@ Measured on the repaired path (`generator_path_repair.json`):
 | :--- | ---: | ---: |
 | fresh generator's delays at the mapping's clip | 100.0% | 0.0% |
 | gradient through the mapping that is zero | 100.0% | 0.0% |
-| generator's loss over thirty epochs | −577.6 at epoch 12 | −6.0 to 45.3 |
-| gradient penalty during training | pinned at 10.00 | 1.0 to 47.2 |
-| trained critic's ‖grad_x D‖, on the corpus | 0.000013 | 0.5289 |
-| trained critic's score gap, real against generated | 0.000 | 11.3969 |
-| generator's mapped delays | median 3.31 s | median 3.39 s, p90 5.23 s, max 29.34 s |
+| generator's loss over thirty epochs (narrative run, not retained — see §3) | −577.6 at epoch 12 | −6.0 to 45.3 |
+| gradient penalty during training (narrative run, not retained — see §3) | pinned at 10.00 | 1.0 to 47.2 |
+| trained critic's ‖grad_x D‖, on the corpus | 0.000013 | 0.5199 |
+| trained critic's score gap, real against generated | 0.000 | 11.3146 |
+| generator's mapped delays | median 3.28 s | median 3.43 s, p10 2.74 s, p90 5.24 s, max 29.30 s |
 | corpus's delays, for comparison | — | median 5.49 s, p90 24.29 s, max 60.0 s |
 
 **The gradient penalty was too weak, and that was the last of it.**
@@ -244,10 +254,15 @@ the run is then stable in every epoch:
 
 | run | `lambda_gp` | collapsed epochs | ‖grad_x D‖ | score gap |
 | :--- | ---: | ---: | ---: | ---: |
-| the shipped checkpoint | 10 | 12 of 20 | 0.000013 | 0.000 |
+| the shipped checkpoint | 10 | collapsed state (point probe) | 0.000013 | 0.000 |
 | first repaired run | 10 | 12 of 30 | 1e-4 to 3.05 | 0.000 to 45.3 |
-| **the shipped run** | **100** | **0 of 30** | **0.10 to 0.77** | **3.2 to 19.6** |
+| **the shipped run** | **100** | **0 of 30** | **0.11 to 0.78** | **0.33 to 19.40** |
 | ten-epoch probe | 1000 | 0 of 10 | 0.42 to 0.92 | −3.0 to 2.1 |
+
+The shipped checkpoint was not tracked epoch by epoch; its row quotes the
+direct probe of its trained state (`critic_input_gradient_probe.json`,
+with the score constantly 0.62493 across every probe in
+`warden_diagnostic.json`).
 
 An earlier version of this document described a `lambda_gp` of 1000 as
 over-sensitive (its "input gradient settles near 9" claim), which was a
@@ -257,14 +272,14 @@ ten-epoch probe supersedes that description. The shipped weight stays
 thirty-epoch run, not because 1000 was measured failing
 (`critic_sensitivity_lambda1000.json`).
 
-The final epoch's critic has an input gradient of 0.53 and a score gap
-of 11.4 between real traffic and the generator's own traffic, so the
+The final epoch's critic has an input gradient of 0.52 and a score gap
+of 11.1 between real traffic and the generator's own traffic, so the
 generator's delays are now the product of an adversary that was
 discriminating (`critic_sensitivity_repaired_run.json`).
 
 **What the working critic produced.** The generator's delays now sit on
-the corpus's mode and not on its tail: a 10th percentile of 2.60
-seconds, a median of 3.39, and a 90th percentile of 5.23, against a
+the corpus's mode and not on its tail: a 10th percentile of 2.74
+seconds, a median of 3.43, and a 90th percentile of 5.24, against a
 corpus whose median is 5.49 and whose 90th percentile is 24.29. A
 critic that discriminates properly drives the generator toward the
 densest part of the human distribution, which is where the Wasserstein
@@ -290,12 +305,11 @@ surrogate of 0.5595 that is worse than Poisson's 0.2211.
    0.37), and its score gap — real minus fake — is negative in 22 of the
    30 sampled epochs, swinging from −16.02 to +16.69: the extra steps
    still leave the adversary scoring the generated traffic above the
-   corpus most of the time and overreaching when it does not. The
-   generator chases that adversarial signal, and the chase is the
-   oscillation: its delay median sweeps 0.88 to 10.70 seconds against the
-   corpus's 5.49, epochs 26 to 28 pinned at the fast cadence, epoch 29
-   swinging back to 5.56
-   (`storage/benchmarks/critic_sensitivity_stronger_critic.json`).
+   corpus most of the time and overreaching when it does not
+   (`storage/benchmarks/critic_sensitivity_stronger_critic.json`). The
+   artifact tracks the critic's scores, not an accompanying delay series;
+   the delay-median sweep of 0.88 to 10.70 seconds quoted in earlier
+   revisions was withdrawn as unmeasured.
 
 ## 9. What this means for the recorded C3 result
 
@@ -305,8 +319,8 @@ human traffic. The WGAN and Hybrid schedules are still machine-like
 traffic, and the measurement still says so.
 
 What changes is the traffic, and not the verdict. The WGAN and Hybrid
-rows used to record a near-constant clock at 1.59 to 30 seconds with a
-raw output spread of 0.0023, produced by a generator that had never been
+rows used to record a near-constant clock at 1.60 to 30 seconds with a
+raw output spread of 0.0017, produced by a generator that had never been
 given a usable gradient and had never faced a critic that could read
 its input. They now record a generator trained against a critic that
 discriminates in every one of its thirty epochs, whose delays sit on
