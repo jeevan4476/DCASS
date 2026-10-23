@@ -254,7 +254,7 @@ Energy distance and RBF-kernel MMD² on the pooled 5,000 vs 5,000 balanced sampl
 | Text | 0.00010 | 0.004 | 8.36e-05 | 0.004 | 0.00016 | 0.001 |
 | Audio | -0.00003 | 0.574 | -3.28e-05 | 0.642 | -0.00004 | 0.683 |
 
-**Interpretation:** Audio is indistinguishable from a uniform corpus draw; small negative values are ordinary sampling noise for an unbiased statistic. Image and text carry small but resolved shifts, about one ten-thousandth of the embedding scale, and they persist on unique media, so the signal is distributional rather than a repeat artifact. The shifts match the family-restricted selection pools by design; Section 6 of the deep explanation shows the transmitted stream is statistically consistent with the mechanism's own structural prediction, so the detectable component is the public mechanism rather than key-dependent randomness.
+**Interpretation:** Audio is indistinguishable from a uniform corpus draw; small negative values are ordinary sampling noise for an unbiased statistic. Image and text carry small but resolved shifts, about one ten-thousandth of the embedding scale, and they persist on unique media, so the signal is distributional rather than a repeat artifact. Matching those shifts to the family-restricted selection pools is a design-level attribution — no artifact records the two-family schedule's pointwise predicted deviations — while the artifact-backed reading is the aggregate mechanism null: Section 6 of the deep explanation shows the transmitted stream is statistically consistent with the mechanism's own structural prediction, so the detectable component is the public mechanism rather than key-dependent randomness.
 
 #### 4.3.2 Wasserstein-1 on PC1 (Secondary)
 
@@ -276,7 +276,7 @@ Each modality screens all 512 embedding dimensions, 1,536 tests in total, with B
 | Text | 512 | 0.0163 | 0.0155 | 0.0363 | 0 | 0.148 | 0.0388 |
 | Audio | 512 | 0.0159 | 0.0155 | 0.0362 | 0 | 0.092 | 0.0378 |
 
-**Interpretation:** Zero coordinates reject after multiplicity control anywhere. The per-coordinate null center at these sample sizes is 0.0155 and the observed means land directly on it; the single largest gap, 0.0363, is a maximum over 512 correlated coordinates whose permutation null has a 95th percentile near 0.039, so it is not evidence of a coordinate shift.
+**Interpretation:** Zero coordinates reject after multiplicity control anywhere. The per-coordinate null center implied by these sample sizes is 0.0155 — a derived value from the asymptotic KS median $0.87/\sqrt{n_1 n_2/(n_1+n_2)}$, not a stored null — and the observed means land directly on it; the single largest gap, 0.0363, is a maximum over 512 correlated coordinates whose permutation null has a 95th percentile near 0.039, so it is not evidence of a coordinate shift.
 
 #### 4.3.4 Voronoi Cluster Entropy and Repeats
 
