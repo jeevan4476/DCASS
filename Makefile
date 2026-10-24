@@ -19,7 +19,7 @@
 # Load local overrides from .env (gitignored; template in .env.example) and
 # pass the DCASS_* / NEXT_PUBLIC_* settings through to child processes.
 -include .env
-export DCASS_DEVICE DCASS_CORS_ORIGINS DCASS_API_TOKEN
+export DCASS_CORS_ORIGINS DCASS_API_TOKEN
 export DCASS_CONTEXT_SECRET DCASS_JWT_SECRET DCASS_ENV DCASS_GDRIVE_BASE_URL
 export NEXT_PUBLIC_API_URL
 

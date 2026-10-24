@@ -956,8 +956,7 @@ stateDiagram-v2
 - **YAML loading** with `yaml.safe_load`
 - **Dot-notation access**: `config.get("embeddings.text.model")`
 - **Path resolution**: `config.get_path("paths.data_dir")` → absolute Path
-- **Auto device**: `config.get_device()` → resolves "auto" to "cuda"/"cpu"
-- **Environment overrides**: `DCASS_DEVICE`, `DCASS_LOG_LEVEL`
+- **Auto device**: `config.get_device()` → resolves "auto" to "cuda"/"cpu" (device selection follows torch's own defaults; no environment override is read)
 
 ---
 

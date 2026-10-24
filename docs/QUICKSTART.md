@@ -43,7 +43,6 @@ Key variables (all optional — sensible defaults exist):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DCASS_DEVICE` | `cpu` | `cuda` if you have a GPU |
 | `DCASS_CORS_ORIGINS` | `http://localhost:3000` | Frontend origin for CORS |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Backend URL the frontend calls |
 | `DCASS_JWT_SECRET` | fixed dev constant if unset | The dev fallback is the fixed constant `dcass-dev-secret-DO-NOT-USE-IN-PRODUCTION` (not random). Set it explicitly for persistent sessions across restarts; with `DCASS_ENV=production` and no secret set, the backend refuses to start signing tokens |
