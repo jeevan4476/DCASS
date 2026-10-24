@@ -116,8 +116,7 @@ $$H(C) = -\sum_{k=0}^{K-1} p_k \log_2(p_k)$$
 
 ## 4. Multi-Modal Balance Verification
 
-Under the Tier-1 enhancement in [`src/engine/dssc_encoder.py`](file:///home/img1/projects/DCASS/src/engine/dssc_encoder.py), DSSC enforces deterministic round-robin modality cycling across chunks:
-$$\text{modality}_i = \text{MODALITY\_SEQUENCE}[i \pmod 3] \quad (\text{Text} \to \text{Image} \to \text{Audio})$$
+Under the Tier-1 enhancement in [`src/engine/dssc_encoder.py`](file:///home/img1/projects/DCASS/src/engine/dssc_encoder.py), DSSC assigns each chunk its modality by deterministic round-robin over the availability-filtered modality list (`available_modalities[chunk_idx % len(available_modalities)]`, text-first order), then picks its semantic family HMAC-keyed per chunk (`hmac(session_key, f"family:{chunk_idx}")`, family index = digest mod the modality's native families) — family choice never derives from message text.
 
 The campaign transmits 500 messages across ten draws, 27,850 carrier slots, and measures the empirical modality proportions:
 
