@@ -33,8 +33,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden
+from src.stealth.gan.trainer import apply_critic_config
 from src.stealth.rl.agent import PPOAgent, PPOConfig
 from src.stealth.rl.environment import StealthEnvironment
 
@@ -42,13 +44,41 @@ from src.stealth.rl.environment import StealthEnvironment
 def load_frozen_warden(
     checkpoint_path: Path, num_channels: int, device: str
 ) -> DeepPacketInspectionWarden:
-    """Load the Phase-A Warden and freeze it for use as a reward model."""
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    """Load the reward model and freeze it for use in the reward function.
+
+    Two checkpoint layouts are accepted:
+
+    * a Phase-A GAN checkpoint, which carries the WGAN-GP critic under
+      ``warden_state``;
+    * a trained traffic detector, which carries its weights under
+      ``state_dict``.
+
+    The distinction matters. The WGAN-GP critic trained alongside the
+    generator collapsed to a constant-output function: it returns
+    ``bot_probability = 0.0`` for every input, so the stealth penalty in
+    the reward was identically zero and the agent was trained with no
+    stealth signal at all. The trained detector returns a real calibrated
+    probability, which is what the reward function needs. See
+    ``docs/benchmarking/C3_WARDEN_DIAGNOSTIC.md``.
+    """
+    ckpt = load_trained_checkpoint(checkpoint_path, map_location=device,)
     config = ckpt.get("config")
     hidden_dim = getattr(config, "hidden_dim", 256) if config is not None and not isinstance(config, dict) else (config or {}).get("hidden_dim", 256)
 
     warden = DeepPacketInspectionWarden(num_channels=num_channels, hidden_dim=hidden_dim)
-    warden.load_state_dict(ckpt["warden_state"])
+    if "warden_state" in ckpt:
+        warden.load_state_dict(ckpt["warden_state"])
+    elif "state_dict" in ckpt:
+        warden.load_state_dict(ckpt["state_dict"])
+    else:
+        raise KeyError(
+            f"{checkpoint_path} has neither 'warden_state' nor 'state_dict'; "
+            "it is not a usable reward model"
+        )
+    # The critic's scoring configuration is part of the model: restore it
+    # (a bounded-critic checkpoint loaded unbounded scores differently
+    # than the model the RL agent was trained against).
+    apply_critic_config(warden, ckpt)
     warden.to(device)
     warden.eval()
     for p in warden.parameters():

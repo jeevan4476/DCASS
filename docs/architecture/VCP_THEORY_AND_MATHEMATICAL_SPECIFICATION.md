@@ -7,7 +7,7 @@
 
 **Voronoi Constellation Partitioning (VCP)** is the foundational coding-theoretic bridge in the DCASS (Dynamic Context-Aware Semantic Steganography) architecture.
 
-It solves the fundamental open challenge in semantic communication: **How to map discrete, algebraic digital data (bytes $0\text{--}255$) into high-dimensional, continuous neural embedding spaces (512-D CLIP/CLAP) without modifying the underlying media, while guaranteeing 100% bit-exact recovery.**
+It solves the fundamental open challenge in semantic communication: **How to map discrete, algebraic digital data (bytes $0\text{--}255$) into high-dimensional, continuous neural embedding spaces (512-D CLIP/CLAP) without modifying the underlying media, while recovering the payload bit-exactly under the recorded conditions.** The recorded recovery is 100% with no carrier substitution or dropout; under carrier substitution the recovery follows the algebraic limit, and under carrier dropout it fails, because the wire format carries no per-carrier sequence markers. See `docs/benchmarking/CLAIM_LEDGER.md` row `C4-BER-05`.
 
 ```
                         VCP THEORETICAL CONSTELLATION BRIDGE
@@ -66,7 +66,7 @@ Maximizing cosine similarity is mathematically identical to minimizing Euclidean
 ---
 
 #### B. Spherical K-Means Codebook Generation
-To construct the 256-symbol constellation alphabet, we execute **Spherical K-Means Clustering** over the 256,366 multi-modal embeddings:
+To construct the 256-symbol constellation alphabet, we execute **Spherical K-Means Clustering** over the 245,279 multi-modal embeddings:
 
 1. **Objective Function:** Minimize the cosine dispersion (maximize total inner product to assigned centroids):
    $$\mathcal{J}(\mathcal{C}, \mathcal{P}) = \sum_{c=0}^{255} \sum_{\mathbf{v} \in \mathcal{P}_c} \langle \mathbf{v}, \boldsymbol{\mu}_c \rangle \quad \text{subject to } \|\boldsymbol{\mu}_c\|_2 = 1, \quad \forall c \in [0, 255]$$
@@ -111,14 +111,14 @@ $$\text{Cell ID}(m) = \arg\max_{c \in [0, 255]} \langle \mathbf{v}_m, \boldsymbo
 
 ### 3. Multi-Modal Unified Corpus & FAISS Indexing
 
-The multi-modal corpus comprises **256,366 real public carriers**:
+The multi-modal corpus comprises **245,279 real public carriers**:
 * **Text Modality (200,000 items):** Wikipedia, Reddit, OpenSubtitles, Project Gutenberg encoded via CLIP ViT-B/32 Text Encoder.
-* **Image Modality (42,870 items):** Flickr8k, Flickr30k, MS-COCO, LAION-5B subset encoded via CLIP ViT-B/32 Vision Encoder.
-* **Audio Modality (13,496 items):** LibriSpeech, VoxPopuli speech and acoustic clips encoded via CLAP HTSAT-unfused Audio Encoder.
+* **Image Modality (31,783 items):** Flickr8k, Flickr30k, MS-COCO, LAION-5B subset encoded via CLIP ViT-B/32 Vision Encoder.
+* **Audio Modality (13,496 items):** `libretta` speech and acoustic clips encoded via CLAP HTSAT-unfused Audio Encoder.
 
 #### Vector Search Acceleration via FAISS (`IndexFlatIP`)
-* All 256,366 512-D vectors are stored in a FAISS exact Inner Product index (`IndexFlatIP`).
-* Retrieval latency for finding the nearest carriers within Voronoi cell $\mathcal{V}_c$ is **$< 1.5\text{ ms}$** on standard CPU/GPU hardware with **100% recall**.
+* All 245,279 512-D vectors are stored in a FAISS exact Inner Product index (`IndexFlatIP`).
+* Retrieval for finding the nearest carriers within Voronoi cell $\mathcal{V}_c$ is the FAISS search stage, which the recorded Component 5 run measures at **107.1 ms at a 32 byte payload and 193.3 ms at 512 bytes** on this machine. The shipped indices are exact CPU `IndexFlatIP` indexes, so this is a brute-force scan over the corpus, and the stage attribution is by subtraction rather than a direct FAISS timer.
 * The pre-computed cell assignment manifest is compiled into `codebook.json` (mapping `media_id -> centroid_id (0-255)`), enabling $O(1)$ constant-time receiver decoding.
 
 ---
@@ -143,7 +143,7 @@ The multi-modal corpus comprises **256,366 real public carriers**:
        2. Retrieve candidate media items belonging to V_{b_i} filtered by allowed modalities.
    │
    ▼
- Step 3: Decoy Cover-Story Reranking (Zero Topic Leakage)
+ Step 3: Decoy Cover-Story Reranking (reduces topic leakage)
    • Compute query embedding: q_decoy = Encode(Q_decoy) ∈ S^511
    • For all candidate items m ∈ V_{b_i}:
        Score(m) = <v_m, q_decoy>
@@ -183,7 +183,7 @@ When receiver Bob receives the sequence of media IDs $\mathcal{M} = [m_0, m_1, \
    • Strip [0x01, len] header and CRC checksum.
    │
    ▼
- Output: 100% Bit-Exact Plaintext: "Sample message" (0.0% Bit Error Rate)
+ Output: 100% clean-channel bit-exact plaintext: "Sample message" (CRC-verified)
 ```
 
 ---
@@ -197,12 +197,13 @@ When receiver Bob receives the sequence of media IDs $\mathcal{M} = [m_0, m_1, \
   2. By definition of the Voronoi cell, $\arg\max_c \langle \mathbf{v}_m, \boldsymbol{\mu}_c \rangle = b$.
   3. The decoder computes $\hat{b} = \arg\max_c \langle \mathbf{v}_m, \boldsymbol{\mu}_c \rangle = b$.
   4. Since $\hat{b} = b$ for all $i \in [0, 26]$, the received polynomial equals the transmitted codeword $R(x) = C(x)$.
-  5. Reed-Solomon syndrome check returns $S_j = 0$, and CRC-16 check passes, restoring $M$ with zero bit errors. $\blacksquare$
+  5. Reed-Solomon syndrome check returns $S_j = 0$, and CRC-16 check passes, restoring $M$ with zero bit errors on a clean channel. Beyond the $t=4$ correction budget, and under carrier dropout, the decoder reports failure. $\blacksquare$
 
 ---
 
-#### Theorem 2: Information-Theoretic Cover Privacy ($I(S; M) = 0$)
-* **Statement:** The visible content of the selected media carriers reveals zero mutual information about the secret message text.
+#### Theorem 2: Cover Privacy ($I(S; M) = 0$, conditional on the key)
+* **Statement:** Conditional on a secret session key and on the decoy query being chosen independently of the message, the visible content of the selected media carriers reveals zero mutual information about the secret message text.
+* **Scope:** This is a theoretical argument, not a measured result. It assumes the session key is secret and the keyed permutation is indistinguishable from random, which no recorded artifact verifies. It also covers carrier choice only; the selection distribution that a frequency-counting warden could exploit is measured in Component 2.
 * **Proof:**
   1. Within any Voronoi cell $\mathcal{V}_c$, carrier ranking is governed solely by the decoy query $Q_{\text{decoy}}$:
      $$\text{Carrier}_i = \arg\max_{m \in \mathcal{V}_{c_i}} \langle \mathbf{v}_m, \mathbf{q}_{\text{decoy}} \rangle$$
@@ -220,7 +221,7 @@ When receiver Bob receives the sequence of media IDs $\mathcal{M} = [m_0, m_1, \
 |---|---|---|---|
 | **Mapping Mechanism** | Continuous Cosine Search | **256 Spherical Voronoi Cells** | Candidate Subspace Permutations |
 | **Information Density** | Uncalibrated (Fuzzy) | **8.0 bits / carrier (1 Byte)** | **~15.0 bits / carrier (Multi-bit)** |
-| **Recovery Accuracy** | ~81.6% (Approximate) | **100% Bit-Exact (0% BER)** | **100% Bit-Exact (0% BER)** |
+| **Recovery Accuracy** | ~81.6% (Approximate) | **100% clean-channel bit-exact (CRC-verified)** | **100% clean-channel bit-exact; 0% exact under $\ge2\%$ dropout** |
 | **Carriers for "Sample message"**| ~15 items (Paraphrase) | **28 items (Exact + ECC)** | **14 items (50.0% Reduction)** |
 | **Topic Leakage** | Severe ($I(S;M) \gg 0$) | **Zero ($I(S;M) = 0$)** | **Zero ($I(S;M) = 0$)** |
 | **Mathematical Reliability** | Heuristic / Lossy | **Algebraic GF(2^8) Proof** | **Algebraic GF(2^8) Proof** |

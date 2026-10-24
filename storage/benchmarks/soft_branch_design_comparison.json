@@ -1,0 +1,38 @@
+{
+  "schema": "soft-branch-design-comparison-v1",
+  "note": "Each candidate soft-branch score is thresholded at the smallest value whose false-positive rate on held-out human traffic is at or below 5 percent, and then evaluated on synthetic bot traffic and on the two DCASS schedules. Design A, the detector alone, is the one the benchmark uses: the KS term's null against the human reference is about 0.12 for a burst and 0.28 for a whole session, so adding it to a calibrated detector dilutes the detector.",
+  "human_populations": {
+    "corpus_held_out_sessions": 300,
+    "surrogate_bursts": 300
+  },
+  "designs": {
+    "A_detector_only": {
+      "threshold": 0.0026902133133262385,
+      "human_fpr_pct": 5.0,
+      "synthetic_bot_flagged_pct": 29.333333333333332,
+      "dcass_wgan_flagged_pct": 100.0,
+      "dcass_hybrid_flagged_pct": 100.0
+    },
+    "B_burst_null": {
+      "threshold": 0.2520202621242692,
+      "human_fpr_pct": 5.0,
+      "synthetic_bot_flagged_pct": 33.0,
+      "dcass_wgan_flagged_pct": 0.0,
+      "dcass_hybrid_flagged_pct": 0.0
+    },
+    "C_session_null": {
+      "threshold": 0.2076004586935987,
+      "human_fpr_pct": 5.0,
+      "synthetic_bot_flagged_pct": 33.0,
+      "dcass_wgan_flagged_pct": 0.0,
+      "dcass_hybrid_flagged_pct": 0.0
+    },
+    "D_raw_ks": {
+      "threshold": 0.27666881104794827,
+      "human_fpr_pct": 5.0,
+      "synthetic_bot_flagged_pct": 33.33333333333333,
+      "dcass_wgan_flagged_pct": 0.0,
+      "dcass_hybrid_flagged_pct": 0.0
+    }
+  }
+}

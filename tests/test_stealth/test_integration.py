@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 from torch.utils.data import DataLoader
 
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden
@@ -54,6 +55,8 @@ def _train_tiny_gan(tmp_path: Path) -> Path:
             "warden_state": trainer.warden.state_dict(),
             "config": trainer.config,
             "metrics_history": trainer.metrics_history,
+            "critic_bounded": trainer.warden.bounded_critic,
+            "critic_score_bound": trainer.warden.critic_score_bound,
         },
         gan_checkpoint,
     )
@@ -61,7 +64,7 @@ def _train_tiny_gan(tmp_path: Path) -> Path:
 
 
 def _train_tiny_rl(gan_checkpoint: Path, tmp_path: Path) -> Path:
-    ckpt = torch.load(gan_checkpoint, map_location="cpu", weights_only=False)
+    ckpt = load_trained_checkpoint(gan_checkpoint, map_location="cpu",)
     warden = DeepPacketInspectionWarden(num_channels=3, hidden_dim=32)
     warden.load_state_dict(ckpt["warden_state"])
     warden.eval()

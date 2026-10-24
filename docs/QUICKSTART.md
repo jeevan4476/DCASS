@@ -18,9 +18,10 @@ Everything you need to run the full system: backend API, frontend UI, GAN+RL tra
 # From the project root
 cd DCASS
 
-# Create a virtual environment (skip if you already have one)
-python -m venv venv
-source venv/bin/activate
+# Create a virtual environment (the repository's own tooling uses .venv;
+# skip if you already have one)
+python -m venv .venv
+source .venv/bin/activate
 
 # Install all Python dependencies
 pip install -r requirements.txt
@@ -42,10 +43,9 @@ Key variables (all optional — sensible defaults exist):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DCASS_DEVICE` | `cpu` | `cuda` if you have a GPU |
 | `DCASS_CORS_ORIGINS` | `http://localhost:3000` | Frontend origin for CORS |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Backend URL the frontend calls |
-| `DCASS_JWT_SECRET` | random at startup | Set a fixed value for persistent sessions |
+| `DCASS_JWT_SECRET` | fixed dev constant if unset | The dev fallback is the fixed constant `dcass-dev-secret-DO-NOT-USE-IN-PRODUCTION` (not random). Set it explicitly for persistent sessions across restarts; with `DCASS_ENV=production` and no secret set, the backend refuses to start signing tokens |
 
 ---
 
@@ -58,7 +58,7 @@ uvicorn src.api.server:app --reload --port 8000
 
 On first start the backend will:
 - Create `storage/auth.db` (SQLite) with the users table
-- Seed three demo users: `alice/alice1234`, `bob/bob1234`, `charlie/charlie1234`
+- Seed three demo users: `alice/alice12345`, `bob/bob12345`, `charlie/charlie12345`
 - Load the SemanticEngine (FAISS indices, codebook, etc.)
 
 Verify it's running:
@@ -85,10 +85,10 @@ Open **http://localhost:3000** in a browser.
 ## 5. Demo walkthrough (UI)
 
 1. Go to http://localhost:3000 → click **Login**
-2. Sign in as `alice` / `alice1234`
+2. Sign in as `alice` / `alice12345`
 3. Click **Send** → pick `bob` as recipient → type a message → click **Send**
 4. Open a second browser / incognito window → http://localhost:3000/login
-5. Sign in as `bob` / `bob1234`
+5. Sign in as `bob` / `bob12345`
 6. Click **Inbox** → you'll see alice's message → click **Decode** to reveal the plaintext
 
 ---
@@ -99,7 +99,7 @@ Open **http://localhost:3000** in a browser.
 # Login as alice
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"alice","password":"alice1234"}' | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  -d '{"username":"alice","password":"alice12345"}' | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 echo "Token: $TOKEN"
 
@@ -118,7 +118,7 @@ curl -s -X POST http://localhost:8000/api/transmit \
 # Login as bob and check inbox
 BOB_TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"bob","password":"bob1234"}' | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  -d '{"username":"bob","password":"bob12345"}' | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 curl -s http://localhost:8000/api/inbox \
   -H "Authorization: Bearer $BOB_TOKEN"
@@ -136,7 +136,7 @@ python scripts/runtime/run_pipeline.py \
   --sender alice \
   --recipient bob \
   --mode auto \
-  --speed 100
+  --speed-multiplier 100
 ```
 
 Or from Python:
@@ -168,7 +168,12 @@ python scripts/stealth/train_gan.py \
   --out storage/models/gan_generator.pt
 ```
 
-Falls back to synthetic data if `data/human_traffic.json` doesn't exist.
+Falls back to synthetic data if the default `--data`
+(`storage/data/traffic/human_traffic.json`) is missing. To train on generated
+data instead, create it with
+`python scripts/stealth/generate_traffic_dataset.py` and pass the file via
+`--data` (generated corpora are synthetic, not recorded browsing — put them
+anywhere except `storage/data/traffic/`, which holds the recorded corpus).
 
 ### 8b. Evaluate the Warden
 
@@ -259,13 +264,13 @@ docker compose down -v
 src/
   api/
     server.py          # FastAPI backend (auth, encode, transmit, inbox)
-    auth.py            # SQLite + bcrypt + JWT auth
+    auth.py            # SQLite + sha256_crypt + JWT auth
   stealth/
     stealth_scheduler.py   # Scheduler: auto (RL → GAN → static)
     pipeline.py            # End-to-end round-trip module
     gan/trainer.py         # WGAN-GP trainer
     rl/environment.py      # PPO environment
-    rl/ppo_agent.py        # PPO agent
+    rl/agent.py            # PPO agent
   engine/
     semantic_engine.py     # Encode/decode engine (FAISS + codebook)
 

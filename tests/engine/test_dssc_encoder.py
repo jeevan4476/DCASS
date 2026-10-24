@@ -85,12 +85,59 @@ def test_encoder_vcp_mapper_init_default():
 
 
 def test_family_selection_not_message_derived():
-    """Encoder must not use message keywords to select carrier family."""
-    import inspect
+    """
+    Behavioral: carrier family selection must derive from the session key
+    and the carrier index, never from message content.
+
+    Two different messages encoded with the SAME session key must produce
+    the same family stream (same key + same position => same HMAC family);
+    the same message under a DIFFERENT key must not. A message-keyword
+    selector would fail the first check, and a constant selector would fail
+    the variation check.
+    """
     from src.engine.dssc_encoder import DSSCEncoder
-    source = inspect.getsource(DSSCEncoder.encode)
-    assert "match_families(chunk.text)" not in source, (
-        "DSSCEncoder.encode() must not call match_families(chunk.text) — "
-        "this leaks message topic. Use HMAC-keyed family selection."
+
+    media_ids = [f"item_{i:02d}" for i in range(24)]
+    cluster_map = {mid: 5 for mid in media_ids}
+
+    index = _make_index(media_ids)
+    vcp_mapper = _make_vcp_mapper(cluster_map)
+
+    from src.engine.dssc_state_space import DEFAULT_SEMANTIC_FAMILIES, SemanticFamilyManager
+    # Both image-native families so the HMAC stream can really alternate.
+    family_manager = SemanticFamilyManager(
+        families=[DEFAULT_SEMANTIC_FAMILIES[0], DEFAULT_SEMANTIC_FAMILIES[1]]
+    )
+    enc = DSSCEncoder(index=index, vcp_mapper=vcp_mapper, family_manager=family_manager)
+
+    key_a = b"session-key-aaaa"
+    key_b = b"session-key-bbbb"
+    msg_outdoor = "forest river outdoor camping trip with friends"
+    msg_tech = "server database bitcoin mining technology update"
+
+    def families(message, key):
+        result = enc.encode(message, session_key=key)
+        return [c.family for c in result.encoded_carriers]
+
+    fam_outdoor_a = families(msg_outdoor, key_a)
+    fam_tech_a = families(msg_tech, key_a)
+    fam_outdoor_b = families(msg_outdoor, key_b)
+
+    assert len(fam_outdoor_a) >= 10, "need enough carriers for a meaningful check"
+    assert len(set(fam_outdoor_a)) > 1, (
+        "HMAC family selection should exercise both admissible families; "
+        "a constant family stream means selection is not key-derived"
+    )
+
+    k = min(len(fam_outdoor_a), len(fam_tech_a))
+    assert fam_outdoor_a[:k] == fam_tech_a[:k], (
+        "family stream changed with message content - selection must be "
+        "HMAC-keyed on (session_key, carrier index), not message-derived"
+    )
+
+    k2 = min(len(fam_outdoor_a), len(fam_outdoor_b))
+    assert fam_outdoor_a[:k2] != fam_outdoor_b[:k2], (
+        "family stream did not change with the session key - selection "
+        "must be key-derived"
     )
 

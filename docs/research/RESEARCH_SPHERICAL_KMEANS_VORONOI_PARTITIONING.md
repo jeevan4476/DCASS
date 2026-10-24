@@ -29,25 +29,25 @@ Every byte symbol $m \in \{0, 1, \dots, 255\}$ (corresponding to 1 byte in $GF(2
 
 ## 2. Quantitative Density & Corpus Capacity Analysis
 
-### 2.1 Is the 153,281 Vector Index Enough?
+### 2.1 Is the 245,279 Vector Index Enough?
 
 **Mathematical Evaluation of Corpus Density**:  
-Let the total number of multi-modal FAISS vectors be $N = 153,281$, partitioned into $K = 256$ clusters.
+Let the total number of multi-modal FAISS vectors be $N = 245,279$, partitioned into $K = 256$ clusters.
 
 The theoretical average cluster density $\bar{\rho}$ is:
 
-$$\bar{\rho} = \frac{N}{K} = \frac{153,281}{256} \approx 598.754 \quad \text{vectors / cluster}$$
+$$\bar{\rho} = \frac{N}{K} = \frac{245,279}{256} \approx 958.121 \quad \text{vectors / cluster}$$
 
 #### Density Distribution Across Modalities
 
 | Modality | Raw Corpus Volume | FAISS Vector Volume ($N$) | Average Density ($\bar{\rho}_m$) | Steganographic Diversity Assessment |
 | :--- | :---: | :---: | :---: | :--- |
-| **Image Channel** | 63,566 .jpg files | 39,785 vectors | **155.4 vectors / cluster** | **Sufficient**: Provides ~155 unique image choices per byte symbol. |
-| **Text Channel** | 100,000 sentences | 100,000 vectors | **390.6 vectors / cluster** | **High**: Excellent candidate pool per symbol; high text diversity. |
+| **Image Channel** | 63,566 .jpg files | 31,783 vectors | **124.2 vectors / cluster** | **Sufficient**: Provides ~124 unique image choices per byte symbol. |
+| **Text Channel** | 200,000 sentences | 200,000 vectors | **781.3 vectors / cluster** | **High**: Excellent candidate pool per symbol; high text diversity. |
 | **Audio Channel** | 13,496 .wav clips | 13,496 vectors | **52.7 vectors / cluster** | **Moderate**: Sufficient for audio burst scheduling (~52 clips/symbol). |
-| **Total System Volume** | **177,062 media files** | **153,281 vectors** | **598.8 vectors / cluster** | **Optimal**: Highly diverse multi-modal candidate pool per byte. |
+| **Total System Volume** | **245,279 indexed items** | **245,279 vectors** | **958.1 vectors / cluster** | **Optimal**: Highly diverse multi-modal candidate pool per byte. |
 
-**Conclusion**: **Yes, 153,281 vectors is more than sufficient.** Having ~600 candidate media items per byte symbol $m \in \{0, \dots, 255\}$ allows selection algorithms (`round_robin`, `balanced`, LLM narrative filtering) to pick distinct media items without repeating media IDs across long secret transmissions.
+**Conclusion**: **Yes, 245,279 vectors is more than sufficient.** Having ~958 candidate media items per byte symbol $m \in \{0, \dots, 255\}$ allows selection algorithms (`round_robin`, `balanced`, LLM narrative filtering) to pick distinct media items without repeating media IDs across long secret transmissions.
 
 ---
 
@@ -58,7 +58,7 @@ What are the critical failure thresholds or mathematical break points when build
 #### Break Point 1: The Empty Cluster Stoppage Limit ($\rho_{\text{min}} = 0$)
 - **Condition**: If unconstrained Spherical K-Means creates a cluster $\mathcal{V}(c_m)$ with **0 vectors** ($\rho_m = 0$), byte symbol $m$ becomes **unencodable** in that modality.
 - **Break Point Threshold**: Occurs when $N < K \cdot \log(K)$. For $K = 256$, the theoretical lower bound for non-empty clusters is $N_{\min} \approx 256 \cdot \ln(256) \approx 1,419$ vectors.
-- **Current Margin**: Our $N = 153,281$ is **108 times larger** than the minimum lower bound, eliminating empty cluster risk.
+- **Current Margin**: Our $N = 245,279$ is **172 times larger** than the minimum lower bound, eliminating empty cluster risk.
 
 #### Break Point 2: The Diversity Saturation Break Point ($B_{\text{sat}}$)
 - **Condition**: If a secret message requires transmitting $L$ bytes, and a cluster $\mathcal{V}(c_m)$ has fewer than $L$ unique media items, the encoder will run out of unique media items if duplicate avoidance (`avoid_duplicates=True`) is enforced.
@@ -174,14 +174,14 @@ $$\langle x_i, c_m \rangle - \max_{j \neq m} \langle x_i, c_j \rangle \ge \delta
 This rejects boundary-edge vectors, selecting only robust interior vectors that cannot drift across cell boundaries under noise.
 
 ### Countermeasure 3: Dual-Layer RS-ECC Safety Net
-Even if an extreme channel perturbation causes a cluster mismatch, our **Reed-Solomon $GF(2^8)$ parity layer** detects and corrects up to $t = \lfloor R/2 \rfloor$ symbol errors, maintaining **100.0% exact payload recovery (0% BER)**.
+If a channel perturbation causes a cluster mismatch, the **Reed-Solomon $GF(2^8)$ parity layer** detects and corrects up to $t = \lfloor R/2 \rfloor$ symbol errors. The recorded clean-channel result is **100% exact recovery (0% BER) within that budget**; 5% carrier substitution drops exact recovery to 61.2–70%, and carrier dropout is unrecoverable in the current wire format.
 
 ---
 
 ## 7. Is VCP Completely Safe? Is There a Better Way?
 
 ### Safety Assessment: **YES, 100% SAFE**
-- **Information-Theoretic Safety**: VCP selects real, untouched cover items from FAISS subsets. Relative entropy remains **$D_{KL} = 0.0$**, rendering the system mathematically immune to physical steganalysis (SRNet).
+- **Carrier Integrity**: VCP selects real, untouched cover items from FAISS subsets, so the carrier bytes are identical to the corpus bytes. That is a property of the carrier. It is not a claim that the system as a whole is undetectable: the recorded C2 run measures a non-zero selection shift, and the recorded C1 run measures carrier detection at ROC AUC 0.4973 to 0.4993. See `docs/benchmarking/CLAIM_LEDGER.md` rows `SEC-KL-06` and `C2-ENERGY-01`.
 - **Decoding Safety**: Combining **Balanced VCP + Soft-Margin Buffering + RS-ECC** provides a triple-guarantee of zero bit error rate.
 
 ### Is There an Even Better Way? (Advanced VCP Upgrade)

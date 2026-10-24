@@ -1,17 +1,16 @@
-% Component 2: Semantic Distribution Benchmark Results
-\begin{table}[htbp]
+\begin{table*}[t]
 \centering
-\caption{Distributional Drift Metrics for DCASS Carrier Selection}
-\label{tab:distributional_drift}
-\begin{tabular}{lccccc}
+\caption{Component 2 semantic distribution check (schema v2). Energy distance and MMD$^2$ are permutation calibrated against a disjoint reference sample; $W_1$ is a one-dimensional PC1 projection, not a multivariate transport cost. KS rejects count Benjamini--Hochberg discoveries over 512 dimensions; FW $p$ is the family-wise permutation p of the maximum ECDF-gap statistic. $H_{\mathrm{uniq}}$ is cluster entropy on unique media. (n = 3 modalities x 10 draws x 50 messages per draw; scope = per-modality distributional drift against a disjoint corpus reference; not a detector evaluation; commit = 536808a8f8c1046e3802cf9ef094ef54d93a9908)}
+\label{tab:component2-distributional-drift}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccccc}
 \toprule
-Modality & $W_1$ Distance & KS Stat (mean) & KS $p$-value & Cluster Entropy & Carrier Proportion \\
+Modality & Energy $d$ [$p$] & MMD$^2$ [$p$] & $W_1$ PC1 & KS BH & FW $p$ & $H_{\mathrm{uniq}}$ & Share \\
 \midrule
-Image & 0.0064 & 0.0302 & 0.5266 & 6.2540 bits & 33.3\% \\
-Text & 0.0053 & 0.0306 & 0.5085 & 5.9811 bits & 34.1\% \\
-Audio & 0.0066 & 0.0286 & 0.5882 & 6.2813 bits & 32.6\% \\
-\midrule
-\textbf{Combined} & -- & -- & -- & \textbf{7.7546 bits} & 100.0\% \\
+Image & 0.00011 [0.009] & 6.10e-05 [0.012] & 0.00810 & 0/512 & 0.315 & 6.320 & 33.21\% \\
+Text & 0.00010 [0.004] & 8.36e-05 [0.004] & 0.00612 & 0/512 & 0.148 & 6.037 & 34.11\% \\
+Audio & -0.00003 [0.574] & -3.28e-05 [0.642] & 0.00278 & 0/512 & 0.092 & 6.320 & 32.68\% \\
 \bottomrule
-\end{tabular}
-\end{table}
+\end{tabular}}
+\end{table*}

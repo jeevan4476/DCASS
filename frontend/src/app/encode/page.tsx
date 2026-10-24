@@ -401,7 +401,7 @@ export default function EncodePage() {
                     <StatCard label="Mode" value={result.mode.toUpperCase()} variant="info" />
                     <StatCard label="Elapsed" value={`${result.elapsed_ms.toFixed(1)} ms`} variant="primary" />
                     <StatCard label="Carriers" value={result.media_ids.length} variant="success" />
-                    <StatCard label="ECC" value="Active (0% BER)" variant="success" />
+                    <StatCard label="ECC" value="Active (CRC-verified)" variant="success" />
                     {result.bits_per_carrier && result.mode === 'dssc' && (
                       <StatCard label="Density" value={`${result.bits_per_carrier} bits/carrier`} variant="warning" />
                     )}

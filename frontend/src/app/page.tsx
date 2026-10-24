@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Send, Mail, BarChart2, Terminal, Shield, Network, Sparkles, Zap, Brain, Eye } from 'lucide-react';
+import { Send, Mail, BarChart2, Terminal, Shield, Network, Sparkles, Zap, Brain, Eye, FlaskConical } from 'lucide-react';
 import { Navigation, Card, Badge } from '@/components';
 
 const features = [
@@ -35,6 +35,7 @@ const quickActions = [
   { href: '/encode', label: 'Encode', description: 'Generate media sequences standalone', icon: Terminal, color: 'text-warning' },
   { href: '/decode', label: 'Decode', description: 'Reconstruct meaning from media IDs', icon: Shield, color: 'text-purple-400' },
   { href: '/wire', label: 'Wire', description: 'Real-time transmission telemetry', icon: Network, color: 'text-primary' },
+  { href: '/showcase', label: 'Showcase', description: 'Live laboratory and integrity proofs', icon: FlaskConical, color: 'text-success' },
 ];
 
 export default function Home() {
@@ -198,7 +199,7 @@ export default function Home() {
                   className="p-4"
                 >
                   <p className="stat-value text-warning">0%</p>
-                  <p className="stat-label mt-1">Bit Error Rate</p>
+                  <p className="stat-label mt-1">Clean-channel BER</p>
                 </motion.div>
               </div>
             </Card>

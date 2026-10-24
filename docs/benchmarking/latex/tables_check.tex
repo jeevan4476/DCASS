@@ -1,0 +1,41 @@
+% Compile harness for the generated DCASS benchmark tables.
+% Each table is \input in its own standalone document so a failure in one
+% table is attributable to that table alone.
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+
+\begin{document}
+
+\section*{Component 1: Media-Layer Steganalysis}
+\input{storage/benchmarks/tables/table1_steganalysis.tex}
+
+\section*{Component 2: Distributional Drift}
+\input{storage/benchmarks/tables/table2_distributional_drift.tex}
+
+\section*{Component 2b: Cluster Uniformity}
+\input{storage/benchmarks/tables/table2b_cluster_uniformity.tex}
+
+\section*{Component 3: Traffic Timing}
+\input{storage/benchmarks/tables/table3_traffic_evasion.tex}
+
+\section*{Component 3b: Warden Score Quantiles}
+\input{storage/benchmarks/tables/table3b_warden_score_quantiles.tex}
+
+\section*{Component 4a: Capacity}
+\input{storage/benchmarks/tables/table4a_capacity.tex}
+
+\section*{Component 4b: Codec Robustness}
+\input{storage/benchmarks/tables/table4b_codec_robustness.tex}
+
+\section*{Component 4c: ECC Failure Modes}
+\input{storage/benchmarks/tables/table4c_ecc_failure_modes.tex}
+
+\section*{Component 5: System Performance}
+\input{storage/benchmarks/tables/table5_system_performance.tex}
+
+\end{document}

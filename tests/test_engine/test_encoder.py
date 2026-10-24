@@ -392,7 +392,7 @@ class TestEncoderEdgeCases:
         try:
             result = mock_encoder.encode("Hi")
             # If it works, should have at least one chunk
-            assert len(result.encoded) >= 0
+            assert len(result.encoded) >= 1
         except ValueError:
             # Expected if message too short
             pass

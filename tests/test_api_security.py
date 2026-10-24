@@ -63,6 +63,38 @@ class TestApiAuth:
             os.environ.pop("DCASS_API_TOKEN", None)
             assert client.get("/api/auth/me").status_code == 401
             assert client.get("/api/wire/packets").status_code == 401
+            assert client.get("/api/users").status_code == 401
+
+    def test_production_refuses_to_serve_open_when_api_token_unset(self, client):
+        """The token-optional skip must fail closed, never silently open."""
+        with patch.dict(
+            os.environ,
+            {"DCASS_ENV": "production", "DCASS_JWT_SECRET": "test-jwt-secret"},
+            clear=False,
+        ):
+            os.environ.pop("DCASS_API_TOKEN", None)
+            # Routes guarded by require_api_token must refuse, with a 503
+            # that names the missing configuration, rather than serve.
+            res = client.post("/api/encode", json={"message": "x"})
+            assert res.status_code == 503
+            assert "DCASS_API_TOKEN" in res.json()["detail"]
+
+    def test_valid_token_for_unknown_user_is_rejected_not_fallback(self, client):
+        """A structurally valid token for a missing user must never become alice."""
+        import time as _time
+        from jose import jwt as _jwt
+
+        from src.api import auth as _auth
+
+        claims = {
+            "sub": "424242",  # no such user
+            "exp": int(_time.time()) + 600,
+        }
+        token = _jwt.encode(claims, _auth._jwt_secret(), algorithm="HS256")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        assert client.get("/api/auth/me", headers=headers).status_code == 401
+        assert client.get("/api/users", headers=headers).status_code == 401
 
 
 class TestTransmitPathSanitization:
@@ -280,3 +312,98 @@ class TestKeyedRoundtripWithHmac:
             )
             assert decoded.ecc_success
             assert decoded.reconstructed_meaning == msg
+
+
+class TestOwnershipScoping:
+    """Destructive and lifecycle verbs act on the caller's own objects only."""
+
+    def _register(self, client, username):
+        from src.api import auth as _auth
+
+        client.post(
+            "/api/auth/register", json={"username": username, "password": "pw-owner-1"}
+        )
+        user = _auth.get_user_by_username(username)
+        token = _auth.create_access_token(user.id, user.username)
+        return user, {"Authorization": f"Bearer {token}"}
+
+    def test_delete_wire_packets_is_scoped_to_the_caller(self, client):
+        import uuid
+        from pathlib import Path as _P
+
+        user_a, headers_a = self._register(client, "scoped_a")
+        user_b, headers_b = self._register(client, "scoped_b")
+
+        # The endpoint derives the directory from its module path, so stage
+        # sentinels under the real storage tree with unique file names.
+        real_base = _P("storage") / "shared_channel"
+        real_mine = real_base / str(user_a.id) / f"{uuid.uuid4().hex}.json"
+        real_theirs = real_base / str(user_b.id) / f"{uuid.uuid4().hex}.json"
+        real_mine.parent.mkdir(parents=True, exist_ok=True)
+        real_theirs.parent.mkdir(parents=True, exist_ok=True)
+        real_mine.write_text('{"marker": "mine"}')
+        real_theirs.write_text('{"marker": "theirs"}')
+        try:
+            res = client.delete("/api/wire/packets", headers=headers_a)
+            assert res.status_code == 200
+            assert res.json()["success"] is True
+            assert not real_mine.exists()
+            assert real_theirs.exists()  # untouched: belongs to another user
+
+            res = client.delete("/api/wire/packets", headers=headers_b)
+            assert res.status_code == 200
+            assert not real_theirs.exists()
+        finally:
+            real_mine.unlink(missing_ok=True)
+            real_theirs.unlink(missing_ok=True)
+
+    def test_transmit_stop_is_scoped_to_the_owner(self, client):
+        import uuid
+
+        from src.api.server import (
+            _transmission_sessions,
+            _transmission_sessions_lock,
+        )
+
+        owner, headers_owner = self._register(
+            client, f"stopowner_{uuid.uuid4().hex[:6]}"
+        )
+        other, headers_other = self._register(
+            client, f"stopother_{uuid.uuid4().hex[:6]}"
+        )
+
+        sid = f"test-stop-{uuid.uuid4().hex[:8]}"
+        with _transmission_sessions_lock:
+            _transmission_sessions[sid] = {
+                "active": True,
+                "stop_requested": False,
+                "progress": {"current": 0, "total": 3, "status": "running"},
+                "owner": owner.id,
+            }
+        try:
+            # Another user, by id: another owner's (or unknown) session is a
+            # 404, never a stop and never an existence confirmation.
+            res = client.post(
+                f"/api/transmit/stop?session_id={sid}", headers=headers_other
+            )
+            assert res.status_code == 404
+            with _transmission_sessions_lock:
+                assert _transmission_sessions[sid]["stop_requested"] is False
+
+            # Another user, blanket stop: reaches nothing of the owner's.
+            res = client.post("/api/transmit/stop", headers=headers_other)
+            assert res.status_code == 200
+            with _transmission_sessions_lock:
+                assert _transmission_sessions[sid]["active"] is True
+                assert _transmission_sessions[sid]["stop_requested"] is False
+
+            # The owner stops their own session.
+            res = client.post(
+                f"/api/transmit/stop?session_id={sid}", headers=headers_owner
+            )
+            assert res.status_code == 200
+            with _transmission_sessions_lock:
+                assert _transmission_sessions[sid]["stop_requested"] is True
+        finally:
+            with _transmission_sessions_lock:
+                _transmission_sessions.pop(sid, None)

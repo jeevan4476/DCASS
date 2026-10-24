@@ -11,6 +11,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from src.utils.checkpoint_io import load_trained_checkpoint
 from torch.distributions import Normal, Categorical
 import numpy as np
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ from typing import Optional, Tuple, List
 from pathlib import Path
 
 from .environment import StealthEnvironment
+from .pacing import canonical_rl_delay
 
 
 @dataclass
@@ -184,11 +186,15 @@ class ActorCritic(nn.Module):
         delay_dist = Normal(delay_mean, delay_std)
         delay_sample = delay_dist.sample()
 
-        # Clamp to a physically valid positive delay BEFORE computing log_prob so
+        # Clamp to the deployment pacing window BEFORE computing log_prob so
         # the stored log_prob matches the action actually executed in the environment.
         # (If we clamped after, old_log_probs would reflect the raw sample while
         #  evaluate() would compute log_prob of the clamped action, breaking PPO.)
-        delay_val = max(0.5, delay_sample.item())
+        #
+        # The window is the same one the scheduler deploys and the environment
+        # scores, so the delay the agent optimizes is the delay the receiver
+        # sees. See src/stealth/rl/pacing.py.
+        delay_val = canonical_rl_delay(delay_sample.item())
         delay_clamped = torch.tensor([[delay_val]], dtype=delay_mean.dtype, device=delay_mean.device)
         delay_log_prob = delay_dist.log_prob(delay_clamped).sum(dim=-1)
 
@@ -537,21 +543,28 @@ class PPOAgent:
         return self.episode_rewards
 
     def save(self, path: Path | str):
-        """Save agent checkpoint."""
+        """Save agent checkpoint.
+
+        Convention: the pickle holds only tensors, python primitives and
+        the project's own config dataclass, so freshly saved checkpoints
+        load under the repository's strict (weights_only) loader. History
+        values are coerced out of numpy types; they are reporting state,
+        not model state.
+        """
         checkpoint = {
             "actor_critic_state": self.actor_critic.state_dict(),
             "optimizer_state": self.optimizer.state_dict(),
             "config": self.config,
-            "episode_rewards": self.episode_rewards,
-            "episode_lengths": self.episode_lengths,
-            "warden_scores": self.warden_scores
+            "episode_rewards": [float(r) for r in self.episode_rewards],
+            "episode_lengths": [int(n) for n in self.episode_lengths],
+            "warden_scores": [float(s) for s in self.warden_scores],
         }
         torch.save(checkpoint, str(path))
         print(f"Agent saved to {path}")
 
     def load(self, path: Path | str):
         """Load agent checkpoint into existing instance."""
-        checkpoint = torch.load(str(path), map_location=self.device, weights_only=False)
+        checkpoint = load_trained_checkpoint(str(path), map_location=self.device,)
 
         # If config is present in checkpoint, recreate actor_critic if dimensions differ
         if "config" in checkpoint and isinstance(checkpoint["config"], PPOConfig):
@@ -586,7 +599,7 @@ class PPOAgent:
     ) -> PPOAgent:
         """Create and load a PPOAgent directly from a checkpoint file."""
         dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        checkpoint = torch.load(str(path), map_location=dev, weights_only=False)
+        checkpoint = load_trained_checkpoint(str(path), map_location=dev,)
         cfg = checkpoint.get("config", PPOConfig(state_dim=env.state_dim, device=dev))
         if isinstance(cfg, PPOConfig):
             cfg.device = dev

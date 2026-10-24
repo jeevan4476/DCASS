@@ -305,7 +305,7 @@ def build_flickr30k_index(
             # Try fast batch encoding
             embeddings = embedder.encode_images(batch_paths, show_progress=False)
             valid_files = batch_files
-        except Exception as e:
+        except Exception:
             # Fall back to item-by-item to isolate any damaged image
             item_embeddings = []
             valid_files = []

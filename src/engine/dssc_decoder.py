@@ -218,9 +218,23 @@ class DSSCDecoder:
         success = False
         if ok:
             try:
-                # unframe_payload validates CRC-16 frame (or HMAC frame if present)
-                reconstructed_text, _ = unframe_payload(data, secret=session_key)
-                success = True
+                # unframe_payload validates the CRC-16 integrity frame. DSSC
+                # frames are NOT HMAC-authenticated: the encoder calls
+                # frame_payload(message) without a secret deliberately, to
+                # avoid the 32-byte HMAC tag. The session key protects the
+                # carrier state-space permutation, not these frame bytes, so
+                # no secret belongs here.
+                #
+                # When ECC is enabled, the encoder always emits a framed
+                # payload. A missing frame marker after RS decode therefore
+                # means the codeword is corrupt, not that it is a legacy raw
+                # message. Requiring the frame prevents deletion or symbol
+                # corruption from being accepted as a successful decode.
+                reconstructed_text, was_framed = unframe_payload(
+                    data,
+                    require_framed=ecc_parity_bytes > 0,
+                )
+                success = was_framed or ecc_parity_bytes == 0
             except FrameError:
                 # Corruption beyond RS capacity
                 success = False

@@ -138,7 +138,7 @@ docker-compose up dcass-receiver &
 docker-compose run dcass-sender python scripts/runtime/run_sender.py \
     --mode rl \
     --message "Meet at the cafe at noon" \
-    --checkpoint checkpoints/rl/trained_agent.pt
+    --checkpoint storage/models/rl_agent.pt
 ```
 
 ## Environment Variables
@@ -158,9 +158,9 @@ Receiver logs: `logs/receiver/`
 
 ### Checkpoints
 
-Model checkpoints saved to `checkpoints/`:
-- `checkpoints/gan/` - Warden and Generator
-- `checkpoints/rl/` - RL agent policies
+Model checkpoints saved to `storage/models/`:
+- `storage/models/gan_generator.pt` - Warden and Generator
+- `storage/models/rl_agent.pt` - RL agent policy
 
 ### Metrics
 

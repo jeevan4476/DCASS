@@ -1,0 +1,35 @@
+{
+  "unit_mismatch": {
+    "note": "The trainer gives the critic the generator's raw output and the corpus delays in seconds. The critic therefore never sees the traffic the scheduler sends.",
+    "critic_sees_real_seconds": {
+      "min": 0.5,
+      "p50": 5.49,
+      "max": 60.0
+    },
+    "critic_sees_fake_raw": {
+      "min": 0.500069,
+      "p50": 0.501184,
+      "max": 0.539126
+    },
+    "deployed_mapped_seconds": {
+      "min": 1.6039,
+      "p50": 3.2767,
+      "max": 30.0
+    },
+    "shipped_raw_std": 0.001723
+  },
+  "mapping_conditioning": {
+    "note": "The generator's delay head ends in a Softplus, so its raw output is unbounded. The usable delay range corresponds to a narrow slice of it, and a fresh generator's every output lands at the upper clip, where the gradient is zero.",
+    "usable_raw_band": [
+      0.5,
+      0.519
+    ],
+    "usable_band_as_pct_of_softplus_range": 1.9,
+    "fresh_generator": {
+      "raw_p50": 1.031761,
+      "mapped_at_floor_pct": 0.0,
+      "mapped_at_ceiling_pct": 100.0,
+      "zero_gradient_pct": 100.0
+    }
+  }
+}

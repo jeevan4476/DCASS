@@ -18,6 +18,7 @@ from typing import Optional, Callable
 import json
 
 from .generator import TemporalPatternGenerator, sample_latent, compute_generator_loss
+from ..delay_contract import canonical_delay_mapping_torch
 from ...analysis.adversarial.warden import (
     DeepPacketInspectionWarden,
     compute_warden_loss,
@@ -47,6 +48,8 @@ class TrainingConfig:
         log_interval: Steps between logging
     """
 
+    critic_score_bound: Optional[float] = None
+    critic_offset_penalty: float = 0.0
     latent_dim: int = 128
     hidden_dim: int = 256
     num_channels: int = 3
@@ -57,7 +60,16 @@ class TrainingConfig:
     warden_lr: float = 2e-4
     warden_steps: int = 5
     use_gradient_penalty: bool = True
-    lambda_gp: float = 10.0
+    # 10 was the shipped default and it is the setting under which the
+    # critic collapsed: at 10 the penalty's maximum value is the same order
+    # as the Wasserstein term it restrains, so the critic can afford to
+    # stop reading its input. 100 is the smallest weight measured holding
+    # the critic sensitive in every epoch of a 30-epoch run (a weight of
+    # 1000 also holds over its own ten-epoch probe,
+    # storage/benchmarks/critic_sensitivity_lambda1000.json; see
+    # docs/benchmarking/C3_GENERATOR_ADVERSARY.md and
+    # storage/benchmarks/critic_sensitivity_repaired_run.json).
+    lambda_gp: float = 100.0
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     checkpoint_dir: Path = Path("checkpoints/gan")
     log_interval: int = 10
@@ -107,6 +119,11 @@ class HumanTrafficDataset(Dataset):
         if data_path.exists():
             with open(data_path, "r") as f:
                 self.data = json.load(f)
+            if not self.data:
+                # An existing-but-empty corpus is operationally the same as
+                # a missing one: say so loudly, and use the same fallback.
+                print(f"Warning: {data_path} is empty, generating synthetic data")
+                self.data = self._generate_synthetic_data(1000)
         else:
             # Generate synthetic data for testing
             print(f"Warning: {data_path} not found, generating synthetic data")
@@ -179,6 +196,21 @@ class HumanTrafficDataset(Dataset):
         )
 
 
+def apply_critic_config(
+    model: "DeepPacketInspectionWarden", checkpoint: dict
+) -> None:
+    """Restore the critic's scoring configuration from a checkpoint.
+
+    A checkpoint written before the critic had a bounded score carries
+    neither key, and the model keeps its unbounded default, which is the
+    behaviour that checkpoint was trained with.
+    """
+    if "critic_bounded" in checkpoint:
+        model.bounded_critic = bool(checkpoint["critic_bounded"])
+    if "critic_score_bound" in checkpoint:
+        model.critic_score_bound = float(checkpoint["critic_score_bound"])
+
+
 class GANTrainer:
     """
     Trainer for the Generator-Warden adversarial system.
@@ -216,7 +248,23 @@ class GANTrainer:
         )
 
         self.warden = warden or DeepPacketInspectionWarden(
-            num_channels=config.num_channels, hidden_dim=config.hidden_dim
+            num_channels=config.num_channels,
+            hidden_dim=config.hidden_dim,
+            # The critic's score is bounded. With an unbounded score the
+            # Wasserstein loss has no anchor on the scale, and the critic
+            # can reduce its loss by making its output large and constant
+            # instead of by reading its input. The measured symptom was
+            # the critic's gradient with respect to its input collapsing
+            # from 0.186 to 0.000013, which put the gradient penalty at
+            # exactly lambda_gp and made it inert. The trained detector
+            # checkpoints are unaffected, because the bound is off unless
+            # it is asked for.
+            bounded_critic=config.critic_score_bound is not None,
+            critic_score_bound=(
+                config.critic_score_bound
+                if config.critic_score_bound is not None
+                else 1.0
+            ),
         )
 
         # Move to device
@@ -280,12 +328,40 @@ class GANTrainer:
             # generator (5x wasted backward passes otherwise). Use
             # straight-through soft channel probs (not hard argmax) so the
             # gradient penalty below has a differentiable channel input.
-            fake_delays = fake_schedule.delays.detach()
+            #
+            # The critic is given the *mapped* delays, in seconds, because
+            # that is what the scheduler sends. The raw generator output
+            # is in a different range, so feeding it to the critic left
+            # the critic discriminating a unit range rather than a timing
+            # shape, and the gradient penalty interpolating between two
+            # differently scaled quantities.
+            fake_delays = canonical_delay_mapping_torch(fake_schedule.delays).detach()
             fake_channel_probs = fake_schedule.channel_probs_straight_through().detach()
             fake_verdict = self.warden(fake_delays, fake_channel_probs, mask=mask)
 
             # Compute Warden loss
             warden_loss = compute_warden_loss(real_verdict, fake_verdict)
+
+            # The critic's score has a free offset: the loss is
+            # E[D(fake)] - E[D(real)], and a constant added to every score
+            # cancels out of it. The generator's loss is -E[D(fake)],
+            # which the offset does not cancel, so the offset runs away
+            # with nothing to stop it.
+            #
+            # A penalty on the offset's square anchors the score's centre
+            # without saturating any gradient and without touching the
+            # gap, which is the part the gradient penalty is there to
+            # constrain. A bound on the score itself, by contrast,
+            # saturates the critic's output and kills the gradient
+            # penalty's own gradient, which is the collapse the
+            # diagnostics measured.
+            if self.config.critic_offset_penalty:
+                real_scores = real_verdict.feature_importance["raw_critic_score"]
+                fake_scores = fake_verdict.feature_importance["raw_critic_score"]
+                offset = 0.5 * (real_scores.mean() + fake_scores.mean())
+                warden_loss = warden_loss + self.config.critic_offset_penalty * (
+                    offset * offset
+                )
 
             # Add gradient penalty if using WGAN-GP
             gradient_penalty = None
@@ -317,7 +393,11 @@ class GANTrainer:
         # generator's channel head receives gradient signal; plain argmax
         # indices would leave channel_head untrained forever (R-23).
         fake_channel_probs = fake_schedule.channel_probs_straight_through()
-        fake_verdict = self.warden(fake_schedule.delays, fake_channel_probs, mask=mask)
+        # The critic sees the mapped delays, the ones the scheduler sends.
+        # The mapping is applied differentiably so the gradient reaches
+        # the generator's delay head.
+        fake_delays = canonical_delay_mapping_torch(fake_schedule.delays)
+        fake_verdict = self.warden(fake_delays, fake_channel_probs, mask=mask)
         fake_channels = fake_channel_probs.argmax(dim=-1)
 
         # Compute Generator loss (Wasserstein: wants to maximise E[D(G(z))]).
@@ -333,7 +413,11 @@ class GANTrainer:
         # ==================== Collect Metrics ====================
         with torch.no_grad():
             real_verdict = self.warden(real_delays, real_channels, mask=mask)
-            fake_verdict = self.warden(fake_schedule.delays, fake_channels, mask=mask)
+            fake_verdict = self.warden(
+                canonical_delay_mapping_torch(fake_schedule.delays),
+                fake_channels,
+                mask=mask,
+            )
 
             metrics = TrainingMetrics(
                 epoch=self.current_epoch,
@@ -442,6 +526,12 @@ class GANTrainer:
             "warden_optimizer": self.warden_optimizer.state_dict(),
             "config": self.config,
             "metrics_history": self.metrics_history,
+            # The critic's scoring configuration is part of the model.
+            # A checkpoint whose critic was bounded is not the same model
+            # as one whose critic was not, even though their parameters
+            # have the same shapes, so it is recorded and restored.
+            "critic_bounded": self.warden.bounded_critic,
+            "critic_score_bound": self.warden.critic_score_bound,
         }
 
         torch.save(checkpoint, checkpoint_path)
@@ -455,6 +545,7 @@ class GANTrainer:
         self.global_step = checkpoint["global_step"]
         self.generator.load_state_dict(checkpoint["generator_state"])
         self.warden.load_state_dict(checkpoint["warden_state"])
+        apply_critic_config(self.warden, checkpoint)
         self.generator_optimizer.load_state_dict(checkpoint["generator_optimizer"])
         self.warden_optimizer.load_state_dict(checkpoint["warden_optimizer"])
         self.metrics_history = checkpoint["metrics_history"]
@@ -517,7 +608,11 @@ def compute_warden_auc(
             z = sample_latent(bsz, generator.latent_dim, device=device)
             fake_schedule = generator(z, padded_len, time_of_day)
             fake_channels = fake_schedule.sample_channels()
-            fake_verdict = warden(fake_schedule.delays, fake_channels, mask=mask)
+            fake_verdict = warden(
+                canonical_delay_mapping_torch(fake_schedule.delays),
+                fake_channels,
+                mask=mask,
+            )
             fake_scores.extend(fake_verdict.bot_probability.cpu().tolist())
 
     import numpy as np

@@ -3,9 +3,10 @@
 Phase F end-to-end pipeline tests.
 
 The static-mode round-trip test is the baseline — it needs only the engine
-(FAISS indices + voronoi codebook), no GAN/RL checkpoints. The gan/rl/auto
-tests are gated behind `pytest -m needs_models` because they require Phase A
-and Phase B checkpoints under storage/models/.
+(FAISS indices + voronoi codebook), no GAN/RL checkpoints. The gan/rl tests
+are tagged `needs_models` and skip themselves when the Phase A / Phase B
+checkpoints are absent from storage/models; run `pytest -m needs_models` to
+select only them.
 """
 
 from __future__ import annotations

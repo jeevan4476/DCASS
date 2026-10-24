@@ -1,0 +1,18 @@
+% Component 3b: Warden score quantiles per scheduler
+\begin{table}[htbp]
+\centering
+\caption{Stored warden critic score quantiles over 50 launches per scheduler. Interception is the share of scores at or above 0.50.}
+\label{tab:warden_score_quantiles}
+\begin{tabular}{lcccccc}
+\toprule
+Scheduler & Min & P25 & Median & P75 & Max & Flagged \\
+\midrule
+Static Cadence & 0.980 & 0.980 & 0.980 & 0.980 & 0.980 & 50/50 \\
+Stochastic Poisson & 0.138 & 0.162 & 0.710 & 0.710 & 0.830 & 30/50 \\
+DCASS Temporal WGAN & 0.165 & 0.186 & 0.200 & 0.210 & 0.249 & 0/50 \\
+DCASS Hybrid Engine & 0.168 & 0.189 & 0.201 & 0.210 & 0.240 & 0/50 \\
+DCASS PPO RL Agent & 0.299 & 0.310 & 0.317 & 0.980 & 0.980 & 15/50 \\
+PPO RL Agent, conservative config & 0.349 & 0.364 & 0.369 & 0.370 & 0.980 & 3/50 \\
+\bottomrule
+\end{tabular}
+\end{table}
