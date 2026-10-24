@@ -234,10 +234,10 @@ real traffic and on the generator's own traffic is 0.000:
 
 | epoch | ‖grad_x D‖ | penalty | score on real | score on the generator's traffic | gap |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 5 | 3.0519 | 42.10 | +11.415 | −33.860 | 45.275 |
-| 11 | 0.1113 | 7.90 | −5.270 | −22.448 | 17.178 |
-| 17 | 0.0011 | 9.98 | −2.656 | −2.663 | 0.006 |
-| 21 | 0.0103 | 9.80 | −4.863 | −4.941 | 0.077 |
+| 5 | 2.1929 | 14.23 | +11.415 | −33.835 | 45.250 |
+| 11 | 2.0439 | 10.90 | −5.270 | −22.449 | 17.179 |
+| 17 | 0.0012 | 9.98 | −2.656 | −2.663 | 0.006 |
+| 21 | 0.0116 | 9.77 | −4.863 | −4.942 | 0.079 |
 | 24 | 0.5129 | 2.37 | −20.735 | −35.992 | 15.257 |
 | 29 | 0.0001 | 10.00 | −5.418 | −5.419 | 0.000 |
 
@@ -255,7 +255,7 @@ the run is then stable in every epoch:
 | run | `lambda_gp` | collapsed epochs | ‖grad_x D‖ | score gap |
 | :--- | ---: | ---: | ---: | ---: |
 | the shipped checkpoint | 10 | collapsed state (point probe) | 0.000013 | 0.000 |
-| first repaired run | 10 | 12 of 30 | 1e-4 to 3.05 | 0.000 to 45.3 |
+| first repaired run | 10 | 12 of 30 | 4.5e-05 to 2.39 | −5.544 to 45.2 |
 | **the shipped run** | **100** | **0 of 30** | **0.11 to 0.78** | **0.33 to 19.40** |
 | ten-epoch probe | 1000 | 0 of 10 | 0.42 to 0.92 | −3.0 to 2.1 |
 
