@@ -399,9 +399,7 @@ No `demo_dcass.py` exists; the demos live in `scripts/demo/`:
 - `scripts/demo/demo_wgan_stealth.py` — interactive WGAN-GP timing-camouflage demo (metronome vs. generator, circadian stage, warden blind test)
 - `scripts/demo/run_gan_demo.py` — GAN stealth demo written for a Docker context (`docker run dcass-demo`)
 
-The end-to-end round trip that `encode → schedule → transmit → reassemble → decode` covers is run by `run_pipeline.py` (see QUICKSTART §7), not a demo script.
-
-> **Note**: the two standalone demos currently fail when run directly — `run_gan_demo.py` on script-path imports, `demo_wgan_stealth.py` on PyTorch 2.6's `weights_only` checkpoint loading.
+The end-to-end round trip that `encode → schedule → transmit → reassemble → decode` covers is run by `run_pipeline.py` (see QUICKSTART §7), not a demo script. Both standalone demos run directly from the project root.
 
 ### `evaluate_stealth.py`
 
