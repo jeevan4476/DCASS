@@ -89,3 +89,45 @@ def test_evaluate_stealth_announces_missing_baseline(capsys, tmp_path, monkeypat
     assert f"HUMAN BASELINE SKIPPED (file missing: {missing})" in captured.out
     # The tool continued with its own report after skipping the baseline.
     assert "Mode        : static" in captured.out
+
+
+def test_evaluate_stealth_announces_empty_baseline(capsys, tmp_path, monkeypatch):
+    """An existing-but-empty baseline file used to skip silently too: the
+    loader returned [] and `if human:` never ran, with no word of it. The
+    same loud treatment as the missing file applies."""
+    empty = tmp_path / "empty_baseline.json"
+    empty.write_text("[]")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "evaluate_stealth.py",
+            "--mode", "static",
+            "--num-sequences", "1",
+            "--device", "cpu",
+            "--human-data", str(empty),
+        ],
+    )
+    module = _load_script_module("scripts/testing/evaluate_stealth.py")
+    module.main()
+
+    captured = capsys.readouterr()
+    assert f"HUMAN BASELINE SKIPPED (file empty: {empty})" in captured.out
+    assert "Mode        : static" in captured.out
+
+
+def test_dataset_announces_empty_corpus(capsys, tmp_path):
+    """HumanTrafficDataset on an existing-but-empty corpus silently built a
+    zero-record dataset (training then had nothing to iterate). The
+    missing-file path already warns and falls back to synthetic data; an
+    empty file is the same operational situation and gets the same loud
+    treatment."""
+    from src.stealth.gan.trainer import HumanTrafficDataset
+
+    empty = tmp_path / "empty_corpus.json"
+    empty.write_text("[]")
+    dataset = HumanTrafficDataset(empty, max_sequence_length=100)
+
+    captured = capsys.readouterr()
+    assert "empty" in captured.out, "the empty-corpus fallback must announce itself"
+    assert dataset.data, "empty corpus must fall back to synthetic data like a missing one"

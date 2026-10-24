@@ -66,3 +66,34 @@ def test_evaluate_warden_scores_ragged_batch_like_single_rows():
             f"row {k}: padded batch scored {batched!r}, scored alone {single!r} "
             "-- the mask is not making the padding invisible"
         )
+
+
+def test_evaluate_warden_truncates_rows_to_the_convention_length():
+    """A row longer than DETECTOR_SEQ_LEN used to stretch the whole batch
+    past the detector's fixed scoring convention (max_len took the max of
+    DETECTOR_SEQ_LEN and the row lengths), so a >64-row scored under a
+    convention the detector never trained on. The recorded populations
+    (corpus max session 50, scheduler rows 20) never hit this; the guard
+    pins that any future long row is truncated to the convention, scoring
+    identically to its own first DETECTOR_SEQ_LEN steps."""
+    module = _load_script_module("scripts/testing/evaluate_stealth.py")
+    torch.manual_seed(42)
+    warden = DeepPacketInspectionWarden(num_channels=3)
+    warden.eval()
+
+    from src.analysis.adversarial.warden import DETECTOR_SEQ_LEN
+
+    rng = torch.Generator().manual_seed(7)
+    long_row = (torch.rand(DETECTOR_SEQ_LEN + 6, generator=rng) * 20 + 0.5).tolist()
+    long_channels = [int(c) for c in (torch.randint(0, 3, (DETECTOR_SEQ_LEN + 6,), generator=rng)).tolist()]
+
+    score_long = module.evaluate_warden(warden, [long_row], [long_channels])[0]
+    score_truncated = module.evaluate_warden(
+        warden, [long_row[:DETECTOR_SEQ_LEN]], [long_channels[:DETECTOR_SEQ_LEN]]
+    )[0]
+
+    assert score_long == score_truncated, (
+        f"row longer than the convention scored {score_long!r} but its first "
+        f"{DETECTOR_SEQ_LEN} steps scored {score_truncated!r} -- the row was "
+        "not truncated to the scoring convention"
+    )

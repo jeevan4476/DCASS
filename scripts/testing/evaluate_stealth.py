@@ -56,12 +56,15 @@ def evaluate_warden(warden, delays_list, channels_list):
     the old behavior — let the fabricated steps contaminate the score,
     so a row's result depended on how ragged its batch happened to be.
     Padding to a fixed length plus the mask makes a row's score depend
-    only on its own traffic.
+    only on its own traffic. Rows longer than DETECTOR_SEQ_LEN are
+    truncated to it, so a long row is scored under the same convention
+    the detector was trained on instead of stretching the batch.
     """
-    max_len = max(DETECTOR_SEQ_LEN, *(len(d) for d in delays_list))
-    padded_d = [d + [0.0] * (max_len - len(d)) for d in delays_list]
-    padded_c = [c + [0] * (max_len - len(c)) for c in channels_list]
-    mask = [[1.0] * len(d) + [0.0] * (max_len - len(d)) for d in delays_list]
+    rows_d = [d[:DETECTOR_SEQ_LEN] for d in delays_list]
+    rows_c = [c[:DETECTOR_SEQ_LEN] for c in channels_list]
+    padded_d = [d + [0.0] * (DETECTOR_SEQ_LEN - len(d)) for d in rows_d]
+    padded_c = [c + [0] * (DETECTOR_SEQ_LEN - len(c)) for c in rows_c]
+    mask = [[1.0] * len(d) + [0.0] * (DETECTOR_SEQ_LEN - len(d)) for d in rows_d]
 
     dt = torch.tensor(padded_d, dtype=torch.float32)
     ct = torch.tensor(padded_c, dtype=torch.long)
@@ -165,6 +168,9 @@ def main():
         human = None
     else:
         human = load_human_traffic(args.human_data)
+        if not human:
+            print(f"\nHUMAN BASELINE SKIPPED (file empty: {args.human_data})")
+            human = None
     if human:
         h_delays = [s["delays"] for s in human[:args.num_sequences]]
         h_channels = [s["channels"] for s in human[:args.num_sequences]]
