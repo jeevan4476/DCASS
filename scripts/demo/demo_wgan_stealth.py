@@ -20,6 +20,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.stealth.stealth_scheduler import StealthScheduler
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden
 from src.stealth.gan.trainer import apply_critic_config
+from src.utils.checkpoint_io import load_trained_checkpoint
 
 CHANNELS = ["0: Social Media Feed", "1: Forum / Community", "2: Media Sharing"]
 
@@ -67,7 +68,7 @@ def main():
     from src.stealth.gan.generator import TemporalPatternGenerator
 
     gen = TemporalPatternGenerator(latent_dim=128, hidden_dim=256, num_channels=3)
-    ckpt = torch.load(checkpoint, map_location=device)
+    ckpt = load_trained_checkpoint(checkpoint, map_location=device)
     gen.load_state_dict(ckpt["generator_state"])
     gen.to(device)
     gen.eval()

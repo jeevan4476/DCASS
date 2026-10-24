@@ -7,9 +7,12 @@ import sys
 import time
 import torch
 from datetime import datetime
+from pathlib import Path
 
-sys.path.append("src/stealth/gan")
-from generator import TemporalPatternGenerator
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.stealth.gan.generator import TemporalPatternGenerator
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 

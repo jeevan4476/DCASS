@@ -33,11 +33,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 
-from src.analysis.adversarial.warden import DeepPacketInspectionWarden  # noqa: E402
+from src.analysis.adversarial.warden import (
+    DETECTOR_SEQ_LEN,  # the detector's input length, matching how it was trained
+    DeepPacketInspectionWarden,
+)  # noqa: E402
 from train_traffic_detector import load_human_sessions, make_bot_session  # noqa: E402
-
-# The detector's input length, matching how it was trained.
-DETECTOR_SEQ_LEN = 64
 
 
 def load_benchmark():

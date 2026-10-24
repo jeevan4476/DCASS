@@ -276,7 +276,7 @@ Each modality screens all 512 embedding dimensions, 1,536 tests in total, with B
 | Text | 512 | 0.0163 | 0.0155 | 0.0363 | 0 | 0.148 | 0.0388 |
 | Audio | 512 | 0.0159 | 0.0155 | 0.0362 | 0 | 0.092 | 0.0378 |
 
-**Interpretation:** Zero coordinates reject after multiplicity control anywhere. The per-coordinate null center implied by these sample sizes is 0.0155 — a derived value from the asymptotic KS median $0.87/\sqrt{n_1 n_2/(n_1+n_2)}$, not a stored null — and the observed means land directly on it; the single largest gap, 0.0363, is a maximum over 512 correlated coordinates whose permutation null has a 95th percentile near 0.039, so it is not evidence of a coordinate shift.
+**Interpretation:** Zero coordinates reject after multiplicity control anywhere. The per-coordinate null centers implied by these sample sizes are 0.0152 (image), 0.0152 (text), and 0.0153 (audio) — derived values from the asymptotic KS mean $\sqrt{\pi/2}\,\ln 2 \big/ \sqrt{n_1 n_2/(n_1+n_2)} \approx 0.8687\sqrt{(n_1+n_2)/(n_1 n_2)}$ with $n = 9{,}250/9{,}500/9{,}100$ carrier slots against $m = 5{,}000$ reference vectors, not a stored null — and the observed means land directly on them; the single largest gap, 0.0363, is a maximum over 512 correlated coordinates whose permutation null has a 95th percentile near 0.039, so it is not evidence of a coordinate shift.
 
 #### 4.3.4 Voronoi Cluster Entropy and Repeats
 

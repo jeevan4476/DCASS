@@ -3,7 +3,7 @@
 Minimal demo authentication for DCASS (Phase F of the GAN/RL integration
 plan — see docs/GAN_RL_INTEGRATION_PLAN.md).
 
-Deliberately NOT production-grade: bcrypt + SQLite + JWT, no OAuth, no
+Deliberately NOT production-grade: sha256_crypt + SQLite + JWT, no OAuth, no
 email verification, no password reset, no refresh-token rotation. This is
 enough to demonstrate "Alice logs in and sends a message only Bob can
 read" for a research-paper demo. See the plan's Phase F.6 (R6) for the

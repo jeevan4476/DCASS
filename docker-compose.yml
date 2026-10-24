@@ -22,11 +22,6 @@ x-common-env: &common-env
   MKL_NUM_THREADS: "1"
   PYTORCH_CUDA_ALLOC_CONF: "garbage_collection_threshold:0.6"
 
-x-common-volumes: &common-volumes
-  - ./storage/shared_channel:/app/shared_channel:rw
-  - ./storage/data:/app/data:ro
-  - ./storage/models:/app/models:rw
-
 x-resource-limits: &resource-limits
   deploy:
     resources:

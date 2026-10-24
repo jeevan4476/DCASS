@@ -25,9 +25,9 @@ From `component_3_results.json`, every scheduler row carries the same
 | Scheduler | `mean_neural_anomaly` | `interception_rate` | Triggering rule |
 |---|---|---|---|
 | Static Cadence | 0.6249254942 | 100.0% | periodic_cv 50/50 |
-| Stochastic Poisson | 0.6249254942 | 60.0% | burst 30/50, soft 20/50 |
-| DCASS Temporal WGAN | 0.6249254942 | 0.0% | soft 50/50 |
-| DCASS Hybrid Engine | 0.6249254942 | 0.0% | soft 50/50 |
+| Stochastic Poisson | 0.6249246848 | 60.0% | burst 30/50, soft 20/50 |
+| DCASS Temporal WGAN | 0.6249247682 | 0.0% | soft 50/50 |
+| DCASS Hybrid Engine | 0.6249247909 | 0.0% | soft 50/50 |
 | DCASS PPO RL Agent | 0.6249225271 | 30.0% | soft 35/50, periodic_cv 15/50 |
 
 The interception rates in this table are the ones recorded against the
@@ -150,11 +150,11 @@ and fresh components:
 |---|---|---|---|---|
 | shipped | shipped | 0.624857 / 0.624939 | 9.13e-05 | 5.65e-05 |
 | shipped | fresh | 0.320012 / 0.320024 | 1.61e-05 | 5.65e-05 |
-| fresh | shipped | 0.387418 / 0.216679 | **1.83e-01** | 1.56e-02 |
+| fresh | shipped | 0.387418 / 0.216679 | **1.82e-01** | 1.56e-02 |
 | fresh | fresh | 0.205096 / 0.369932 | **2.04e-01** | 1.56e-02 |
 
 With a fresh transformer, the shipped anomaly head responds normally to
-input (1.83e-01 spread). With the shipped transformer, no anomaly head can
+input (1.82e-01 spread). With the shipped transformer, no anomaly head can
 respond. The transformer is the proximate cause; the untrained anomaly head
 is why the constant is a benign-looking 0.62 rather than an obvious
 divergence.
@@ -213,14 +213,18 @@ Three things stand out:
    because the sigmoid underflow described in Finding 4 hides the actual
    critic behavior from the training log.
 
-The saved checkpoint is a `state_dict` for the warden alone, written at
-`epoch 11` of a 20-epoch run, with the same collapsed weights that
-`gan_generator.pt` carries in its `warden_state`. The warden was frozen
-from this state, and the RL agent was then trained against it.
-
-Note also that the checkpoint's own training config records
-`device='cpu'` and `checkpoint_dir='/home/karash1/projects/DCASS/...'`, so
-this run was executed on a different machine from the current one.
+The saved checkpoint is a `state_dict` for the warden alone, carrying no
+training metadata: the `epoch 11` of a 20-epoch run quoted in earlier
+revisions is not recorded in the artifact and cannot be verified from it.
+Its weights are also no longer the ones `gan_generator.pt` carries — 86 of
+its 89 tensors differ from the current checkpoint's `warden_state` (only
+three all-zero biases match) — because the generator checkpoint was
+overwritten by the λ_gp = 100 retrain (config: epoch 29, global_step 870,
+device cuda, `checkpoint_dir=/home/img1/gan_runs/l100`). The narrative in
+this section describes the pre-remediation run; the `device='cpu'` and
+`/home/karash1/...` config note below belonged to that overwritten
+checkpoint. The warden was frozen from the state available at the time,
+and the RL agent was then trained against it.
 
 ## 8. Repairs attempted
 
@@ -292,7 +296,10 @@ task is not trivially separable.
 - **The split leaked.** The first implementation split the combined human
   and bot set, so a bot session synthesized from a held-out human session
   landed in the training set. 214 of the 300 "held-out" human sessions
-  had a perturbed twin in training. The split is now over the human
+  had a perturbed twin in training — a figure from the pre-fix session
+  that was not archived, so it is unverifiable against any stored
+  artifact; what the artifacts record is the fixed split's invariant, that
+  no held-out human session has a perturbed twin. The split is now over the human
   sessions, and each subset's bots are synthesized only from that subset.
 - **The benchmark fed the detector the wrong shape.** The detector was
   trained on sequences padded to 64 steps with a validity mask, and its
@@ -303,7 +310,9 @@ task is not trivially separable.
 - **The threshold calibration overshot.** The rule reacted to a quantile
   landing slightly above the target by pushing the threshold above the
   human maximum. On the Component 3 calibration population before the fix the 95th
-  percentile was 0.16 and the maximum was 0.83, so the fallback discarded
+  percentile was 0.16 and the maximum was 0.83 — figures from the
+  intermediate calibration run, which was not retained, so they are
+  unverifiable against any stored artifact — and the fallback discarded
   all the resolution between them and drove the measured false-positive
   rate to 0% rather than the 5% that was asked for. The rule is now to
   place the threshold just above the score at the rank the false-positive
@@ -314,7 +323,8 @@ task is not trivially separable.
 
 On a session-disjoint held-out split the detector reaches a bot-probability
 AUC of 0.9983. On human traffic from a generator it has never seen in any
-form, its bot probability is 0.004 to 0.006; on the DCASS generators it
+form, its bot probability sits between 0.004 and 0.006 across the middle
+90% of sessions, with individual scores up to 0.038; on the DCASS generators it
 takes per-population means of 0.5086 (temporal WGAN, n = 20) and 0.4809
 (hybrid engine, n = 20), with individual scores up to 0.9996 — an earlier
 revision of this section recorded a constant 1.000 on the DCASS

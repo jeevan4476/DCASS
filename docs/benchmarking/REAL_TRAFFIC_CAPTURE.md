@@ -12,10 +12,17 @@ synthetic. It was measured, not assumed:
 
 | property | the shipped corpus | real human traffic |
 | :--- | :--- | :--- |
-| time-of-day distribution | uniform (chi-square p = 0.33 against uniform) | concentrated on waking hours |
-| maximum delay | 120.0 s, exactly | unbounded |
-| fraction of delays at the 0.5 s floor | 4.7% | varies |
-| same-channel reuse gap | median 5.5 s | varies |
+| time-of-day distribution | uniform (chi-square p = 0.33 against uniform for `real_human_traffic.json` alone; p = 0.16 pooled over both shipped files) | concentrated on waking hours |
+| maximum delay | 120.0 s, exactly (pooled over both files; `human_traffic.json` alone tops at 60.0 s) | unbounded |
+| fraction of delays at the 0.5 s floor | 4.7% (pooled over both files) | varies |
+| same-channel reuse gap | median 5.5 s for `human_traffic.json` alone | varies |
+
+Measured by: chi-square of the 24 hourly bins of each session's
+`time_of_day` against a uniform expectation (23 degrees of freedom); reuse
+gap = the delay after each event whose outgoing channel equals the
+previous event's; floor = delays exactly 0.5 s. Unless a single file is
+named, values are pooled over `real_human_traffic.json` (10,000 sessions)
+and `human_traffic.json` (2,000 sessions).
 
 A uniform time-of-day distribution is not something real browsing produces.
 The corpus is good enough to build and test the pipeline against, and not

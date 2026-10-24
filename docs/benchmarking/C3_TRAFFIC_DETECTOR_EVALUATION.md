@@ -35,8 +35,8 @@ Both rows disclosed: `canonical_rl_delay` clamps every step into the
 pacing window `[0.5, 20.0]` inside `env.step`, so the 30 s probe row
 scores as a fixed 20.0 s clock. The metronome row is stretched by the
 environment's rate-limit back-offs — on the `i%3` rotation the cooldowns
-are 6/12/4 s, so the channel-1 steps of a 3.0 s metronome land well past
-their nominal 3.0 s before they are scored. The frozen
+are 6/12/4 s, so each channel-1 step of a 3.0 s metronome waits out the
+full 12 s channel-1 cooldown before it is scored. The frozen
 `rl_stealth_reward_probe.json` records the probes under their original
 labels and is not rewritten here.
 
@@ -80,8 +80,9 @@ The 7 second floor was a global constraint on every transmission. The
 per-channel cooldown is a *per-channel* constraint, and the pipeline
 already enforces it with the action mask, which masks out any channel
 still cooling down. The global floor was unnecessary, and it was
-destructive: the corpus human traffic has a median inter-arrival of 5.48
-seconds and 58.2 percent of its delays below 7 seconds. A 7 second floor
+destructive: the pooled training corpus (both traffic files, 539,540
+delays — the corpus the detector actually sees) has a median inter-arrival
+of 4.18 seconds and 65.2 percent of its delays below 7 seconds. A 7 second floor
 excludes exactly the mass that makes human traffic look human.
 
 The window is now 0.5 to 20 seconds, the lower bound being the shortest
@@ -231,7 +232,9 @@ offset is anchored. The generator was retrained against the repaired
 path.
 
 The shipped `storage/models/warden.pt` is still the RL environment's
-stealth penalty for any code path that uses it directly. The pipeline
+stealth penalty for any code path that uses it directly — though no
+current `src/` path does (only the diagnostics in `scripts/analysis/` and
+this benchmark's historical note load the file). The pipeline
 uses the trained detector instead. It is retained as the subject of the
 diagnostic, not as a usable model.
 

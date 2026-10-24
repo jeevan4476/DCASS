@@ -119,6 +119,11 @@ class HumanTrafficDataset(Dataset):
         if data_path.exists():
             with open(data_path, "r") as f:
                 self.data = json.load(f)
+            if not self.data:
+                # An existing-but-empty corpus is operationally the same as
+                # a missing one: say so loudly, and use the same fallback.
+                print(f"Warning: {data_path} is empty, generating synthetic data")
+                self.data = self._generate_synthetic_data(1000)
         else:
             # Generate synthetic data for testing
             print(f"Warning: {data_path} not found, generating synthetic data")

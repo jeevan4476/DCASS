@@ -128,7 +128,6 @@ cp .env.example .env
 ```
 
 Key environment variables:
-- `DCASS_DEVICE`: `cuda` or `cpu` (default: auto-detected)
 - `DCASS_CORS_ORIGINS`: `http://localhost:3000`
 - `NEXT_PUBLIC_API_URL`: `http://localhost:8000`
 
