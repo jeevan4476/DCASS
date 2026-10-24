@@ -39,6 +39,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.stealth.stealth_scheduler import (
+    CHANNEL_COOLDOWNS,
     StealthScheduler,
     canonical_delay_mapping as scheduler_canonical_delay_mapping,
 )
@@ -69,8 +70,9 @@ BENCHMARK_DIR = PROJECT_ROOT / "storage" / "benchmarks"
 TABLES_DIR = BENCHMARK_DIR / "tables"
 PLOTS_DIR = BENCHMARK_DIR / "plots"
 
-# Enterprise DPI Channel Cooldown Timers (items/min -> min inter-arrival seconds)
-CHANNEL_COOLDOWNS = {0: 6.0, 1: 12.0, 2: 4.0}
+# Enterprise DPI Channel Cooldown Timers (items/min -> min inter-arrival
+# seconds) — imported from the scheduler, the deployed source of truth, so
+# the benchmark and the pipeline cannot fork.
 
 
 def count_cooldown_violations(
