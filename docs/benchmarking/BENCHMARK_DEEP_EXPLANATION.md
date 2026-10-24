@@ -340,7 +340,7 @@ Recorded outcomes:
 Interpretation. For two samples of size $n$ and $m$ the null distribution of $D_{KS}$ concentrates at
 
 $$
-\mathbb{E}\left[D_{KS}\right] \approx \sqrt{\pi/2}\,\ln 2 \cdot \sqrt{\frac{n+m}{nm}} \approx 0.8687 \sqrt{\frac{n+m}{nm}}, \qquad D_{KS}^{0.05} \approx 1.36 \sqrt{\frac{n + m}{nm}}
+\mathbb{E}\left[D_{KS}\right] \approx \sqrt{\pi/2}\,\ln 2 \cdot \sqrt{\frac{n+m}{nm}} \approx 0.8687 \sqrt{\frac{n+m}{nm}}, \qquad D_{KS}^{0.05} \approx 1.3581 \sqrt{\frac{n + m}{nm}}
 $$
 
 With the exact per-modality carrier counts (image 9,250 / text 9,500 / audio 9,100 slots against 5,000 reference vectors each) these evaluate to a null center of 0.0152 / 0.0152 / 0.0153 and a per-coordinate 5 percent critical value of 0.0238 / 0.0237 / 0.0239 — projection KS is one prespecified pooled-PC1 test per modality; the 0-of-512 family-wise readings are the separate per-dimension family. The observed mean $D_{KS}$ lands at 0.016 to 0.017, directly on the null center, so the typical coordinate is indistinguishable from finite-sample noise. The largest single coordinate, 0.0363, does exceed the per-coordinate critical value, and this is where the multiplicity devices earn their keep: the maximum of 512 correlated coordinates is a different random variable from a single test, its permutation null has a 95th percentile of 0.0391, 0.0388, and 0.0378 respectively, and the family-wise p-values land at 0.315, 0.148, and 0.092. After Benjamini-Hochberg control not one of the 1,536 tests rejects anywhere. The family screen and the headline tests agree completely on audio, and together they bound the image and text shifts: real in the joint multivariate geometry, invisible at the level of any single coordinate.
