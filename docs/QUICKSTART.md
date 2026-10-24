@@ -46,7 +46,7 @@ Key variables (all optional — sensible defaults exist):
 | `DCASS_DEVICE` | `cpu` | `cuda` if you have a GPU |
 | `DCASS_CORS_ORIGINS` | `http://localhost:3000` | Frontend origin for CORS |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Backend URL the frontend calls |
-| `DCASS_JWT_SECRET` | random at startup | Set a fixed value for persistent sessions |
+| `DCASS_JWT_SECRET` | fixed dev constant if unset | The dev fallback is the fixed constant `dcass-dev-secret-DO-NOT-USE-IN-PRODUCTION` (not random). Set it explicitly for persistent sessions across restarts; with `DCASS_ENV=production` and no secret set, the backend refuses to start signing tokens |
 
 ---
 
@@ -267,7 +267,7 @@ docker compose down -v
 src/
   api/
     server.py          # FastAPI backend (auth, encode, transmit, inbox)
-    auth.py            # SQLite + bcrypt + JWT auth
+    auth.py            # SQLite + sha256_crypt + JWT auth
   stealth/
     stealth_scheduler.py   # Scheduler: auto (RL → GAN → static)
     pipeline.py            # End-to-end round-trip module
