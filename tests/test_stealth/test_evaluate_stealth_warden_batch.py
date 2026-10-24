@@ -72,10 +72,15 @@ def test_evaluate_warden_truncates_rows_to_the_convention_length():
     """A row longer than DETECTOR_SEQ_LEN used to stretch the whole batch
     past the detector's fixed scoring convention (max_len took the max of
     DETECTOR_SEQ_LEN and the row lengths), so a >64-row scored under a
-    convention the detector never trained on. The recorded populations
-    (corpus max session 50, scheduler rows 20) never hit this; the guard
-    pins that any future long row is truncated to the convention, scoring
-    identically to its own first DETECTOR_SEQ_LEN steps."""
+    convention the detector never trained on. evaluate_warden's own
+    populations — the CLI's default human baseline (`human_traffic.json`,
+    max session 50) and scheduler rows (20) — never exceed 64. The pooled
+    detector training corpus does (`real_human_traffic.json` max session
+    80), but training itself truncates to SEQ_LEN=64
+    (`train_traffic_detector.py` `take = min(n, SEQ_LEN)`), so truncation
+    here applies exactly the trained convention. The guard pins that any
+    long row is scored identically to its own first DETECTOR_SEQ_LEN
+    steps."""
     module = _load_script_module("scripts/testing/evaluate_stealth.py")
     torch.manual_seed(42)
     warden = DeepPacketInspectionWarden(num_channels=3)
