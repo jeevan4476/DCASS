@@ -13,14 +13,13 @@
    - [run_receiver.py](#run_receiverpy)
    - [docker_orchestrate.py](#docker_orchestratepy)
 3. [Training Scripts](#3-training-scripts)
-   - [generate_traffic_data.py](#generate_traffic_datapy)
+   - [generate_traffic_dataset.py](#generate_traffic_datasetpy)
    - [train_gan.py](#train_ganpy)
    - [train_rl.py](#train_rlpy)
 4. [Data Pipeline Scripts](#4-data-pipeline-scripts)
    - [download_flickr8k.py](#download_flickr8kpy)
    - [build_indices.py](#build_indicespy)
 5. [Demo & Evaluation Scripts](#5-demo--evaluation-scripts)
-   - [demo_dcass.py](#demo_dcasspy)
    - [evaluate_stealth.py](#evaluate_stealthpy)
    - [test_stealth_system.py](#test_stealth_systempy)
 6. [Project Timeline for Scripts](#6-project-timeline-for-scripts)
@@ -34,15 +33,13 @@
 | `run_sender.py` | Alice — sends media sequence via StealthScheduler | Any time (auto fallback) |
 | `run_receiver.py` | Bob — watches shared channel, reassembles packets | Any time alongside sender |
 | `docker_orchestrate.py` | Docker pipeline CLI | When using Docker |
-| `generate_traffic_data.py` | Synthetic human traffic JSON | Before GAN training |
+| `generate_traffic_dataset.py` | Synthetic human-like traffic JSON (`scripts/stealth/generate_traffic_dataset.py`) | Before GAN training (optional) |
 | `train_gan.py` | Train GAN stealth scheduler | Later (Phase 2) |
 | `train_rl.py` | Train RL stealth policy (PPO) | Later (Phase 2), after GAN |
 | `download_flickr8k.py` | Download Flickr8k dataset | Once, before building indices |
 | `build_indices.py` | Build FAISS vector indices | Once, after downloading data |
-| `demo_dcass.py` | End-to-end demo (encode + distribute) | Anytime after indices built |
 | `evaluate_stealth.py` | Evaluate warden detection scores | After training |
 | `test_stealth_system.py` | Integration test for stealth pipeline | Anytime |
-| `generate_traffic_data.py` | Generate synthetic traffic sessions | Before GAN training |
 
 ---
 
@@ -52,12 +49,12 @@
 
 Alice — uses `StealthScheduler` to produce a timed schedule and writes packet metadata to the shared channel directory.
 
-**Modes**:
-- `auto` *(default)* — cascades RL → GAN → static, always succeeds
+**Modes**:  *(static is the argparse default)*
+- `static` — handcrafted `NoiseController`, no model needed *(default)*
+- `auto` *(explicitly requested)* — cascades RL → GAN → static, always succeeds
 - `rl` — RL policy, falls back to static if checkpoint missing
 - `gan` — GAN generator, falls back to static if checkpoint missing
-- `static` — handcrafted `NoiseController`, no model needed
-- `train` — train the RL agent in-container *(deferred)*
+- `train` — trains the RL agent in-container (`--episodes`, only for this mode)
 
 **Local usage**:
 ```bash
@@ -79,16 +76,16 @@ python scripts/runtime/run_sender.py \
 python scripts/runtime/run_sender.py \
   --mode rl \
   --shared-dir ./storage/shared_channel \
-  --rl-checkpoint models/rl/ppo_agent_final.pt
+  --rl-checkpoint storage/models/rl_agent.pt
 ```
 
 **Docker usage**:
 ```bash
-# Default: auto mode, 20 items
+# Default: static mode (no checkpoints needed), 20 items
 docker compose up dcass-sender dcass-receiver
 
 # Override mode via env var
-DCASS_MODE=static docker compose up
+DCASS_MODE=auto docker compose up
 
 # Override sequence length
 DCASS_SEQ_LENGTH=50 docker compose up
@@ -96,16 +93,18 @@ DCASS_SEQ_LENGTH=50 docker compose up
 
 **Full argument reference**:
 ```
---shared-dir     PATH    Drop directory for packets    [/app/storage/shared_channel]
---mode           STR     auto / rl / gan / static / train  [auto]
---base-delay     FLOAT   Base inter-item delay (seconds)   [3.0]
+--shared-dir     PATH    Drop directory for packets        [/app/shared_channel]
+--mode           STR     static / auto / rl / gan / train  [static]
+--base-delay     FLOAT   Base inter-item delay (seconds, static mode)  [3.0]
 --num-channels   INT     Number of distribution channels   [3]
---profile        STR     Noise profile: casual/stealth/bursty  [casual]
+--profile        STR     Noise profile: casual/stealth/burst  [casual]
 --gan-checkpoint PATH    Trained GAN .pt file              [None]
 --rl-checkpoint  PATH    Trained RL .pt file               [None]
---sequence-length INT    Number of media items to send     [20]
---message        STR     Secret message (display only)     ["Meet at..."]
---dry-run               Skip real delays (immediate)
+--episodes       INT     Training episodes (--mode train only)  [100]
+--sequence-length INT    Media item count when --no-encode is set  [20]
+--message        STR     Secret message to encode          ["Meet at the cafe at noon"]
+--no-encode              Skip encoding, send dummy media_NNN IDs (sniff test only)
+--dry-run                Skip real delays (immediate)
 ```
 
 **Output**: JSON packet files in `--shared-dir`, plus a `_manifest.json` summarising the session.
@@ -131,9 +130,11 @@ docker compose up dcass-receiver
 
 **Full argument reference**:
 ```
---watch          PATH    Directory to watch for packets    [/app/storage/shared_channel]
+--watch          PATH    Directory to watch for packets    [/app/shared_channel]
 --timeout        FLOAT   Silence threshold before reassembly (seconds)  [10.0]
 --poll-interval  FLOAT   Polling frequency (seconds)       [1.0]
+--no-decode              Sniff-only: log reassembled media IDs, skip decoding
+--exit-after-decode      Exit after the first successful reassembly+decode
 ```
 
 **How reassembly works**:
@@ -192,17 +193,23 @@ python scripts/utils/docker_orchestrate.py --cleanup
 > **These are deferred to later in the project timeline.**  
 > Run them in order: generate data → train GAN → train RL.
 
-### `generate_traffic_data.py`
+### `generate_traffic_dataset.py`
 
 Generates synthetic human-like social media posting sessions for GAN training. Uses circadian rhythm simulation and bursty behavior patterns.
 
 **Local usage**:
 ```bash
-python scripts/training/generate_traffic_data.py \
+python scripts/stealth/generate_traffic_dataset.py \
   --num-sessions 2000 \
   --num-channels 3 \
-  --output data/behavioral/human_traffic.json
+  --output storage/data/behavioral/human_traffic.json
 ```
+
+The script itself is synthetic-data honest: it prints a note that this
+corpus models browsing regimes, not recorded human behaviour. Generated
+files are an **alternative** training corpus for the trainers' `--data`
+flag — keep them out of `storage/data/traffic/`, which holds the recorded
+corpus.
 
 **Docker usage**:
 ```bash
@@ -211,15 +218,13 @@ docker compose --profile training run --rm dcass-gen-traffic
 make docker-gen-data
 ```
 
-**Output format** (`data/behavioral/human_traffic.json`):
+**Output format** (`storage/data/behavioral/human_traffic.json`):
 ```json
 [
   {
     "delays": [5.2, 3.1, 12.4],
     "channels": [0, 1, 0],
-    "time_of_day": 14,
-    "num_channels": 3,
-    "session_length": 3
+    "time_of_day": 14
   }
 ]
 ```
@@ -228,8 +233,10 @@ make docker-gen-data
 ```
 --num-sessions   INT    Number of sessions to generate      [2000]
 --num-channels   INT    Number of channels to simulate      [3]
+--min-len        INT    Shortest session                    [15]
+--max-len        INT    Longest session                     [80]
 --seed           INT    Random seed for reproducibility     [42]
---output         PATH   Output JSON file path
+--output         PATH   Output JSON file path               [storage/data/behavioral/human_traffic.json]
 ```
 
 ---
@@ -238,15 +245,15 @@ make docker-gen-data
 
 Trains the GAN stealth scheduler: `TemporalPatternGenerator` (Generator) vs. `DeepPacketInspectionWarden` (Discriminator).
 
-> **Prerequisite**: Run `generate_traffic_data.py` first.
+> **Data**: run `generate_traffic_dataset.py` first, or rely on the synthetic fallback when the default `--data` file (`storage/data/traffic/human_traffic.json`) is missing.
 
 **Local usage**:
 ```bash
-python scripts/training/train_gan.py \
-  --data data/behavioral/human_traffic.json \
-  --epochs 50 \
+python scripts/stealth/train_gan.py \
+  --data storage/data/traffic/human_traffic.json \
+  --epochs 20 \
   --batch-size 32 \
-  --checkpoint-dir models/gan
+  --checkpoint-dir checkpoints/gan
 ```
 
 **Docker usage**:
@@ -256,43 +263,49 @@ docker compose --profile training run --rm dcass-train-gan
 GAN_EPOCHS=100 docker compose --profile training run --rm dcass-train-gan
 ```
 
-**Resume from checkpoint**:
-```bash
-python scripts/training/train_gan.py \
-  --resume models/gan/epoch_010.pt \
-  --epochs 50
-```
-
-**With WGAN-GP** (more stable training):
-```bash
-python scripts/training/train_gan.py --wgan-gp --epochs 100
-```
+WGAN-GP is always on; the escape hatch is `--no-gradient-penalty` (training
+is unstable without it). Per-epoch checkpoints accumulate in
+`--checkpoint-dir`, but resuming from them is not supported by this CLI.
 
 **Full argument reference**:
 ```
---data              PATH    Human traffic JSON              [data/behavioral/human_traffic.json]
---epochs            INT     Training epochs                 [50]
---batch-size        INT     Batch size                      [32]
---lr-gen            FLOAT   Generator learning rate         [1e-4]
---lr-warden         FLOAT   Warden learning rate            [2e-4]
---warden-steps      INT     Warden updates per Generator step [5]
---device            STR     cpu or cuda                     [cpu]
---checkpoint-dir    PATH    Where to save checkpoints       [models/gan]
---resume            PATH    Resume from checkpoint          [None]
---wgan-gp                   Use WGAN-GP gradient penalty
+--data                  PATH    Human traffic JSON                  [storage/data/traffic/human_traffic.json]
+--epochs                INT     Training epochs                     [20]
+--batch-size            INT     Batch size                          [32]
+--latent-dim            INT     Latent dimension                    [128]
+--hidden-dim            INT     Hidden dimension                    [256]
+--num-channels          INT     Channels to simulate                [3]
+--max-seq-len           INT     Max session length                  [100]
+--val-fraction          FLOAT   Held-out fraction for Phase D eval  [0.1]
+--no-gradient-penalty           Disable WGAN-GP (escape hatch)
+--lambda-gp             FLOAT   Gradient-penalty weight             [100.0]
+--critic-offset-penalty FLOAT   Penalty on the critic score's offset  [0.0]
+--critic-score-bound    FLOAT   Bound on the critic's score (0 = unbounded)  [0.0]
+--generator-lr          FLOAT   Generator learning rate             [1e-4]
+--warden-lr             FLOAT   Warden learning rate                [2e-4]
+--warden-steps          INT     Warden updates per Generator step   [5]
+--device                STR     cpu or cuda                         [cuda if available, else cpu]
+--checkpoint-dir        PATH    Where to save per-epoch checkpoints [checkpoints/gan]
+--out                   PATH    Final checkpoint path               [storage/models/gan_generator.pt]
 ```
 
 **Outputs**:
-- `models/gan/epoch_{N:03d}.pt` — per-epoch checkpoint
-- `models/gan/final.pt` — final checkpoint used by sender
+- `checkpoints/gan/epoch_{N:03d}.pt` — per-epoch checkpoint (under `--checkpoint-dir`)
+- `storage/models/gan_generator.pt` — final checkpoint (`--out`), the path `StealthScheduler` loads by default
 
-**Structure of checkpoint** (`final.pt`):
+**Structure of the final checkpoint** (`--out`):
 ```python
 {
-    "generator_state": ...,   # TemporalPatternGenerator weights
-    "warden_state": ...,      # DeepPacketInspectionWarden weights — used by train_rl.py
-    "epoch": 50,
-    "config": { ... }
+    "generator_state": ...,      # TemporalPatternGenerator weights
+    "warden_state": ...,         # DeepPacketInspectionWarden weights — used by train_rl.py
+    "generator_optimizer": ...,
+    "warden_optimizer": ...,
+    "epoch": 20,
+    "global_step": ...,
+    "config": { ... },
+    "metrics_history": ...,
+    "critic_bounded": ...,
+    "critic_score_bound": ...,
 }
 ```
 
@@ -302,15 +315,17 @@ python scripts/training/train_gan.py --wgan-gp --epochs 100
 
 Trains the PPO RL stealth policy agent inside `StealthEnvironment`.
 
-> **Prerequisite**: Optionally run `train_gan.py` first. The RL agent can use the trained Warden as adversary; without it, a fresh (untrained) Warden is used.
+> **Prerequisite**: run `train_gan.py` first — `--warden-checkpoint` is
+> **required** and must point at the Phase-A checkpoint that contains
+> `warden_state` (default: `storage/models/gan_generator.pt`).
 
 **Local usage**:
 ```bash
-python scripts/training/train_rl.py \
-  --episodes 1000 \
+python scripts/stealth/train_rl.py \
+  --episodes 500 \
   --num-channels 3 \
-  --checkpoint-dir models/rl \
-  --warden-checkpoint models/gan/final.pt
+  --out storage/models/rl_agent.pt \
+  --warden-checkpoint storage/models/gan_generator.pt
 ```
 
 **Docker usage**:
@@ -320,26 +335,24 @@ docker compose --profile training run --rm dcass-train-rl
 RL_EPISODES=2000 docker compose --profile training run --rm dcass-train-rl
 ```
 
-**Without a pre-trained Warden**:
-```bash
-python scripts/training/train_rl.py --episodes 1000
-# Uses fresh (untrained) Warden — still works but stealth may be weaker
-```
-
 **Full argument reference**:
 ```
---episodes           INT    Training episodes               [1000]
---num-channels       INT    Number of channels              [3]
---device             STR    cpu or cuda                     [cpu]
---lambda-stealth     FLOAT  Stealth penalty weight (λ)      [100.0]
---lr                 FLOAT  PPO learning rate               [3e-4]
---checkpoint-dir     PATH   Where to save checkpoints       [models/rl]
---warden-checkpoint  PATH   Pre-trained Warden .pt          [None]
---log-interval       INT    Print stats every N episodes    [20]
+--episodes                  INT    Training episodes               [500]
+--num-channels              INT    Number of channels              [3]
+--device                    STR    cpu or cuda                     [cuda if available, else cpu]
+--lambda-stealth            FLOAT  Stealth penalty weight (λ)      [50.0]
+--lambda-warmup-fraction    FLOAT  Ramp-up fraction for λ          [0.2]
+--min-seq-len               INT    Shortest media sequence         [30]
+--max-seq-len               INT    Longest media sequence          [60]
+--out                       PATH   Final agent checkpoint          [storage/models/rl_agent.pt]
+--seed                      INT    Random seed                     [42]
+--log-interval              INT    Print stats every N episodes    [10]
+--warden-checkpoint         PATH   Phase-A Warden .pt (required)
 ```
 
 **Output**:
-- `models/rl/ppo_agent_final.pt` — checkpoint loaded by sender in RL mode
+- `storage/models/rl_agent.pt` — checkpoint (`--out`); pass it to
+  `run_sender.py --rl-checkpoint` or `evaluate_stealth.py --rl-checkpoint`
 
 ---
 
@@ -380,13 +393,15 @@ make build-text-index
 
 ## 5. Demo & Evaluation Scripts
 
-### `demo_dcass.py`
+No `demo_dcass.py` exists; the demos live in `scripts/demo/`:
 
-Full end-to-end demo: encode a message, distribute via channels.
+- `scripts/demo/mentor_live_demo.py` — five-stage live walkthrough (FAISS volume audit, VCP codebook, Reed–Solomon ECC, multi-modal encode/decode, steganalysis proof)
+- `scripts/demo/demo_wgan_stealth.py` — interactive WGAN-GP timing-camouflage demo (metronome vs. generator, circadian stage, warden blind test)
+- `scripts/demo/run_gan_demo.py` — GAN stealth demo written for a Docker context (`docker run dcass-demo`)
 
-```bash
-python scripts/demos/demo_dcass.py
-```
+The end-to-end round trip that `encode → schedule → transmit → reassemble → decode` covers is run by `run_pipeline.py` (see QUICKSTART §7), not a demo script.
+
+> **Note**: the two standalone demos currently fail when run directly — `run_gan_demo.py` on script-path imports, `demo_wgan_stealth.py` on PyTorch 2.6's `weights_only` checkpoint loading.
 
 ### `evaluate_stealth.py`
 
@@ -394,6 +409,15 @@ Evaluates the stealth performance of transmission schedules using the Warden.
 
 ```bash
 python scripts/testing/evaluate_stealth.py
+```
+
+**Heads-up**: the script's own `sys.path` bootstrap runs one import too late
+(`scripts/testing/evaluate_stealth.py:19` vs `:25`), so when invoked directly
+it errors with `ModuleNotFoundError: No module named 'src'`. Run it with the
+project root on the import path:
+
+```bash
+PYTHONPATH=. python scripts/testing/evaluate_stealth.py
 ```
 
 ### `test_stealth_system.py`
@@ -415,7 +439,7 @@ Phase 1 — Setup (NOW)
   ✅ build_indices.py                        ← build FAISS after downloading data
 
 Phase 2 — Training (LATER)
-  [ ] generate_traffic_data.py              ← generate synthetic human traffic
+  [ ] generate_traffic_dataset.py           ← generate synthetic human traffic
   [ ] train_gan.py                          ← train GAN scheduler
   [ ] train_rl.py --warden-checkpoint ...  ← train RL agent
 

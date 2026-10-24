@@ -137,7 +137,7 @@ python scripts/runtime/run_pipeline.py \
   --sender alice \
   --recipient bob \
   --mode auto \
-  --speed 100
+  --speed-multiplier 100
 ```
 
 Or from Python:
@@ -169,7 +169,12 @@ python scripts/stealth/train_gan.py \
   --out storage/models/gan_generator.pt
 ```
 
-Falls back to synthetic data if `data/human_traffic.json` doesn't exist.
+Falls back to synthetic data if the default `--data`
+(`storage/data/traffic/human_traffic.json`) is missing. To train on generated
+data instead, create it with
+`python scripts/stealth/generate_traffic_dataset.py` and pass the file via
+`--data` (generated corpora are synthetic, not recorded browsing — put them
+anywhere except `storage/data/traffic/`, which holds the recorded corpus).
 
 ### 8b. Evaluate the Warden
 
@@ -210,7 +215,9 @@ Expected: `mode: rl`, 20 delays, multiple channels.
 ## 9. Run the full evaluation suite
 
 ```bash
-python scripts/testing/evaluate_stealth.py \
+# The script's own sys.path bootstrap runs one import too late, so name the
+# project root explicitly (see scripts/testing/evaluate_stealth.py:19 vs :25)
+PYTHONPATH=. python scripts/testing/evaluate_stealth.py \
   --gan-checkpoint storage/models/gan_generator.pt \
   --rl-checkpoint storage/models/rl_agent.pt
 ```
