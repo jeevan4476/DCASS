@@ -214,9 +214,7 @@ Expected: `mode: rl`, 20 delays, multiple channels.
 ## 9. Run the full evaluation suite
 
 ```bash
-# The script's own sys.path bootstrap runs one import too late, so name the
-# project root explicitly (see scripts/testing/evaluate_stealth.py:19 vs :25)
-PYTHONPATH=. python scripts/testing/evaluate_stealth.py \
+python scripts/testing/evaluate_stealth.py \
   --gan-checkpoint storage/models/gan_generator.pt \
   --rl-checkpoint storage/models/rl_agent.pt
 ```

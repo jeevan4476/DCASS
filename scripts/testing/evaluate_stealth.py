@@ -16,13 +16,14 @@ import sys
 import json
 import argparse
 import torch
-from src.utils.checkpoint_io import load_trained_checkpoint
-from src.stealth.gan.trainer import apply_critic_config
 import numpy as np
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.utils.checkpoint_io import load_trained_checkpoint
+from src.stealth.gan.trainer import apply_critic_config
 
 # The real recorded traffic corpus. The previous default (`data/human_traffic.json`)
 # does not exist in the repository, so every run silently dropped the

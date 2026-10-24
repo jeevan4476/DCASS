@@ -411,15 +411,6 @@ Evaluates the stealth performance of transmission schedules using the Warden.
 python scripts/testing/evaluate_stealth.py
 ```
 
-**Heads-up**: the script's own `sys.path` bootstrap runs one import too late
-(`scripts/testing/evaluate_stealth.py:19` vs `:25`), so when invoked directly
-it errors with `ModuleNotFoundError: No module named 'src'`. Run it with the
-project root on the import path:
-
-```bash
-PYTHONPATH=. python scripts/testing/evaluate_stealth.py
-```
-
 ### `test_stealth_system.py`
 
 Integration test for the GAN + RL stealth pipeline (no checkpoints needed).

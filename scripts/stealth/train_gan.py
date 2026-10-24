@@ -12,7 +12,7 @@ See docs/GAN_RL_INTEGRATION_PLAN.md (Phase A) for the full rationale.
 
 Usage:
     python scripts/stealth/train_gan.py \\
-        --data data/human_traffic.json \\
+        --data storage/data/traffic/human_traffic.json \\
         --epochs 20 --batch-size 32 --val-fraction 0.1 \\
         --out storage/models/gan_generator.pt
 """
