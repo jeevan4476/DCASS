@@ -178,7 +178,7 @@ def profile_stage_breakdown(engine: SemanticEngine, test_payload: str, session_k
 
     # 2. Decoding stages
     t0 = time.perf_counter()
-    dec = engine.decode(
+    engine.decode(
         res.media_ids,
         mode="dssc",
         session_key=session_key,

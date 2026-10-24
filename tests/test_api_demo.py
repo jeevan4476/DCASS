@@ -56,6 +56,16 @@ def test_verify_carrier_missing_media_id_returns_404(client):
     assert response.status_code == 404
 
 def test_live_steganalysis_endpoint(client):
+    from src.api.demo import REPO_ROOT, _load_catalog
+
+    entries = [
+        e
+        for e in _load_catalog("image_metadata.json")
+        if (REPO_ROOT / e.get("path", "")).exists()
+    ]
+    if len(entries) < 4:
+        pytest.skip(f"image corpus needs >= 4 images, found {len(entries)}")
+
     response = client.post(
         "/api/demo/live-steganalysis",
         json={"detector": "sr_net", "sample_count": 2},

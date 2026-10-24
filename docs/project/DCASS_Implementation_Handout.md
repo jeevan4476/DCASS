@@ -927,36 +927,7 @@ stateDiagram-v2
 
 ## 13. Configuration System
 
-### `config/default.yaml` — All Parameters
-
-| Section | Key Parameters |
-|---|---|
-| `project` | name, version, random_seed (42) |
-| `paths` | data_dir, raw_data, indices_dir, cache_dir, models_dir, logs_dir |
-| `corpus.text` | source_dir, extensions, min/max_chunk_length |
-| `corpus.image` | source_dir, captions_file, images_dir |
-| `corpus.audio` | enabled (false), sample_rate (16000), max_duration (30s) |
-| `embeddings.text` | model: all-MiniLM-L6-v2, dim: 384 |
-| `embeddings.image` | model: ViT-B/32, dim: 512 |
-| `embeddings.audio` | model: laion/clap-htsat-unfused, dim: 512 |
-| `index` | type: flat, IVF nlist/nprobe |
-| `model` | device: auto, fp16: false |
-| `encoding` | default_modality, candidates_per_chunk, min_similarity (0.3) |
-| `context` | source: crypto, update_interval: 3600 |
-| `distribution` | default_policy: round_robin, base_delay: 3, channels |
-| `stealth.gan` | latent_dim: 100, hidden_dim: 256, lr: 0.0002 |
-| `stealth.rl` | algorithm: PPO, lr: 0.0003, gamma: 0.99 |
-| `analysis.benchmark` | iterations: 100, message_sizes |
-| `analysis.adversarial` | analyzer_type: statistical, threshold: 0.5 |
-| `logging` | level: INFO, rotation: 10MB |
-
-### `config/settings.py` — Config Class
-
-- **Singleton pattern** with `__new__`
-- **YAML loading** with `yaml.safe_load`
-- **Dot-notation access**: `config.get("embeddings.text.model")`
-- **Path resolution**: `config.get_path("paths.data_dir")` → absolute Path
-- **Auto device**: `config.get_device()` → resolves "auto" to "cuda"/"cpu" (device selection follows torch's own defaults; no environment override is read)
+Configuration across DCASS is managed via strongly-typed dataclasses (such as `PPOConfig`, `TrainingConfig`, and `EmbeddingConfig`) and explicit runtime parameter parsing, rather than a centralized singleton YAML loader. Default directory paths are anchored directly to `PROJECT_ROOT` across `src/` and `scripts/`.
 
 ---
 

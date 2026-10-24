@@ -23,7 +23,6 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 import sys
-import numpy as np
 
 # ---------------------------------------------------------------------------
 # Path setup

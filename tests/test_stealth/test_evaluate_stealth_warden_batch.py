@@ -102,3 +102,13 @@ def test_evaluate_warden_truncates_rows_to_the_convention_length():
         f"{DETECTOR_SEQ_LEN} steps scored {score_truncated!r} -- the row was "
         "not truncated to the scoring convention"
     )
+
+
+def test_evaluate_warden_handles_empty_batch():
+    """An empty batch must return an empty list without crashing."""
+    module = _load_script_module("scripts/testing/evaluate_stealth.py")
+    warden = DeepPacketInspectionWarden(num_channels=3)
+    warden.eval()
+
+    res = module.evaluate_warden(warden, [], [])
+    assert res == []

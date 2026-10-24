@@ -60,6 +60,8 @@ def evaluate_warden(warden, delays_list, channels_list):
     truncated to it, so a long row is scored under the same convention
     the detector was trained on instead of stretching the batch.
     """
+    if not delays_list:
+        return []
     rows_d = [d[:DETECTOR_SEQ_LEN] for d in delays_list]
     rows_c = [c[:DETECTOR_SEQ_LEN] for c in channels_list]
     padded_d = [d + [0.0] * (DETECTOR_SEQ_LEN - len(d)) for d in rows_d]

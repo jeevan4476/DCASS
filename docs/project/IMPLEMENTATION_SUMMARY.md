@@ -262,7 +262,7 @@ docker-compose up
 
 ### Example 1: Quick Test
 ```bash
-python scripts/test_stealth_system.py
+python scripts/testing/test_stealth_system.py
 ```
 
 ### Example 2: Train Warden
@@ -271,7 +271,7 @@ from src.stealth.gan.trainer import train_gan
 from pathlib import Path
 
 train_gan(
-    data_path=Path("data/human_traffic.json"),
+    data_path=Path("storage/data/traffic/human_traffic.json"),
     num_epochs=50
 )
 ```
@@ -284,7 +284,7 @@ from src.analysis.adversarial.warden import DeepPacketInspectionWarden
 
 # Load trained Warden
 warden = DeepPacketInspectionWarden(num_channels=3)
-warden.load_state_dict(torch.load("checkpoints/warden.pt"))
+warden.load_state_dict(torch.load("storage/models/warden.pt"))
 
 # Create environment
 env = StealthEnvironment(num_channels=3, warden=warden)
@@ -328,12 +328,14 @@ DCASS/
 │           ├── warden.py             # Statistical Traffic Classifier
 │           └── __init__.py
 ├── scripts/
-│   ├── run_sender.py                 # Alice (sender) script
-│   ├── run_receiver.py               # Bob (receiver) script
-│   └── test_stealth_system.py        # Integration tests
+│   ├── runtime/
+│   │   ├── run_sender.py             # Alice (sender) script
+│   │   └── run_receiver.py           # Bob (receiver) script
+│   └── testing/
+│       └── test_stealth_system.py    # Integration tests
 ├── Dockerfile                         # Container image
 ├── docker-compose.yml                 # Alice-Bob network
-└── DOCKER_SETUP.md                    # Docker guide
+└── docs/guides/DOCKER_SETUP.md        # Docker guide
 ```
 
 ---

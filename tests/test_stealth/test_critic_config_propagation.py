@@ -48,7 +48,7 @@ def test_cli_final_checkpoint_carries_critic_config(tmp_path):
 
     result = subprocess.run(
         [
-            str(_REPO_ROOT / ".venv" / "bin" / "python"),
+            sys.executable,
             str(_REPO_ROOT / "scripts" / "stealth" / "train_gan.py"),
             "--data", str(tmp_path / "missing_data.json"),  # synthetic fallback
             "--epochs", "1",
@@ -80,8 +80,14 @@ def test_load_frozen_warden_restores_bounded_critic(tmp_path):
     module = _load_script_module(
         "scripts/stealth/train_rl.py", "_fixe_script_train_rl"
     )
+    import pytest
+
+    shipped_path = _REPO_ROOT / "storage" / "models" / "gan_generator.pt"
+    if not shipped_path.exists():
+        pytest.skip(f"shipped checkpoint not present on disk: {shipped_path}")
+
     shipped = torch.load(
-        _REPO_ROOT / "storage" / "models" / "gan_generator.pt",
+        shipped_path,
         map_location="cpu",
         weights_only=False,
     )
@@ -101,13 +107,18 @@ def test_shipped_checkpoint_loads_with_untouched_defaults(tmp_path):
     must leave the constructor defaults untouched (no fabricated
     restoration) — exactly what apply_critic_config's absence behavior
     promises."""
+    import pytest
     from src.analysis.adversarial.warden import CRITIC_SCORE_BOUND
+
+    shipped_path = _REPO_ROOT / "storage" / "models" / "gan_generator.pt"
+    if not shipped_path.exists():
+        pytest.skip(f"shipped checkpoint not present on disk: {shipped_path}")
 
     module = _load_script_module(
         "scripts/stealth/train_rl.py", "_fixe_script_train_rl"
     )
     warden = module.load_frozen_warden(
-        _REPO_ROOT / "storage" / "models" / "gan_generator.pt",
+        shipped_path,
         num_channels=3,
         device="cpu",
     )
