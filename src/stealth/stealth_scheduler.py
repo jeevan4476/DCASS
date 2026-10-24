@@ -11,17 +11,50 @@ from __future__ import annotations
 
 import threading
 import torch
+from src.utils.checkpoint_io import load_trained_checkpoint
 import numpy as np
 from pathlib import Path
 from typing import Literal, Optional
 
 from src.distribution.noise import NoiseController
 from src.distribution.profiles import ACTIVITY_PROFILES
+from src.stealth.delay_contract import (  # noqa: F401
+    GAN_DELAY_MAX,
+    GAN_DELAY_MIN,
+    GAN_DELAY_OFFSET,
+    GAN_DELAY_SCALE,
+    GAN_RAW_BAND,
+    GAN_RAW_MAX,
+    GAN_RAW_MIN,
+    canonical_delay_mapping,
+)
+from src.stealth.rl.pacing import RL_DELAY_MIN
+
+# Per-channel cooldowns, in seconds. The enterprise rate limits are
+# ch0 = 10/min (6 s), ch1 = 5/min (12 s), ch2 = 15/min (4 s). This is the
+# same table the Component 3 benchmark measures against and the RL
+# environment's channel clocks encode, so every executor and the
+# measurement share one constant.
+CHANNEL_COOLDOWNS = {0: 6.0, 1: 12.0, 2: 4.0}
 
 # Anchored to the project root so schedules work regardless of CWD.
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_GAN_CHECKPOINT = _PROJECT_ROOT / "storage" / "models" / "gan_generator.pt"
 DEFAULT_RL_CHECKPOINT = _PROJECT_ROOT / "storage" / "models" / "rl_agent.pt"
+
+# Canonical WGAN delay mapping.
+#
+# The generator's delay head emits a softplus value, folded into the band
+# of raw values the mapping can turn into the deployment window, so the
+# mapping is never clipped and the gradient always reaches the head. The
+# mapping below expands that band onto a human-plausible 0.5 s .. 30 s
+# range and is the single definition used by the deployed GAN path, the
+# deployed hybrid path, and the Component 3 benchmark, so the measured row
+# and the shipped row cannot drift apart.
+#
+# The definition lives in `src.stealth.delay_contract`, which the
+# generator also reads, and is re-exported here because the scheduler is
+# where the deployment contract has always been pinned.
 
 
 class StealthScheduler:
@@ -82,6 +115,7 @@ class StealthScheduler:
         base_delay: float = 3.0,
         gan_checkpoint: Optional[Path] = None,
         rl_checkpoint: Optional[Path] = None,
+        time_of_day: Optional[float] = None,
     ) -> dict:
         """
         Produce a timed schedule for *media_ids*.
@@ -89,7 +123,13 @@ class StealthScheduler:
         mode="auto" runs the rl -> gan -> static cascade, matching the
         documented behaviour in scripts/runtime/run_sender.py.
         mode="hybrid" combines WGAN timing pauses with closed-loop channel
-        cooldown tracking to guarantee zero rate-limit violations.
+        cooldown tracking so every exported landing respects the per-channel
+        cooldowns the Component 3 benchmark measures.
+
+        time_of_day pins the hour-of-day conditioning handed to the WGAN
+        generator (0-23). When None, the GAN and hybrid paths draw a random
+        hour. Pinning it is what lets the Component 3 benchmark drive the
+        deployed path under a controlled hour instead of re-implementing it.
 
         Returns
         -------
@@ -101,7 +141,9 @@ class StealthScheduler:
         """
         # Thread-safe scheduling: serialize concurrent calls
         with self._schedule_lock:
-            return self._schedule_unlocked(media_ids, mode, base_delay, gan_checkpoint, rl_checkpoint)
+            return self._schedule_unlocked(
+                media_ids, mode, base_delay, gan_checkpoint, rl_checkpoint, time_of_day
+            )
 
     @staticmethod
     def _validate_schedule(schedule: dict, media_ids: list[str]) -> dict:
@@ -136,6 +178,7 @@ class StealthScheduler:
         base_delay: float,
         gan_checkpoint: Optional[Path],
         rl_checkpoint: Optional[Path],
+        time_of_day: Optional[float] = None,
     ) -> dict:
         """Internal scheduling logic (called under lock)."""
         if mode == "auto":
@@ -149,6 +192,7 @@ class StealthScheduler:
                     media_ids,
                     base_delay,
                     self._resolve_checkpoint(gan_checkpoint, DEFAULT_GAN_CHECKPOINT),
+                    time_of_day,
                 )
             if schedule["mode_used"] not in ("rl", "gan"):
                 schedule = self._schedule_static(media_ids, base_delay)
@@ -158,12 +202,16 @@ class StealthScheduler:
             checkpoint = self._resolve_checkpoint(
                 gan_checkpoint, DEFAULT_GAN_CHECKPOINT
             )
-            schedule = self._schedule_hybrid(media_ids, base_delay, checkpoint)
+            schedule = self._schedule_hybrid(
+                media_ids, base_delay, checkpoint, time_of_day
+            )
         elif mode == "gan":
             checkpoint = self._resolve_checkpoint(
                 gan_checkpoint, DEFAULT_GAN_CHECKPOINT
             )
-            schedule = self._schedule_gan(media_ids, base_delay, checkpoint)
+            schedule = self._schedule_gan(
+                media_ids, base_delay, checkpoint, time_of_day
+            )
         elif mode == "rl":
             checkpoint = self._resolve_checkpoint(rl_checkpoint, DEFAULT_RL_CHECKPOINT)
             schedule = self._schedule_rl(media_ids, base_delay, checkpoint)
@@ -219,7 +267,7 @@ class StealthScheduler:
         import pathlib
         sys.modules.setdefault("pathlib._local", pathlib)
 
-        ckpt = torch.load(checkpoint, map_location=self.device, weights_only=False)
+        ckpt = load_trained_checkpoint(checkpoint, map_location=self.device,)
         # Prefer dimensions stored in the checkpoint; fall back to the
         # architecture defaults they were trained with.
         config = ckpt.get("config", {}) if isinstance(ckpt, dict) else {}
@@ -241,7 +289,11 @@ class StealthScheduler:
         return True
 
     def _schedule_gan(
-        self, media_ids: list[str], base_delay: float, checkpoint: Optional[Path]
+        self,
+        media_ids: list[str],
+        base_delay: float,
+        checkpoint: Optional[Path],
+        time_of_day: Optional[float] = None,
     ) -> dict:
         if not self._load_generator(checkpoint):
             print(
@@ -249,22 +301,25 @@ class StealthScheduler:
             )
             return self._schedule_static(media_ids, base_delay)
 
-        import torch
 
         seq_len = len(media_ids)
-        time_of_day = torch.tensor(
-            [float(np.random.randint(0, 24))], device=self.device
+        hour = (
+            float(np.random.randint(0, 24)) if time_of_day is None else float(time_of_day)
         )
+        tod = torch.tensor([hour], device=self.device)
 
         with torch.no_grad():
             schedule = self._generator.generate(
                 batch_size=1,
                 sequence_length=seq_len,
-                time_of_day=time_of_day,
+                time_of_day=tod,
                 device=self.device,
             )
 
-        delays = schedule.delays[0].cpu().tolist()
+        raw_delays = schedule.delays[0].cpu().numpy()
+        # Use the same canonical mapping as the hybrid path and the C3
+        # benchmark, so the measured GAN row is the deployed GAN row.
+        delays = canonical_delay_mapping(raw_delays).tolist()
         channels = schedule.sample_channels()[0].cpu().tolist()
 
         return {
@@ -272,6 +327,9 @@ class StealthScheduler:
             "delays": delays,
             "channels": channels,
             "mode_used": "gan",
+            # Pre-mapping generator output, for diagnostics that need to
+            # report the generator's own units (e.g. the C3 diurnal check).
+            "raw_delays": [float(d) for d in raw_delays.tolist()],
         }
 
     # ------------------------------------------------------------------
@@ -279,35 +337,41 @@ class StealthScheduler:
     # ------------------------------------------------------------------
 
     def _schedule_hybrid(
-        self, media_ids: list[str], base_delay: float, checkpoint: Optional[Path]
+        self,
+        media_ids: list[str],
+        base_delay: float,
+        checkpoint: Optional[Path],
+        time_of_day: Optional[float] = None,
     ) -> dict:
         """
         Hybrid Mode: Combines WGAN generative temporal pauses with closed-loop
-        action-masked channel routing to guarantee zero rate-limit cooldown violations.
+        action-masked channel routing so every exported landing respects the
+        per-channel cooldowns (same table the benchmark measures).
         """
         if not self._load_generator(checkpoint):
             print("[StealthScheduler] GAN checkpoint not found for hybrid — falling back to static")
             return self._schedule_static(media_ids, base_delay)
 
-        import torch
         seq_len = len(media_ids)
-        time_of_day = torch.tensor([float(np.random.randint(0, 24))], device=self.device)
+        hour = (
+            float(np.random.randint(0, 24)) if time_of_day is None else float(time_of_day)
+        )
+        tod = torch.tensor([hour], device=self.device)
 
         with torch.no_grad():
             schedule = self._generator.generate(
                 batch_size=1,
                 sequence_length=seq_len,
-                time_of_day=time_of_day,
+                time_of_day=tod,
                 device=self.device,
             )
 
         raw_delays = schedule.delays[0].cpu().numpy()
-        delays = np.clip((raw_delays - 0.5) * 1500.0 + 1.5, 0.5, 30.0).tolist()
+        delays = canonical_delay_mapping(raw_delays).tolist()
         channel_logits = schedule.channel_logits[0].cpu().numpy()
 
         # Closed-loop channel cooldown routing
-        # Enterprise cooldowns: ch0 = 6.0s (10/min), ch1 = 12.0s (5/min), ch2 = 4.0s (15/min)
-        cooldowns = {0: 6.0, 1: 12.0, 2: 4.0}
+        cooldowns = CHANNEL_COOLDOWNS
         t_last = {c: -100.0 for c in range(self.num_channels)}
         t_current = 0.0
         routed_channels = []
@@ -350,6 +414,7 @@ class StealthScheduler:
         from src.stealth.rl.agent import PPOAgent, PPOConfig
         from src.stealth.rl.environment import StealthEnvironment
         from src.analysis.adversarial.warden import DeepPacketInspectionWarden
+        from src.stealth.gan.trainer import apply_critic_config
 
         # The RL policy's learned behavior does not depend on this Warden
         # instance at inference time (the policy weights already encode
@@ -365,10 +430,10 @@ class StealthScheduler:
                 import sys
                 import pathlib
                 sys.modules.setdefault("pathlib._local", pathlib)
-                gan_ckpt = torch.load(
-                    DEFAULT_GAN_CHECKPOINT, map_location=self.device, weights_only=False
-                )
+                gan_ckpt = load_trained_checkpoint(
+                    DEFAULT_GAN_CHECKPOINT, map_location=self.device,)
                 warden.load_state_dict(gan_ckpt["warden_state"])
+                apply_critic_config(warden, gan_ckpt)
             except Exception as exc:  # noqa: BLE001 - diagnostics-only fallback
                 print(
                     f"[StealthScheduler] Could not load trained Warden for RL "
@@ -399,36 +464,79 @@ class StealthScheduler:
         state = env.reset(media_ids)
         delays, channels = [], []
 
-        for _ in range(len(media_ids)):
-            # Pass the action mask so the policy doesn't pick a
-            # rate-limit-cooling channel at inference (it already does
-            # during training via collect_rollout). This also means
-            # "rate_limit_violation" steps should no longer occur here.
+        # Landing-clock bookkeeping for the exported schedule, in the same
+        # terms the Component 3 benchmark measures: cumsum(delays)[k] is
+        # item k's landing time, prev_landing is the landing time of the
+        # item just placed, and last_landing[] is the last landing per
+        # channel (same -100 initial offset as the hybrid router).
+        prev_landing = 0.0
+        last_landing = {c: -100.0 for c in range(self.num_channels)}
+
+        # Drive the policy with the closed-loop action mask (the same mask
+        # the training rollout used), so no transmission targets a channel
+        # that is still cooling down; env.step can end the episode only
+        # with the timeout or an empty queue, and a cooldown pick inside
+        # step() is a rate-limit back-off extension, never a rejection —
+        # the environment emits no "rate_limit_violation" outcome at all.
+        max_steps = len(media_ids) * 3
+        for _ in range(max_steps):
+            if len(delays) >= len(media_ids):
+                break
             mask = env.get_action_mask()
             action, _, _ = self._rl_agent.select_action(state, channel_mask=mask)
             next_state, _, done, info = env.step(action)
 
-            if info.get("reason") == "rate_limit_violation":
-                # Should be rare now that the mask is applied, but if the
-                # policy still picks a masked channel (e.g. all channels
-                # cooling down), don't let a phantom step leak into the
-                # exported schedule — retry is not possible without
-                # consuming the queue, so stop here and pad below.
-                state = next_state
-                continue
+            if info.get("reason") == "timeout":
+                # The episode clock expired before this item could be sent:
+                # the env returns before dequeuing media and the info dict
+                # carries no delay, so nothing reached the wire for this
+                # step. Export only confirmed transmissions; the tail is
+                # filled below by cooldown-aware routing rather than by a
+                # phantom delay.
+                break
 
-            raw_d = float(action["delay"])
-            # Calibrate delay pacing to channel cooldown constraints (7s to 20s)
-            delays.append(float(np.clip(raw_d * 0.35, 7.0, 20.0)))
-            channels.append(int(action["channel"]) % self.num_channels)
+            # The delay is the one the environment actually used, after any
+            # rate-limit back-off. The agent clamps its action into the
+            # deployment window before the environment scores it, and the
+            # environment reports the delay it landed on, so the delay that
+            # was rewarded is the delay that goes on the wire. The previous
+            # transform, `clip(raw * 0.35, 7, 20)`, applied here instead
+            # meant the agent optimized a delay sequence that never reached
+            # the network, and its 7 second floor collapsed 98.3 percent of
+            # the agent's choices onto a single value, so the transmitted
+            # traffic was a constant clock. See src/stealth/rl/pacing.py.
+            delay_used = float(info.get("delay", action["delay"]))
+            chosen = int(action["channel"]) % self.num_channels
+            delays.append(delay_used)
+            channels.append(chosen)
+            last_landing[chosen] = prev_landing + delay_used
+            prev_landing = last_landing[chosen]
             state = next_state
             if done:
                 break
 
-        # Pad if RL ended early
+        # Fill if RL ended early. The only current exit is the episode
+        # timeout, where the env sent nothing on the step that ended the
+        # episode. The remaining items are filled by per-channel cooldown
+        # routing, the same earliest-free-channel rule the hybrid router
+        # uses: each fill item lands at the earliest moment that respects
+        # both the pacing floor (RL_DELAY_MIN) and the cooldown clock of
+        # its channel, measured on the landing times the benchmark scores.
+        # The old fill appended RL_DELAY_MIN on channel 0 regardless, so
+        # a tail of more than one item violated channel 0's cooldown.
         while len(delays) < len(media_ids):
-            delays.append(base_delay)
-            channels.append(0)
+            chosen = min(
+                range(self.num_channels),
+                key=lambda c: last_landing[c] + CHANNEL_COOLDOWNS[c],
+            )
+            gap = max(
+                RL_DELAY_MIN,
+                last_landing[chosen] + CHANNEL_COOLDOWNS[chosen] - prev_landing,
+            )
+            delays.append(gap)
+            channels.append(chosen)
+            last_landing[chosen] = prev_landing + gap
+            prev_landing += gap
 
         return {
             "items": media_ids,

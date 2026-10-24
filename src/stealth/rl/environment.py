@@ -15,6 +15,7 @@ from typing import Optional, Tuple, Dict, Any
 from collections import deque
 
 from ...analysis.adversarial.warden import DeepPacketInspectionWarden
+from .pacing import canonical_rl_delay
 
 
 @dataclass
@@ -31,6 +32,11 @@ class ChannelState:
         # Simple rate limiting: check if enough time has passed
         time_since_last = current_time - self.last_transmission_time
         return time_since_last >= (60.0 / self.rate_limit)
+
+    def seconds_until_free(self, current_time: float) -> float:
+        """How long until this channel is free to send at *current_time*."""
+        cooldown = 60.0 / self.rate_limit
+        return max(0.0, cooldown - (current_time - self.last_transmission_time))
 
 
 @dataclass
@@ -110,6 +116,10 @@ class StealthEnvironment:
         self.lambda_stealth = lambda_stealth
         self.max_episode_time = max_episode_time
         self.warden_window_size = warden_window_size
+        # Counts the times a channel was still cooling down and the
+        # transmission had to be backed off. It is a diagnostic, not a
+        # penalty: the back-off is how a rate-limited client behaves.
+        self.rate_limit_backoffs = 0
 
         # Initialize Warden
         if warden is None:
@@ -270,7 +280,11 @@ class StealthEnvironment:
             raise RuntimeError("Episode is done. Call reset() first.")
 
         # Parse action
-        delay = float(action["delay"])
+        # The delay is taken into the canonical pacing window, which is the
+        # same window the scheduler deploys. The agent already clamps its
+        # action into it, so this is a no-op for an agent's own actions and
+        # makes the environment's own use of the delay agree with the wire.
+        delay = canonical_rl_delay(action["delay"])
         channel_id = int(action["channel"]) % self.num_channels  # Ensure valid channel
 
         # Check episode timeout against the time this item would land at
@@ -289,13 +303,29 @@ class StealthEnvironment:
         # Check channel rate limit against the time the channel will next be
         # free (current_time + delay), since the item is sent NOW and the
         # delay is the cooldown that follows.
+        #
+        # A channel that is still cooling down is not a rejected action: it
+        # is a back-off, which is how a rate-limited client actually
+        # behaves. The delay is extended to the earliest time the channel
+        # is free, and the transmission proceeds. The alternative, which is
+        # what this did before, was to drop the step and charge a flat
+        # penalty. That made a hard failure, a dropped transmission, worth
+        # less than a soft one, and the agent learned to take the hard
+        # failure: against a working detector it produced traffic that
+        # violated the per-channel cooldown in 23.5 percent of steps,
+        # because evading the detector was worth more than the penalty.
         channel = self.channels[channel_id]
+        backed_off = False
         if not channel.can_send(projected_time):
-            # Penalize for violating rate limit. Time does not advance and
-            # nothing is sent, so this step does not appear in the exported
-            # schedule.
-            reward = -10.0
-            return self._get_state(), reward, False, {"reason": "rate_limit_violation"}
+            backoff = channel.seconds_until_free(projected_time)
+            delay = delay + backoff
+            projected_time = self.current_time + delay
+            self.rate_limit_backoffs += 1
+            backed_off = True
+            if projected_time >= self.max_episode_time:
+                self.is_done = True
+                self.current_time = projected_time
+                return self._get_state(), -50.0, True, {"reason": "timeout"}
 
         # Send media item NOW, at the current time.
         media_id = self.media_queue.popleft()
@@ -309,7 +339,16 @@ class StealthEnvironment:
         self.transmission_history.append(record)
 
         # Update channel state and advance time by the post-send delay.
-        channel.last_transmission_time = self.current_time
+        #
+        # The channel's clock records the item's LANDING time, not the time
+        # it was handed to the channel. The platform a channel represents
+        # sees requests separated by the gap between consecutive landings on
+        # that channel, and the Component 3 benchmark measures exactly that
+        # gap. Recording the send time instead made the environment's
+        # cooldown test permissive by one delay, so an agent that satisfied
+        # the environment still violated the cooldowns in 31.4 percent of
+        # steps as measured by the benchmark.
+        channel.last_transmission_time = self.current_time + delay
         channel.transmission_count += 1
         self.current_time += delay
 
@@ -330,6 +369,12 @@ class StealthEnvironment:
             "current_time": self.current_time,
             "episode_step": self.episode_step,
             "total_reward": self.total_reward,
+            # The delay actually used, after any rate-limit back-off. The
+            # scheduler deploys this value, so the delay the warden scored
+            # is the delay that goes on the wire.
+            "delay": delay,
+            "channel_id": channel_id,
+            "backed_off": backed_off,
         }
 
         # Get next state

@@ -7,6 +7,7 @@ Verifies that:
 2. A message encoded with a context key decodes exactly with the same key.
 3. Decoding with a DIFFERENT epoch (or secret) does not silently succeed.
 4. The epoch hint short-circuits candidate search.
+5. Keying options that cannot apply are rejected loudly, never silently dropped.
 """
 
 import time
@@ -109,6 +110,48 @@ class TestContextualCodecRoundtrip:
         assert decoded.context_epoch_id == result.context_info["epoch_id"]
         assert decoded.reconstructed_meaning == msg
 
+    def test_roundtrip_without_ecc_keeps_frame_out_of_message(self, codec):
+        """Keyed decode without RS must strip framing, not expose frame bytes."""
+        encoder, decoder = codec
+        mgr = self._mgr(secret=b"no-ecc-secret")
+        msg = "framed without RS"
+        result = encoder.encode(msg, use_ecc=False, context_manager=mgr)
+
+        decoded = decoder.decode(
+            result.media_ids,
+            use_ecc=False,
+            context_manager=mgr,
+            context_epoch_hint=result.context_info["epoch_id"],
+        )
+        assert decoded.ecc_success
+        assert decoded.reconstructed_meaning == msg
+
+    def test_roundtrip_without_ecc_or_hint(self, codec):
+        """Framing integrity alone must validate the epoch during candidate search."""
+        encoder, decoder = codec
+        mgr = self._mgr(secret=b"no-ecc-secret")
+        msg = "candidate epoch search"
+        result = encoder.encode(msg, use_ecc=False, context_manager=mgr)
+
+        decoded = decoder.decode(result.media_ids, use_ecc=False, context_manager=mgr)
+        assert decoded.ecc_success
+        assert decoded.reconstructed_meaning == msg
+
+    def test_no_ecc_wrong_secret_fails_closed(self, codec):
+        encoder, decoder = codec
+        msg = "must not leak without RS"
+        result = encoder.encode(
+            msg, use_ecc=False, context_manager=self._mgr(secret=b"right-secret")
+        )
+        decoded = decoder.decode(
+            result.media_ids,
+            use_ecc=False,
+            context_manager=self._mgr(secret=b"wrong-secret"),
+        )
+        assert not (decoded.ecc_success and decoded.reconstructed_meaning == msg), (
+            "Recovered the message with the wrong secret and no RS protection"
+        )
+
     def test_wrong_secret_fails_closed(self, codec):
         """A receiver without the right secret must NOT get the message."""
         encoder, decoder = codec
@@ -158,6 +201,47 @@ class TestContextualCodecRoundtrip:
         )
         assert decoded.ecc_success
         assert decoded.reconstructed_meaning == "hint path"
+
+    def test_epoch_hint_without_context_manager_raises(self, codec):
+        """A context_epoch_hint with dynamic context disabled must not be ignored."""
+        _, decoder = codec
+        with pytest.raises(ValueError, match="context_epoch_hint"):
+            decoder.decode(
+                ["any_media_id"],
+                use_ecc=True,
+                context_epoch_hint="123|3600|time",
+            )
+
+    def test_keyed_encode_reports_original_payload_byte(self, codec):
+        """EncodedChunk.payload_byte is the message byte, not the permuted cluster.
+
+        The decoder has always reported the pre-permutation payload byte and
+        the transmitted cluster separately; the encoder must use the same
+        convention so the API's two fields mean the same thing on both sides.
+        """
+        encoder, decoder = codec
+        mgr = self._mgr(secret=b"byte-semantics")
+        msg = "payload byte semantics"
+
+        result = encoder.encode(msg, use_ecc=True, context_manager=mgr)
+        assert result.payload_symbols
+
+        assert [c.payload_byte for c in result.encoded] == list(result.payload_symbols)
+        assert any(
+            c.cluster_id != c.payload_byte for c in result.encoded
+        ), "a real key should not leave cluster_id equal to payload_byte everywhere"
+
+        decoded = decoder.decode(
+            result.media_ids,
+            use_ecc=True,
+            context_manager=mgr,
+            context_epoch_hint=result.context_info["epoch_id"],
+        )
+        assert decoded.ecc_success
+        assert [d.payload_byte for d in decoded.decoded] == list(result.payload_symbols)
+        assert [d.cluster_id for d in decoded.decoded] == [
+            c.cluster_id for c in result.encoded
+        ]
 
 
 if __name__ == "__main__":

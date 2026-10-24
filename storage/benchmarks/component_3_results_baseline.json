@@ -1,4 +1,6 @@
 {
+  "status": "superseded",
+  "note": "Historical Component 3 run, recorded before the soft branch was repaired. The soft branch it was scored against could not flag any traffic for any input, so the interception rates here are not measurements. The warden that scored it was the WGAN-GP critic, whose transformer had collapsed to a constant output, and the scheduler had not yet clipped the RL delays, which is why its PPO mean latency of 44.07 s is not reproducible with the current code. The current run is component_3_results.json. A full pre-remediation copy is in storage/benchmarks/archive/2026-10-21-pre-remediation/.",
   "schedulers": [
     {
       "scheduler": "Static Cadence",

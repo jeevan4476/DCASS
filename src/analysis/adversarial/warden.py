@@ -13,6 +13,14 @@ import torch.nn as nn
 from dataclasses import dataclass
 from typing import Optional
 
+# The scoring convention for this detector: every sequence is padded to
+# DETECTOR_SEQ_LEN steps and accompanied by a validity mask before it is
+# scored, because an unpadded (or differently padded) sequence changes the
+# attention pattern and therefore the score for the same traffic. The
+# Component 3 benchmark, the training loop, and the CLI evaluators all
+# import this one definition instead of keeping copies.
+DETECTOR_SEQ_LEN = 64
+
 
 @dataclass
 class WardenVerdict:
@@ -50,6 +58,13 @@ class WardenVerdict:
         }
 
 
+#: The bound on the critic's score when `bounded_critic` is on. The
+#: transform is `BOUND * tanh(score / BOUND)`, which is close to the
+#: identity for scores well inside the bound, so the critic's ordering is
+#: preserved while its scale cannot run away.
+CRITIC_SCORE_BOUND = 10.0
+
+
 class DeepPacketInspectionWarden(nn.Module):
     """
     Adversarial Warden - Statistical Traffic Classifier (Simmons' Model).
@@ -76,6 +91,22 @@ class DeepPacketInspectionWarden(nn.Module):
         num_transformer_layers: Depth of transformer encoder (default: 4)
         feature_dim: Manual statistical feature dimension (default: 16)
         dropout: Dropout probability (default: 0.3)
+        bounded_critic: Bound the critic's score. Off by default, so the
+            trained detector checkpoints are unaffected. The WGAN-GP
+            trainer turns it on, because an unbounded score lets the
+            critic reduce its loss by making its output large and
+            constant, which is the collapse the diagnostics measured.
+        critic_score_bound: The bound to use when `bounded_critic` is on.
+            The bound has to be comfortably larger than the score gap a
+            1-Lipschitz critic can produce over the traffic's own scale,
+            or the critic saturates against it and its input gradient
+            dies. The delays are in seconds and span roughly 0.5 to 120,
+            so a bound of ten is far too tight, and a larger bound keeps
+            the gradient alive longer; both measured bounds still drive
+            the critic to identical scores for real and generated
+            traffic within a few epochs
+            (`storage/benchmarks/critic_sensitivity_bound10.json`,
+            `critic_sensitivity_bound100.json`).
 
     Example:
         >>> warden = DeepPacketInspectionWarden(num_channels=3)
@@ -93,11 +124,18 @@ class DeepPacketInspectionWarden(nn.Module):
         num_transformer_layers: int = 4,
         feature_dim: int = 16,
         dropout: float = 0.3,
+        bounded_critic: bool = False,
+        critic_score_bound: float = CRITIC_SCORE_BOUND,
     ):
         super().__init__()
 
         self.num_channels = num_channels
         self.hidden_dim = hidden_dim
+        # Whether the critic's score is bounded. The WGAN-GP trainer turns
+        # this on; the detector trainer leaves it off, so the trained
+        # detector checkpoints are unaffected.
+        self.bounded_critic = bounded_critic
+        self.critic_score_bound = float(critic_score_bound)
         self.feature_dim = feature_dim
 
         # Channel embedding (learn channel-specific patterns)
@@ -438,10 +476,21 @@ class DeepPacketInspectionWarden(nn.Module):
             [mean_pool, max_pool], dim=1
         )  # (batch_size, hidden_dim*2)
 
-        # Final classification: unbounded Wasserstein critic score.
+        # Final classification.
+        #
+        # The default is an unbounded score, which the WGAN-GP Wasserstein
+        # loss expects. `bounded_critic` replaces it with a saturating
+        # transform, which gives the loss an anchor: with an unbounded
+        # score the critic can reduce the loss by making its output large
+        # and constant, which is the collapse the training diagnostics
+        # measured. The transform is close to the identity for small
+        # scores, so it does not distort the critic's ordering.
         raw_critic_score = self.classification_head(global_features).squeeze(
             -1
         )  # (batch_size,)
+        if self.bounded_critic:
+            bound = self.critic_score_bound
+            raw_critic_score = bound * torch.tanh(raw_critic_score / bound)
 
         # Sigmoid-bounded bot probability for RL reward / interpretability.
         # During GAN training use raw_critic_score directly (from feature_importance).
@@ -452,7 +501,7 @@ class DeepPacketInspectionWarden(nn.Module):
             "anomaly_scores": anomaly_scores,
             "global_attention": torch.softmax(anomaly_scores, dim=1),
             "statistical_features": stat_features,
-            "raw_critic_score": raw_critic_score,  # unbounded Wasserstein critic value
+            "raw_critic_score": raw_critic_score,  # Wasserstein critic value
         }
 
         return WardenVerdict(
@@ -519,6 +568,65 @@ def compute_warden_loss_bce(
 
     # Total discriminator loss
     return (real_loss + fake_loss) / 2.0
+
+
+def compute_detector_loss_bce(
+    verdict: WardenVerdict,
+    labels: torch.Tensor,
+    mask: Optional[torch.Tensor] = None,
+    anomaly_weight: float = 0.5,
+) -> torch.Tensor:
+    """Loss for a *calibrated binary traffic detector*.
+
+    This is a different objective from the WGAN-GP critic loss above, and
+    it exists because the critic loss leaves the anomaly head without a
+    gradient path: ``compute_warden_loss`` differentiates only
+    ``raw_critic_score``, so ``anomaly_head`` never receives a gradient and
+    stays at its initialization.
+
+    A detector is supervised directly:
+
+    * a sequence-level binary cross-entropy on ``bot_probability`` against
+      ``labels`` (0 for human, 1 for bot), which trains the classification
+      head into a calibrated probability;
+    * an auxiliary masked binary cross-entropy on the per-timestamp
+      ``anomaly_scores`` against the sequence label broadcast across the
+      valid steps. The per-timestep head is therefore supervised at
+      sequence granularity, and its mean over valid steps is a
+      sequence-level anomaly aggregate.
+
+    Args:
+        verdict: The warden's output for a batch.
+        labels: Sequence-level labels, shape (batch_size,). 0 = human, 1 = bot.
+        mask: Optional validity mask, shape (batch_size, sequence_length).
+            1.0 for a real step, 0.0 for padding.
+        anomaly_weight: Weight of the auxiliary per-timestamp term.
+
+    Returns:
+        Scalar loss.
+    """
+    labels = labels.to(verdict.bot_probability.dtype)
+
+    seq_loss = nn.functional.binary_cross_entropy(
+        verdict.bot_probability.clamp(1e-7, 1.0 - 1e-7), labels
+    )
+
+    # Auxiliary per-timestamp term. The sequence label is broadcast across
+    # the valid steps: the head is supervised at sequence granularity, so
+    # the mean of the valid scores tracks the sequence-level bot score.
+    scores = verdict.anomaly_scores.clamp(1e-7, 1.0 - 1e-7)
+    target = labels.unsqueeze(1).expand_as(scores)
+    if mask is not None:
+        per_step = nn.functional.binary_cross_entropy(
+            scores, target, reduction="none"
+        )
+        masked = per_step * mask
+        denom = mask.sum().clamp(min=1.0)
+        anomaly_loss = masked.sum() / denom
+    else:
+        anomaly_loss = nn.functional.binary_cross_entropy(scores, target)
+
+    return seq_loss + anomaly_weight * anomaly_loss
 
 
 def compute_gradient_penalty(

@@ -59,15 +59,15 @@ A rigorous reviewer will immediately ask:
 In experimental biology and medicine, no drug trial is accepted without a **Positive Control** (a known stimulus that provably produces an effect). 
 
 In Option B, we introduce a rigorous Positive Control:
-* We create a parallel dataset of Flickr images embedded with traditional spatial steganography ($\pm 1$ LSB matching at $0.4\text{ bpp}$).
-* We train the detectors on this positive control until they achieve **$>90\%\text{ detection accuracy}$**.
+* We create a parallel dataset of Flickr images embedded with traditional spatial steganography: deterministic spatial $\pm 1$ grey-level twins at the maximum 1.0 bits per pixel rate, with a payload sweep at 0.4, 0.2, and 0.1 bits per pixel.
+* We train the detectors on this positive control per fold to the **0.90 held-out detection accuracy gate**.
 * This proves beyond all doubt that:
   - The detector implementation is bit-perfect.
   - The feature extractors are fully functional.
   - The detector has high statistical power to catch steganography on Flickr images.
 
-When this exact same, verified, lethal detector is fed DCASS carriers and **collapses to $50.00\%$ accuracy**, the proof is ironclad:
-> **"The detector caught traditional steganography with $96.1\%$ accuracy, but was rendered completely blind ($50.00\%$) by DCASS. The stealthiness is a property of DCASS, not a failure of the detector."**
+When this exact same, verified detector is fed untouched DCASS carriers and its measured AUC sits at **one half within its interval**, the proof is strong:
+> **"The detector caught maximum-strength traditional steganography with 93.7 to 95.1 percent accuracy, and its measured DCASS carrier AUC sits at one half, 0.4973 to 0.4993 with every interval covering 0.5000. The stealthiness is a property of DCASS, not a failure of the detector."**
 
 ---
 
@@ -90,16 +90,12 @@ Because all three groups share identical image distributions, resolution, and se
 
 ## 5. Reason 4: Grounding in Information-Theoretic Security ($D_{KL} = 0$)
 
-Option B allows us to empirically compute Christian Cachin's definition of $\epsilon$-steganographic security:
+Option B connects to Christian Cachin's definition of $\epsilon$-steganographic security:
 
 $$D_{KL}(P_{\text{cover}} \parallel P_{\text{carrier}}) = \sum_{x} P_{\text{cover}}(x) \log_2 \left( \frac{P_{\text{cover}}(x)}{P_{\text{carrier}}(x)} \right)$$
 
-* For Traditional Stego: The injection of $0.4\text{ bpp}$ noise creates a measurable divergence:
-  $$D_{KL}(P_{\text{cover}} \parallel P_{\text{stego}}) > 1.20\text{ bits} \quad (\text{Statistically Detectable})$$
-* For DCASS Carriers: Because carriers are sampled directly from the cover distribution:
-  $$P_{\text{carrier}} \equiv P_{\text{cover}} \implies D_{KL} \equiv 0.0000\text{ bits} \quad (\text{Perfect Security, } \epsilon = 0)$$
-
-Option B allows us to plot empirical histograms of classifier logits and compute the exact numerical $D_{KL}$ using `scipy.stats.entropy`.
+* For DCASS carriers the theoretical pixel-level divergence is exactly zero, because carriers are drawn directly from the cover distribution: $P_{\text{carrier}} \equiv P_{\text{cover}}$ implies $\epsilon = 0$.
+* The recorded posterior-histogram plug-in estimate is a different quantity, measured at an intermediate layer of a specific classifier, and at these sample sizes its sparse bins inflate it. It is therefore kept for continuity but calibrated against its own label-permutation null: the recorded plug-in values of 0.18 to 0.23 bits carry per-fold permutation $p$ values of 0.238 to 0.937, consistent with an identical-distribution null.
 
 ---
 
@@ -117,6 +113,8 @@ By benchmarking against all five models under the same protocol, we prove that D
 * Multi-scale separable convolutions (Zhu-Net).
 * 12-layer deep residual networks (SRNet).
 
+The official recorded result rests on the three deep CNNs, which pass the per-fold 0.90 positive-control gate. The classical SRM baseline and Xu-Net are executed as disclosure foils and are excluded from the official summary under the gate rule, with their outcome recorded in `BENCHMARK_DEEP_EXPLANATION.md`, Section 1.7.
+
 ---
 
 ## 7. Reason 6: Open Science & Exact Reproducibility
@@ -128,10 +126,10 @@ Downloading third-party model checkpoints introduces severe software fragility:
 By implementing the model architectures natively in PyTorch and providing a self-contained training and evaluation script:
 * Any researcher or reviewer can clone the DCASS repository, run a single command:
   ```bash
-  ./.venv/bin/python scripts/analysis/run_master_benchmark.py --component 1
+  ./.venv/bin/python scripts/analysis/benchmark_1_media_steganalysis.py
   ```
-* The script trains the models, runs the positive controls, evaluates DCASS, and outputs the identical LaTeX tables in **under 3 minutes**.
-* This guarantees 100% independent auditability and reproducibility.
+* The script trains the models, runs the positive controls, evaluates DCASS, and writes the LaTeX tables and figures. The full rerun trains for roughly three hours on the reference RTX 4050 laptop; a `--summary-only` relaunch re-aggregates the recorded posteriors in seconds.
+* This provides the provenance needed for independent audit. Reproducibility is bounded where historical artifacts lack environment or commit records; Phase 1 adds a run manifest to every benchmark.
 
 ---
 
@@ -139,4 +137,4 @@ By implementing the model architectures natively in PyTorch and providing a self
 
 In Section 5 (*Experimental Evaluation*) of the research paper, this rationale is summarized as follows:
 
-> *"To avoid Cover-Source Mismatch (CSM) [Ker et al. 2014] and guarantee a competent adversarial baseline, all five steganalysis detectors (SRM, Xu-Net, Ye-Net, Zhu-Net, and SRNet) were instantiated according to their published architectures and trained directly on the Flickr corpus. As a positive control, identical Flickr images were embedded with 0.4 bpp spatial steganography. All detectors successfully converged on the positive control, achieving 91.8%–96.1% detection accuracy (ROC AUC > 0.94). Under identical testing conditions, when evaluated on DCASS carriers, all five detectors collapsed to 50.00% detection accuracy (ROC AUC = 0.5000, $D_{KL} = 0.0000$), demonstrating complete, empirical detector blindness across both handcrafted and deep residual models."*
+> *"To avoid Cover-Source Mismatch (CSM) [Ker et al. 2014] and guarantee a competent adversarial baseline, the five implemented steganalysis architectures (SRM, Xu-Net, Ye-Net, Zhu-Net, and SRNet) were instantiated according to their published architectures and trained directly on the Flickr corpus. The protocol runs three image-level folds over a 2,000-image pool: each detector trains against a maximum-strength 1.0 bpp ±1 grey-level positive control, is gated at 0.90 held-out test accuracy per fold, and is then frozen and scored on untouched DCASS carriers, with a payload sweep at 0.4, 0.2, and 0.1 bpp. The three deep architectures SRNet, ZhuNet, and YeNet pass every fold gate at 93.7%–95.1% control accuracy and 0.984–0.986 control AUC; on DCASS carriers their measured AUCs are 0.4973–0.4993 with every 95% interval covering 0.5000, and their balanced accuracies are 0.50 within interval. The classical SRM baseline and Xu-Net fail the gate and are recorded as disclosure foils rather than testimonies. This demonstrates complete, empirical detector blindness for every gated architecture, with the foil outcome and the permutation-calibrated $D_{KL}$ caveats disclosed alongside."*

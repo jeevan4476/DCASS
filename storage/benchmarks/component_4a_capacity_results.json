@@ -1,152 +1,341 @@
-[
-  {
-    "mode": "DSSC (multi-modal)",
-    "payload_bytes": 14,
-    "carrier_count": 16,
-    "bits_per_carrier": 13.5,
-    "carrier_reduction_pct": 40.74074074074074,
-    "encode_latency_ms": 167.15279899945017,
-    "decode_latency_ms": 302.6529566006502,
-    "total_latency_ms": 469.8057556001004
+{
+  "schema": "component4a-capacity-v2",
+  "provenance": {
+    "retrospective": false,
+    "git_commit": "536808a8f8c1046e3802cf9ef094ef54d93a9908",
+    "git_dirty": true,
+    "timestamp": "2026-10-21T17:39:39+05:30",
+    "torch": "2.14.1+cu126",
+    "device": "cuda",
+    "gpu": "NVIDIA GeForce RTX 4050 Laptop GPU",
+    "python": "3.12.8",
+    "platform": "Linux-7.2.10-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "script": "scripts/analysis/benchmark_4a_capacity.py",
+    "command": "scripts/analysis/benchmark_4a_capacity.py",
+    "seed": 42,
+    "index": {
+      "loaded": true,
+      "device": "cuda",
+      "modalities": {
+        "image": {
+          "loaded": true,
+          "count": 31783
+        },
+        "text": {
+          "loaded": true,
+          "count": 200000
+        },
+        "audio": {
+          "loaded": true,
+          "count": 13496
+        }
+      },
+      "base_path": "/home/img1/projects/DCASS/storage/data/indices"
+    }
   },
-  {
-    "mode": "DSSC (text-only)",
-    "payload_bytes": 14,
-    "carrier_count": 14,
-    "bits_per_carrier": 15.430000000000001,
-    "carrier_reduction_pct": 48.148148148148145,
-    "encode_latency_ms": 153.01295179815497,
-    "decode_latency_ms": 406.5415844001109,
-    "total_latency_ms": 559.5545361982659
+  "config": {
+    "seed": 42,
+    "device": "cuda",
+    "payload_sizes": [
+      14,
+      50,
+      150,
+      300,
+      500
+    ],
+    "trials_per_mode": 5,
+    "warmup_trials": 1,
+    "parity_bytes": 8,
+    "session_key_bytes": 32,
+    "modalities": [
+      "image",
+      "text",
+      "audio"
+    ],
+    "session_key_derivation": "SHA-256(session_key || trial_index_be32) per DSSC trial"
   },
-  {
-    "mode": "exact_vcp (text)",
-    "payload_bytes": 14,
-    "carrier_count": 27,
-    "bits_per_carrier": 8.0,
-    "carrier_reduction_pct": 0.0,
-    "encode_latency_ms": 4576.205976997153,
-    "decode_latency_ms": 3.9898813964100555,
-    "total_latency_ms": 4580.195858393563
+  "metric_definitions": {
+    "carrier_count": "Mean carrier count over clean-channel trials at fixed parity k=8.",
+    "bits_per_carrier": "8 * codeword bytes / carrier count, averaged over trials.",
+    "encode_latency_ms": "Wall-clock SemanticEngine.encode time after one warm-up. exact_vcp encode includes per-byte semantic candidate scoring in the reference mapper; this is not a codec-only speed comparison.",
+    "decode_latency_ms": "Wall-clock SemanticEngine.decode time after one warm-up.",
+    "exact_vcp_baseline": "All-modality exact_vcp reference mapper, one carrier per codeword byte. A strict text-only exact_vcp baseline is not guaranteed because the mapper falls back to image/audio when a text cluster lacks a requested symbol."
   },
-  {
-    "mode": "DSSC (multi-modal)",
-    "payload_bytes": 50,
-    "carrier_count": 37,
-    "bits_per_carrier": 13.62,
-    "carrier_reduction_pct": 41.269841269841265,
-    "encode_latency_ms": 235.33684939611703,
-    "decode_latency_ms": 518.0491717997938,
-    "total_latency_ms": 753.3860211959109
-  },
-  {
-    "mode": "DSSC (text-only)",
-    "payload_bytes": 50,
-    "carrier_count": 32,
-    "bits_per_carrier": 15.75,
-    "carrier_reduction_pct": 49.2063492063492,
-    "encode_latency_ms": 221.07548820204102,
-    "decode_latency_ms": 855.3845811984502,
-    "total_latency_ms": 1076.4600694004912
-  },
-  {
-    "mode": "exact_vcp (text)",
-    "payload_bytes": 50,
-    "carrier_count": 63,
-    "bits_per_carrier": 8.0,
-    "carrier_reduction_pct": 0.0,
-    "encode_latency_ms": 9279.928350399132,
-    "decode_latency_ms": 9.367502003442496,
-    "total_latency_ms": 9289.295852402574
-  },
-  {
-    "mode": "DSSC (multi-modal)",
-    "payload_bytes": 150,
-    "carrier_count": 96,
-    "bits_per_carrier": 13.580000000000002,
-    "carrier_reduction_pct": 41.104294478527606,
-    "encode_latency_ms": 221.87265579705127,
-    "decode_latency_ms": 881.005856997217,
-    "total_latency_ms": 1102.8785127942683
-  },
-  {
-    "mode": "DSSC (text-only)",
-    "payload_bytes": 150,
-    "carrier_count": 82,
-    "bits_per_carrier": 15.9,
-    "carrier_reduction_pct": 49.693251533742334,
-    "encode_latency_ms": 264.0603198000463,
-    "decode_latency_ms": 1654.6907957992516,
-    "total_latency_ms": 1918.751115599298
-  },
-  {
-    "mode": "exact_vcp (text)",
-    "payload_bytes": 150,
-    "carrier_count": 163,
-    "bits_per_carrier": 8.0,
-    "carrier_reduction_pct": 0.0,
-    "encode_latency_ms": 26614.88691039849,
-    "decode_latency_ms": 23.669956799130887,
-    "total_latency_ms": 26638.55686719762
-  },
-  {
-    "mode": "DSSC (multi-modal)",
-    "payload_bytes": 300,
-    "carrier_count": 188,
-    "bits_per_carrier": 13.66,
-    "carrier_reduction_pct": 41.43302180685358,
-    "encode_latency_ms": 283.4517153998604,
-    "decode_latency_ms": 1573.1946341955336,
-    "total_latency_ms": 1856.646349595394
-  },
-  {
-    "mode": "DSSC (text-only)",
-    "payload_bytes": 300,
-    "carrier_count": 161,
-    "bits_per_carrier": 15.95,
-    "carrier_reduction_pct": 49.84423676012461,
-    "encode_latency_ms": 391.4754210039973,
-    "decode_latency_ms": 3070.314032997703,
-    "total_latency_ms": 3461.7894540017005
-  },
-  {
-    "mode": "exact_vcp (text)",
-    "payload_bytes": 300,
-    "carrier_count": 321,
-    "bits_per_carrier": 8.0,
-    "carrier_reduction_pct": 0.0,
-    "encode_latency_ms": 51430.61181960511,
-    "decode_latency_ms": 46.33991719747428,
-    "total_latency_ms": 51476.951736802584
-  },
-  {
-    "mode": "DSSC (multi-modal)",
-    "payload_bytes": 500,
-    "carrier_count": 310,
-    "bits_per_carrier": 13.65,
-    "carrier_reduction_pct": 41.39886578449906,
-    "encode_latency_ms": 396.2983620003797,
-    "decode_latency_ms": 2832.952697799192,
-    "total_latency_ms": 3229.2510597995715
-  },
-  {
-    "mode": "DSSC (text-only)",
-    "payload_bytes": 500,
-    "carrier_count": 265,
-    "bits_per_carrier": 15.970000000000002,
-    "carrier_reduction_pct": 49.9054820415879,
-    "encode_latency_ms": 574.077090996434,
-    "decode_latency_ms": 5136.704164402909,
-    "total_latency_ms": 5710.781255399343
-  },
-  {
-    "mode": "exact_vcp (text)",
-    "payload_bytes": 500,
-    "carrier_count": 529,
-    "bits_per_carrier": 8.0,
-    "carrier_reduction_pct": 0.0,
-    "encode_latency_ms": 83344.34845480137,
-    "decode_latency_ms": 75.61714760377072,
-    "total_latency_ms": 83419.96560240514
-  }
-]
+  "results": [
+    {
+      "mode": "DSSC (multi-modal)",
+      "payload_bytes": 14,
+      "carrier_count": 16,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 13.5,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 40.74074074074074,
+      "encode_latency_ms": 105.99649740033783,
+      "encode_latency_std_ms": 11.380391228457038,
+      "decode_latency_ms": 181.31755700014764,
+      "decode_latency_std_ms": 1.9194489827985306,
+      "total_latency_ms": 287.3140544004855,
+      "modality_counts": {
+        "audio": 5,
+        "image": 5,
+        "text": 6
+      }
+    },
+    {
+      "mode": "DSSC (text-only)",
+      "payload_bytes": 14,
+      "carrier_count": 14,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 15.430000000000001,
+      "bits_per_carrier_std": 1.9860273225978185e-15,
+      "carrier_reduction_pct": 48.148148148148145,
+      "encode_latency_ms": 89.26716659989324,
+      "encode_latency_std_ms": 0.19973537694393995,
+      "decode_latency_ms": 243.30088580027223,
+      "decode_latency_std_ms": 13.682808686125219,
+      "total_latency_ms": 332.56805240016547,
+      "modality_counts": {
+        "text": 14
+      }
+    },
+    {
+      "mode": "exact_vcp (multi-modal)",
+      "payload_bytes": 14,
+      "carrier_count": 27,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 8.0,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 0.0,
+      "encode_latency_ms": 1784.5699318000698,
+      "encode_latency_std_ms": 91.98548733488914,
+      "decode_latency_ms": 2.224643199588172,
+      "decode_latency_std_ms": 0.04110161440373029,
+      "total_latency_ms": 1786.794574999658,
+      "modality_counts": {
+        "audio": 4,
+        "image": 5,
+        "text": 18
+      }
+    },
+    {
+      "mode": "DSSC (multi-modal)",
+      "payload_bytes": 50,
+      "carrier_count": 37,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 13.62,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 41.269841269841265,
+      "encode_latency_ms": 113.5859320005693,
+      "encode_latency_std_ms": 14.217120792051935,
+      "decode_latency_ms": 280.40153100009775,
+      "decode_latency_std_ms": 13.336358268752338,
+      "total_latency_ms": 393.98746300066705,
+      "modality_counts": {
+        "audio": 12,
+        "image": 12,
+        "text": 13
+      }
+    },
+    {
+      "mode": "DSSC (text-only)",
+      "payload_bytes": 50,
+      "carrier_count": 32,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 15.75,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 49.2063492063492,
+      "encode_latency_ms": 111.20726759982063,
+      "encode_latency_std_ms": 16.1163942785397,
+      "decode_latency_ms": 442.0812056014256,
+      "decode_latency_std_ms": 17.429654286561107,
+      "total_latency_ms": 553.2884732012462,
+      "modality_counts": {
+        "text": 32
+      }
+    },
+    {
+      "mode": "exact_vcp (multi-modal)",
+      "payload_bytes": 50,
+      "carrier_count": 63,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 8.0,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 0.0,
+      "encode_latency_ms": 5232.576311601588,
+      "encode_latency_std_ms": 111.76866631696663,
+      "decode_latency_ms": 4.972305399860488,
+      "decode_latency_std_ms": 0.1701012642127576,
+      "total_latency_ms": 5237.548617001448,
+      "modality_counts": {
+        "audio": 1,
+        "image": 9,
+        "text": 53
+      }
+    },
+    {
+      "mode": "DSSC (multi-modal)",
+      "payload_bytes": 150,
+      "carrier_count": 96,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 13.580000000000002,
+      "bits_per_carrier_std": 1.9860273225978185e-15,
+      "carrier_reduction_pct": 41.104294478527606,
+      "encode_latency_ms": 118.9866400018218,
+      "encode_latency_std_ms": 0.5257859403049253,
+      "decode_latency_ms": 542.7017683978193,
+      "decode_latency_std_ms": 18.081247491821454,
+      "total_latency_ms": 661.688408399641,
+      "modality_counts": {
+        "audio": 32,
+        "image": 32,
+        "text": 32
+      }
+    },
+    {
+      "mode": "DSSC (text-only)",
+      "payload_bytes": 150,
+      "carrier_count": 82,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 15.9,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 49.693251533742334,
+      "encode_latency_ms": 153.62883959896863,
+      "encode_latency_std_ms": 12.026913591628123,
+      "decode_latency_ms": 1009.3651084011071,
+      "decode_latency_std_ms": 11.408872521415432,
+      "total_latency_ms": 1162.9939480000758,
+      "modality_counts": {
+        "text": 82
+      }
+    },
+    {
+      "mode": "exact_vcp (multi-modal)",
+      "payload_bytes": 150,
+      "carrier_count": 163,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 8.0,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 0.0,
+      "encode_latency_ms": 14861.717690401565,
+      "encode_latency_std_ms": 322.50048273229635,
+      "decode_latency_ms": 12.291523000749294,
+      "decode_latency_std_ms": 0.47215767404784925,
+      "total_latency_ms": 14874.009213402314,
+      "modality_counts": {
+        "audio": 5,
+        "image": 3,
+        "text": 155
+      }
+    },
+    {
+      "mode": "DSSC (multi-modal)",
+      "payload_bytes": 300,
+      "carrier_count": 188,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 13.66,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 41.43302180685358,
+      "encode_latency_ms": 167.86688499996671,
+      "encode_latency_std_ms": 9.678145217482793,
+      "decode_latency_ms": 1013.1170528009534,
+      "decode_latency_std_ms": 10.983561400014777,
+      "total_latency_ms": 1180.98393780092,
+      "modality_counts": {
+        "audio": 62,
+        "image": 63,
+        "text": 63
+      }
+    },
+    {
+      "mode": "DSSC (text-only)",
+      "payload_bytes": 300,
+      "carrier_count": 161,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 15.95,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 49.84423676012461,
+      "encode_latency_ms": 214.49593360011932,
+      "encode_latency_std_ms": 12.248723358454537,
+      "decode_latency_ms": 1931.3649054020061,
+      "decode_latency_std_ms": 21.91600272425877,
+      "total_latency_ms": 2145.8608390021254,
+      "modality_counts": {
+        "text": 161
+      }
+    },
+    {
+      "mode": "exact_vcp (multi-modal)",
+      "payload_bytes": 300,
+      "carrier_count": 321,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 8.0,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 0.0,
+      "encode_latency_ms": 29529.931195000245,
+      "encode_latency_std_ms": 1309.6365073192746,
+      "decode_latency_ms": 23.784971600980498,
+      "decode_latency_std_ms": 0.6075884475954116,
+      "total_latency_ms": 29553.716166601225,
+      "modality_counts": {
+        "audio": 5,
+        "image": 9,
+        "text": 307
+      }
+    },
+    {
+      "mode": "DSSC (multi-modal)",
+      "payload_bytes": 500,
+      "carrier_count": 310,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 13.65,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 41.39886578449906,
+      "encode_latency_ms": 208.993700199062,
+      "encode_latency_std_ms": 17.25819312769156,
+      "decode_latency_ms": 1580.017556202074,
+      "decode_latency_std_ms": 29.16703333854604,
+      "total_latency_ms": 1789.011256401136,
+      "modality_counts": {
+        "audio": 103,
+        "image": 103,
+        "text": 104
+      }
+    },
+    {
+      "mode": "DSSC (text-only)",
+      "payload_bytes": 500,
+      "carrier_count": 265,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 15.970000000000002,
+      "bits_per_carrier_std": 1.9860273225978185e-15,
+      "carrier_reduction_pct": 49.9054820415879,
+      "encode_latency_ms": 296.8907874004799,
+      "encode_latency_std_ms": 14.53221796132142,
+      "decode_latency_ms": 3066.44762220094,
+      "decode_latency_std_ms": 12.881781242430431,
+      "total_latency_ms": 3363.3384096014197,
+      "modality_counts": {
+        "text": 265
+      }
+    },
+    {
+      "mode": "exact_vcp (multi-modal)",
+      "payload_bytes": 500,
+      "carrier_count": 529,
+      "carrier_count_std": 0.0,
+      "bits_per_carrier": 8.0,
+      "bits_per_carrier_std": 0.0,
+      "carrier_reduction_pct": 0.0,
+      "encode_latency_ms": 51703.81881259818,
+      "encode_latency_std_ms": 3518.702121026903,
+      "decode_latency_ms": 40.73583300050814,
+      "decode_latency_std_ms": 3.6283131747073156,
+      "total_latency_ms": 51744.55464559869,
+      "modality_counts": {
+        "audio": 10,
+        "image": 12,
+        "text": 507
+      }
+    }
+  ]
+}

@@ -12,7 +12,7 @@ import { PageWrapper, Card, Badge, LoadingSpinner, useToastHelpers } from '@/com
 type Mode = 'static' | 'rl' | 'gan' | 'auto';
 
 const modeOptions = [
-  { value: 'auto', label: 'Auto (RL → GAN → Static)', icon: Zap, description: 'Automatically selects best available model' },
+  { value: 'auto', label: 'Auto (RL → GAN → Static)', icon: Zap, description: 'Automatic scheduler fallback; the recorded GAN path is under review' },
   { value: 'rl', label: 'RL (PPO Policy)', icon: Brain, description: 'Reinforcement learning optimized scheduling' },
   { value: 'gan', label: 'GAN (WGAN-GP)', icon: Eye, description: 'Generative adversarial temporal patterns' },
   { value: 'static', label: 'Static (NoiseController)', icon: Shield, description: 'Mathematical noise injection fallback' },
@@ -181,7 +181,7 @@ export default function SendPage() {
             </div>
             <p className="text-body-xs text-muted mt-2 flex items-center gap-1">
               <Shield className="w-3.5 h-3.5" />
-              Encoded exact-byte-per-item with Reed-Solomon error correction (0% BER)
+              CRC-verified frame with Reed-Solomon error correction; zero false accepts observed after decoder hardening
             </p>
           </Card>
 
@@ -212,6 +212,10 @@ export default function SendPage() {
                     {selectedMode.description}
                   </p>
                 )}
+                <p className="text-body-xs text-muted mt-1">
+                  This demo always encodes with the exact_vcp codec. The DSSC codec and the per-mode scheduler
+                  selection are scheduled for a later release.
+                </p>
               </div>
 
               {/* Speed Multiplier */}

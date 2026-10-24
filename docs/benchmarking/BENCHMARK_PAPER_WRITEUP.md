@@ -24,220 +24,247 @@ The adversary's goal: distinguish DCASS carrier files from natural covers drawn 
 
 #### V-A.2 Option B Empirical Protocol
 To prevent false negatives from undertrained models, we employ the **Option B two-stage protocol**:
-1. **Positive Control Phase:** Each model trains on a known steganographic scheme (LSB matching ±1 embedding rate) until convergence (≥90% accuracy, ≥0.97 AUC). This verifies detector capacity.
-2. **Covert Evaluation Phase:** The converged model evaluates DCASS carriers (zero-modification) vs. clean covers from identical corpus splits.
+1. **Positive Control Phase:** Each model trains on a known steganographic scheme, spatial ±1 grey-level twins at 1.0 bpp, and must pass a per-fold 0.90 accuracy gate on held-out twins. The protocol runs three image-level folds over a 2,000-image pool, so a cover and its twin can never straddle splits.
+2. **Covert Evaluation Phase:** The gated model evaluates DCASS carriers, zero-modification, against clean covers from identical corpus splits, with a payload sweep at 0.4, 0.2, and 0.1 bpp as a fading-signal reference.
 
 #### V-A.3 Results: Indistinguishability at Chance Level
 
-| Detector | Positive Control Acc. | Positive Control AUC | DCASS Clean Cover Acc. | **DCASS Carrier AUC** | $D_{\mathrm{KL}}$ (bits) |
-|:---------|:---------------------:|:-------------------:|:----------------------:|:---------------------:|:-----------------------:|
-| SRNet    | 94.79%                | 0.9943              | 94.50%                 | **0.5000**            | 2.4472                  |
-| ZhuNet   | 94.31%                | 0.9858              | 94.70%                 | **0.5000**            | 1.4276                  |
-| YeNet    | 91.94%                | 0.9735              | 92.20%                 | **0.5000**            | 2.3635                  |
+| Detector | Positive Control Acc. (95% CI) | Positive Control AUC | Carrier Cover Rate | Balanced Acc. | **DCASS Carrier AUC** (95% CI) | $D_{\mathrm{KL}}$ [perm $p$] |
+|:---------|:------------------------------:|:--------------------:|:------------------:|:-------------:|:------------------------------:|:-----------------------------:|
+| SRNet    | 93.67% [92.88, 94.39]          | 0.9844               | 88.31%             | 0.5025        | **0.4973** [0.4830, 0.5143]    | 0.23 [0.238, 0.423]           |
+| ZhuNet   | 95.05% [94.33, 95.68]          | 0.9860               | 92.14%             | 0.5025        | **0.4993** [0.4820, 0.5146]    | 0.18 [0.250, 0.937]           |
+| YeNet    | 93.97% [93.19, 94.67]          | 0.9853               | 92.34%             | 0.4988        | **0.4993** [0.4826, 0.5160]    | 0.23 [0.385, 0.849]           |
 
-**Table 1:** Steganalysis detection accuracy and ROC AUC evaluation across three state-of-the-art deep residual detectors. All detectors achieve near-perfect performance on positive controls (LSB ±1) but collapse to **chance-level AUC = 0.5000** on DCASS carriers.
+**Table 1:** Steganalysis evaluation across three state-of-the-art deep residual detectors on an image-level three-fold protocol. All three gated detectors pass the per-fold 0.90 positive-control gate at 93.7–95.1% accuracy and 0.984–0.986 AUC, while their measured DCASS carrier AUCs sit at 0.497–0.499 with every 95% interval covering 0.5000. The cover rate is the one-sided fraction of carriers labeled cover at threshold 0.5; the balanced accuracy and the threshold-free AUC both sit at one half, which resolves the accuracy versus AUC paradox.
 
-![ROC Curves](./storage/benchmarks/plots/fig1_roc_curves.pdf)
-*Figure 1: ROC curves for SRNet, ZhuNet, and YeNet on positive controls (solid) vs. DCASS carriers (dashed). The DCASS curves overlap the diagonal ($y=x$), confirming statistical indistinguishability.*
+![Detection accuracy and AUC with intervals](./storage/benchmarks/plots/fig1_roc_curves.pdf)
+*Figure 1: Detection accuracy and ROC AUC for SRNet, ZhuNet, and YeNet. The positive-control bars sit at 93.7–95.1% accuracy and 0.984–0.986 AUC; the DCASS carrier bars sit at balanced accuracy 0.50 and measured AUC 0.497–0.499, both within their 95% intervals of one half. The companion payload sweep in `fig1_payload_sweep.pdf` traces the same detectors from the 1.0 bpp control down to 0.1 bpp.*
 
 #### V-A.4 Physical & Statistical Causality
-**Why traditional stego fails (>94% detection):** LSB modifications introduce high-frequency parity noise violating local natural image dependencies, activating SRM filter responses and unpooled residual blocks in SRNet/YeNet.
+**Why traditional stego fails (93–95% control accuracy):** LSB modifications introduce high-frequency parity noise violating local natural image dependencies, activating SRM filter responses and unpooled residual blocks in SRNet/YeNet.
 
-**Why DCASS collapses detectors to AUC = 0.5000:** DCASS employs **selection-based coverless steganography** — it **never modifies a single pixel, bit, or DCT coefficient**. Carriers are drawn *untouched* from public corpora (Flickr30k, Wikipedia, AudioSet). The physical media matrix is identical to a natural cover; spatial steganalyzers are mathematically blind because the KL divergence between the clean-cover and carrier feature distributions is purely attributable to finite sampling, not embedding artifacts.
+**Why DCASS collapses the measured AUC to 0.50:** DCASS employs **selection-based coverless steganography** — it **never modifies a single pixel, bit, or DCT coefficient**. Carriers are drawn *untouched* from public corpora (Flickr30k, Wikipedia, and the `libretta` audio corpus of 13,496 clips). The physical media matrix is identical to a natural cover, so spatial steganalyzers lose the embedding signal they were trained to detect; the plug-in $D_{\mathrm{KL}}$ values of 0.18–0.23 bits with permutation $p$ of 0.238–0.937 are estimator sparsity under an identical-distribution null, not covert signal.
 
 #### V-A.5 Preempting Reviewer Questions
 > **Reviewer:** "Did your detectors fail to detect DCASS because they were undertrained?"  
-> **Response:** No. Option B explicitly verified convergence on LSB ±1 positive controls with ≥91% accuracy and ≥0.97 AUC. The blindness on DCASS is caused strictly by the absence of media modification, verified by $D_{\mathrm{KL}}$ values reflecting only sampling variance.
+> **Response:** No. Option B verified a per-fold 0.90 gate on ±1 LSB positive controls at 93.7–95.1% accuracy and 0.984–0.986 AUC. The blindness on DCASS is caused strictly by the absence of media modification: the carriers are corpus-identical bytes, and the plug-in $D_{\mathrm{KL}}$ values are permutation-calibrated and consistent with sampling variance alone.
 
 ---
 
 ### V-B. Semantic Distribution Invariance
 
 #### V-B.1 Adversary Threat Model
-We consider a **multi-modal semantic warden** with access to a high-capacity embedding model (EfficientNet-B0 for images, BERT-base for text, AudioSet-pretrained VGGish for audio). The adversary computes the embedding of each transmitted carrier and tests whether the sequence of embeddings follows the natural corpus prior $P_{\text{corpus}}(\mathbf{z})$ or exhibits selection bias (distributional drift) toward specific semantic concepts.
+We consider a **multi-modal semantic warden** with access to a high-capacity public embedding model: CLIP ViT-B/32 for images and text, CLAP HTSAT-unfused for audio. The adversary computes the embedding of each transmitted carrier and tests whether the sequence of embeddings follows the natural corpus prior $P_{\text{corpus}}(\mathbf{z})$ or exhibits selection bias (distributional drift) toward specific semantic concepts.
 
 #### V-B.2 Metric Formulations
-* **Voronoi Constellation Partitioning (VCP):** The unified embedding space $\mathcal{Z} \subset \mathbb{R}^{512}$ is partitioned into $K=256$ cells via $k$-means centroids $\{c_k\}_{k=1}^{256}$. Each carrier maps to its nearest centroid.
-* **Two-Sample Kolmogorov-Smirnov Distance:**
+* **Voronoi Constellation Partitioning (VCP):** The unified embedding space $\mathcal{Z} \subset \mathbb{R}^{512}$ is partitioned into $K=256$ cells via spherical $k$-means centroids $\{c_k\}_{k=1}^{256}$. Each carrier maps to its nearest centroid.
+* **Energy distance:** $D_{\mathcal{E}} = 2\,\mathbb{E}\|X - Y\| - \mathbb{E}\|X - X'\| - \mathbb{E}\|Y - Y'\|$, estimated in unbiased U-statistic form and calibrated by label permutation on a shared distance matrix. It is zero exactly when the two distributions coincide.
+* **Squared maximum mean discrepancy:** with an RBF kernel $k$ of median-heuristic bandwidth, $\mathrm{MMD}^2 = \mathbb{E}\,k(X, X') + \mathbb{E}\,k(Y, Y') - 2\,\mathbb{E}\,k(X, Y)$, estimated without the diagonal terms and calibrated by the same permutation test.
+* **Two-Sample Kolmogorov-Smirnov family:**
   $$D_{\mathrm{KS}} = \sup_{x} |F_{\text{carrier}}(x) - F_{\text{corpus}}(x)|$$
+  screened over all 512 embedding dimensions per modality under Benjamini-Hochberg control at $q = 0.05$, plus a family-wise permutation test of the maximum ECDF gap.
 * **Wasserstein-1 Distance (Earth Mover's Distance):**
   $$W_1(P_{\text{carrier}}, P_{\text{corpus}}) = \inf_{\gamma \in \Pi} \mathbb{E}_{(x,y)\sim \gamma}[\|x - y\|_2]$$
-* **Cluster Shannon Entropy:** $H(C) = -\sum_{k=1}^{256} p(c_k) \log_2 p(c_k)$, with theoretical maximum $\log_2 256 = 8.000\text{ bits}$.
+  measured here on the first principal coordinate of a pooled per-modality PCA fit and reported as a one-dimensional projection with its variance share, not as a multivariate transport cost.
+* **Cluster Shannon Entropy:** $H(C) = -\sum_{k=1}^{256} p(c_k) \log_2 p(c_k)$, with theoretical maximum $\log_2 256 = 8.000\text{ bits}$, recorded on carrier slots and on unique media.
 
-#### V-B.3 Results: Zero Semantic Drift
+#### V-B.3 Results: No Drift Beyond the Public Mechanism
 
 | Metric | Image | Text | Audio |
 |:-------|:-----:|:----:|:-----:|
-| Wasserstein-1 ($W_1$) | 0.0121 | 0.0154 | 0.0142 |
-| Kolmogorov-Smirnov ($D_{\mathrm{KS}}$) | < 0.05 ($p>0.05$) | < 0.05 ($p>0.05$) | < 0.05 ($p>0.05$) |
-| Voronoi Entropy $H(C)$ (bits) | **7.994 / 8.000** | **7.994 / 8.000** | **7.994 / 8.000** |
+| Energy distance [$p$] | 0.00011 [0.009] | 0.00010 [0.004] | -0.00003 [0.574] |
+| MMD² [$p$] | 6.10e-05 [0.012] | 8.36e-05 [0.004] | -3.28e-05 [0.642] |
+| Wasserstein-1 on PC1 | 0.00810 | 0.00612 | 0.00278 |
+| PC1 variance share | 5.74% | 6.20% | 27.03% |
+| Kolmogorov-Smirnov family | 0/512 BH, FW $p = 0.315$ | 0/512 BH, FW $p = 0.148$ | 0/512 BH, FW $p = 0.092$ |
+| Projection KS, unadjusted [$p$] | 0.0284 [0.011] | 0.0253 [0.030] | 0.0106 [0.857] |
+| Voronoi entropy $H(C)$ per modality, carrier slots (bits) | 6.322 | 6.039 | 6.318 |
 
-**Table 2:** Cross-modal distributional drift evaluation. All $W_1$ distances are an order of magnitude below the 0.05 threshold; $D_{\mathrm{KS}}$ tests fail to reject the null hypothesis ($p>0.05$); cluster entropy achieves 99.93% of theoretical maximum.
+**Table 2:** Cross-modal distributional evaluation, recorded over 10 draws of 50 messages, 27,850 carrier slots, against a disjoint 5,000-item reference per modality. Headline tests are permutation calibrated over a shared distance matrix; KS rejects count Benjamini-Hochberg discoveries over 512 dimensions per modality. The prespecified projection-KS row is intentionally unadjusted and is reported as disclosed multiplicity, not as a second finding: it nominally rejects for image and text at the 0.05 level, in the same direction as the small image/text shifts the headline tests resolve, does not reject for audio, and records no discovery once the 1,536-coordinate family adjustment is applied. The per-modality entropies are on the carrier-slot basis, with the unique-media basis giving 6.320, 6.037, and 6.320 bits; the combined cluster entropy reaches 7.8090 bits on slots and 7.7814 on unique media, and the deficit from the 8.0000 maximum is fully accounted for by the modality mixture identity.
 
-![KS Heatmap](storage/benchmarks/plots/fig_ks_heatmap.png) ![Wasserstein Heatmap](storage/benchmarks/plots/fig_wasserstein_heatmap.png) ![t-SNE Manifold](storage/benchmarks/plots/fig_manifold_tsne.png)
-*Figure 2: (Left) KS distance heatmaps per modality. (Center) Wasserstein-1 divergence heatmaps. (Right) 2D t-SNE projection showing complete overlap of carrier embeddings (red) with natural corpus (blue).*
+![Distributional Stats](storage/benchmarks/plots/fig2_distributional_stats.png) ![KS Heatmap](storage/benchmarks/plots/fig_ks_heatmap.png) ![t-SNE Manifold](storage/benchmarks/plots/fig_manifold_tsne.png)
+*Figure 2: (Left) Headline distributional statistics, energy distance and MMD², with the W₁ projection and per-draw dots. (Center) KS distance heatmap per modality with multiplicity annotations. (Right) 2D t-SNE projection showing broad interleaving of carrier embeddings (red) with the disjoint reference (blue).*
 
 #### V-B.4 Statistical Causality
 **Why naive coverless systems fail:** Early word-to-image mapping (e.g., "apple" → image of apple) creates semantic clustering detectable via centroid frequency analysis.
 
-**Why DCASS achieves $W_1 < 0.02$ and $H(C) = 7.994$ bits:** The Dynamic Semantic State Compression (DSSC) module applies a session-keyed HMAC-DRBG permutation over the payload bytes *before* Voronoi centroid assignment. The 256-bit session key acts as a cryptographic pseudorandom permutation over $\mathrm{GF}(2^8)$, uniformly scattering carrier selections across all 256 centroids. This guarantees the empirical carrier distribution converges to the natural corpus prior $\pi(\mathbf{z})$.
+**Why the recorded drift stays at the public-mechanism level:** The Dynamic Semantic State Compression (DSSC) module applies a session-keyed HMAC-DRBG permutation over the payload bytes *before* Voronoi centroid assignment, so message-dependent structure does not survive into carrier choice. What remains measurable is the pipeline's own schedule: carriers draw from two semantic families per modality under deterministic round robin, a design description — no artifact records the family schedule's pointwise predicted deviations, so what is actually measured is the aggregate mechanism-null consistency stated next. A dedicated 200-message mechanism test confirms the reading: the cluster histogram is statistically consistent with the structural schedule, chi-square 268.6 on 253 degrees of freedom with permutation $p = 0.21$, while the same histogram rejects uniformity at chi-square 3,253 with permutation $p = 0.0005$. A warden can reconstruct the public mechanism; the session key adds nothing beyond it.
 
 ---
 
-### V-C. Network Traffic Cadence and DPI Warden Evasion
+### V-C. Network Traffic Cadence and DPI Warden Interaction
 
 #### V-C.1 Adversary Threat Model
 An **active DPI flow warden** observes packet timestamps $\{t_i\}$ at the network layer. The adversary applies:
 1. **Sliding-window burst detection:** Flag sequences where ≥6 packets arrive within 5.0 s.
 2. **Periodicity / autocorrelation analysis:** Detect fixed-interval metronome transmission.
-3. **Rate-limit violation monitoring:** Trigger on platform HTTP 429 responses (channel cooldown violation).
+3. **Rate-limit diagnostics:** Count platform HTTP 429 responses (channel cooldown violations) as a diagnostic field; they are recorded but do not enter the warden score.
+
+> **Limitation, stated in full.** The shipped WGAN-GP warden checkpoint is collapsed, and the RL arm that trained against it never optimized for stealth at all. A diagnostic ([`C3_WARDEN_DIAGNOSTIC.md`](C3_WARDEN_DIAGNOSTIC.md)) shows that its transformer learned a constant-output function, so the neural anomaly score is a fixed 0.62493 on every input, and that `bot_probability = 0.0` is a float32 underflow of a saturated critic score rather than a measurement. The benchmark no longer uses that checkpoint: its soft branch is a separately trained traffic detector whose flag threshold is calibrated on held-out human traffic, so the interception rates in Table 3 are measurements against a measured false-positive rate rather than artifacts. One standing limit remains, and one defect is on record as repaired. The recorded RL arm is the retrained one, so it is a stealth policy; the generator it sits beside had its own training path found collapsed and has since been repaired and re-measured ([`C3_GENERATOR_ADVERSARY.md`](C3_GENERATOR_ADVERSARY.md), recorded as `C3-GEN-08`): the delay mapping no longer saturates, the critic's gradient now reaches the delay head on 100% of samples, and the re-measured critic discriminates real from generated traffic in every recorded epoch (input gradient 0.11–0.78 against the collapsed run's 0.000013, per `generator_path_repair.json` and `critic_sensitivity_repaired_run.json`), with the WGAN and Hybrid interception rate unchanged at 100%. The standing limit is the human side of the comparison: it draws on the repository's own synthetic traffic corpus rather than recorded human browsing, so none of these rates is evidence about the detectability of DCASS traffic in the field.
 
 #### V-C.2 Scheduler Architecture
 DCASS employs a three-tier fallback scheduler:
-- **Static (NoiseController):** Fixed base delay (3.0 s) with jitter.
+- **Static (benchmark baseline):** constant 3.0 s cadence; zero coefficient of variation and zero timing entropy in the recorded run.
 - **Temporal WGAN (WGAN-GP):** Generator conditioned on time-of-day $t \in [0,24]$ h; critic enforces inter-arrival distribution matching.
 - **Hybrid Engine:** WGAN generator + closed-loop channel mask enforcing per-channel cooldown $T_c$.
 - **PPO RL Agent:** Learns delay policy maximizing evasion reward while minimizing latency.
 
-#### V-C.3 Results: 100% Evasion with Human-Like Timing
+#### V-C.3 Results: Warden Interception Rates (Not an Evasion Claim)
 
-| Scheduler | Interception Rate | Evasion Rate | Delay Entropy (bits) | Mean Delay (s) | Channel Violations |
-|:----------|:-----------------:|:------------:|:--------------------:|:--------------:|:------------------:|
-| Static    | 100.0%            | 0.0%         | 0.000                | 3.00           | —                  |
-| Poisson   | 60.0%             | 40.0%        | 4.261                | 2.95           | —                  |
-| **DCASS WGAN** | **0.0%**        | **100.0%**   | 3.381                | 3.93           | —                  |
-| **DCASS Hybrid** | **0.0%**      | **100.0%**   | 3.435                | 3.92           | **0**              |
-| PPO RL    | 30.0%             | 70.0%        | 3.912                | 15.22          | —                  |
+| Scheduler | Interception Rate | Not Flagged Rate | Delay Entropy (bits) | Mean Delay (s) | Triggering Rule |
+|:----------|:-----------------:|:----------------:|:--------------------:|:--------------:|:----------------|
+| Static    | 100.0%            | 0.0%             | 0.000                | 3.00           | periodic cv 50/50 |
+| Poisson   | 54.0%             | 46.0%            | 4.234                | 3.04           | burst 27/50, soft 23/50 |
+| **DCASS WGAN** | **100.0%**       | **0.0%**         | 3.659                | 7.50           | soft 50/50 |
+| **DCASS Hybrid** | **100.0%**     | **0.0%**         | 3.658                | 7.44           | soft 50/50 |
+| **PPO RL (retrained)** | **0.0%**   | **100.0%**       | 3.581                | 5.20           | soft 50/50 |
 
-**Table 3:** DPI warden interception rates across schedulers. Only DCASS Hybrid achieves **100% evasion with zero channel violations**.
+**Table 3:** DPI warden interception rates across schedulers under the recorded composite decision function, with per-trial rule attribution from `component_3_results.json`. The soft branch is a trained traffic detector whose bot probability is judged against a threshold of 0.0181, calibrated on 457 held-out human bursts at a measured 4.60% false-positive rate, so these are measurements rather than artifacts. The detector used for the measurement is a held-out one, not the adversary the RL agent trained against. "Not flagged" is not an evasion claim: the human comparison is a synthetic surrogate, the corpus the detector was calibrated on is the repository's own traffic data rather than recorded human browsing, and the detector is a narrow model trained to catch three families of machine-like timing.
 
-| Diurnal Phase | Mean Delay (s) | Std Dev (s) | Evasion Rate |
-|:-------------:|:--------------:|:-----------:|:------------:|
-| Daytime Peak (14:00) | 3.19 | 1.79 | 100.0% |
-| Night Dormancy (03:00) | 13.07 | 6.08 | 100.0% |
+The stored per-trial scores behind these rates are summarized in `component_3b_warden_score_summary.json` and drawn in `fig_3b_warden_scores.png`. The earlier PPO run at 44.07 s mean latency, which flags 3 of 50 through the periodic rule, is retained there as a historical artifact: it was scored by the superseded warden and by a scheduler that did not yet clip the RL delays, so it is on a different scale and is not a second operating point of the current pipeline.
 
-**Table 4:** Circadian diurnal adaptation — DCASS automatically stretches delays during low-activity hours.
+| Diurnal Phase | Mean Delay (s) | Std Dev (s) | Interception Rate |
+|:-------------:|:--------------:|:-----------:|:-----------------:|
+| Daytime Hour (14:00) | 3.89 | 3.21 | 100.0% |
+| Night Hour (03:00) | 14.93 | 4.15 | 100.0% |
+
+**Table 4:** Diurnal conditioning check under one identical delay mapping. Conditioning on the hour measurably shifts the generator's delay distribution — the night-hour mean runs about 3.8× the day-hour mean — while interception remains 100% in both regimes; an earlier revision's 3.19 s / 13.07 s split was an artifact of per-regime analysis constants and is withdrawn. The 100% values are the warden's detection result, not an evasion claim.
 
 ![Inter-arrival CDF](storage/benchmarks/plots/fig_interarrival_cdf.png) ![Interception Rates](storage/benchmarks/plots/fig_interception_rates.png) ![Circadian Diurnal](storage/benchmarks/plots/fig_circadian_diurnal.png)
-*Figure 3: (Left) Inter-arrival CDFs vs. human baseline. DCASS (red) eliminates sub-1.5 s micro-bursts. (Center) DPI interception rates. (Right) 24-hour delay adaptation.*
+*Figure 3: (Left) Inter-arrival CDFs against the synthetic human surrogate baseline; after the generator-path repair the WGAN and Hybrid curves begin near 0.8 s and end near 30 s, while the surrogate thins out gradually along its log-normal tail. (Center) DPI interception rates under the recorded composite rules. (Right) Diurnal conditioning check at hour 14:00 versus 03:00; the night-hour distribution is shifted right relative to the day-hour one.*
 
 #### V-C.4 Behavioral & Statistical Causality
-**Why Static fails (100% interception):** Zero variance ($H_T = 0.000$ bits) triggers autocorrelation detectors.
+**Why Static fails (100% interception):** A constant 3.0 s metronome records coefficient of variation 0.0000 and log-bin entropy 0.0000 bits; the periodic rule fires in all 50 trials.
 
-**Why Poisson fails (60% interception):** Memoryless property $\Rightarrow$ 25% of intervals fall below 0.91 s, causing packet clumping that trips burst filters.
+**Why Poisson fails (54% interception):** Exponential delays defeat the periodic rules, but 27 of 50 trials place six or more packets inside some sliding 5.0 s window, and the burst rule scores those between 0.71 and 0.89.
 
-**Why DCASS CDF shifts right of human baseline (<1.5 s):** Human micro-bursts (<1.5 s) are eliminated by a **refractory floor** ($\Delta t \ge 1.5$ s), preventing HTTP 429 throttling and burst alarms.
+**Why the DCASS delays sit on the 1.5 s mapping anchor, with a thin tail below it:** The generator's softplus head plus the canonical mapping $(\text{raw} - 0.5) \times 1500 + 1.5$ anchor raw output 0.5 at the 1.5 s channel floor and scale the usable range out of a narrow raw band, so generated delays cluster just above that floor. Before the generator-path repair this confined every delay to roughly 0.2% of the unit range (measured minimum near 1.6 s) and produced no sub-1.5 s mass at all; after the repair the same mapping spans raw ≈0.4995–0.5185, yielding delays from 0.78 s to 29.30 s with a 10th percentile of 2.74 s and a mean of 4.02 s — so at most a tenth of the distribution now falls below 1.5 s, where none did before. No scheduler-level refractory rule exists in the recorded code; the surrogate's 28.1% mass below 1.5 s remains far larger than anything the generator produces in that region.
 
-**Why human curve plateaus (>500 s):** Human usage is bimodal (active browsing 1–10 s; session hiatuses ~3,600 s). DCASS completes 50-carrier messages in ≤3.27 min without hour-long stalls.
+**Why the human curve thins along its tail:** The surrogate mixes 80% exponential short delays with 20% log-normal tail mass, so its cumulative distribution flattens gradually as the log-normal component thins rather than stepping. DCASS completes 50-carrier messages in under four minutes.
 
 ---
 
 ### V-D. Codec Capacity, Permutation Security & Channel Fault Tolerance
 
 #### V-D.1 Adversary Threat Model
-1. **Channel adversary:** Induces random packet loss (0–20%) and reordering.
+1. **Channel adversary:** Induces random carrier substitution (0–25% of carriers) and carrier deletion (dropout).
 2. **Cryptographic adversary:** Attempts key forgery (wrong key, single-bit flips, related-key attacks).
 3. **Capacity adversary:** Measures bit-density leakage from carrier count.
 
 #### V-D.2 Metric Formulations
-* **Bits Per Carrier (BPC):** $\text{BPC} = \log_2 K = 8.00$ for $K=256$ Voronoi centroids.
-* **Reed-Solomon over $\mathrm{GF}(2^8)$:** Block length $n=255$, message length $k$, parity $R=n-k$. Corrects up to $t = \lfloor R/2 \rfloor$ symbol errors.
-* **Spearman Rank Correlation ($\rho$):** $\rho = 1 - \frac{6\sum d_i^2}{n(n^2-1)}$, where $d_i$ is rank difference between two permutations.
-* **False Acceptance Rate (FAR):** $\text{FAR} = \frac{\text{accepted forgeries}}{\text{total forgery attempts}}$.
+* **Bits Per Carrier (BPC):** exact_vcp is fixed at $\log_2 256 = 8.00$ coded bits per carrier; DSSC carries $\eta_i = \lfloor \log_2 |\mathcal{C}_i| \rfloor$ bits per carrier from a session-private candidate pool, clamped to 2 through 16, and records a coded mean of 13.60. User-payload density is lower because the coded count includes framing and RS parity.
+* **Reed-Solomon over $\mathrm{GF}(2^8)$:** The recorded codeword is $RS(63,55)$, 55 framed bytes plus $k=8$ parity bytes. It corrects up to $t = \lfloor k/2 \rfloor = 4$ byte errors at unknown positions or $k = 8$ known-position erasures.
+* **Pearson Correlation ($\rho$):** computed with `np.corrcoef` between two permutation index arrays, measuring key sensitivity.
+* **False Acceptance Rate (FAR):** $\text{FAR} = \frac{\text{CRC-passing unauthorized decodes}}{\text{total unauthorized attempts}}$. A decode that returns a wrong plaintext after passing the CRC still counts as an acceptance; exact plaintext matches are recorded separately.
 
-#### V-D.3 Results: Deterministic Capacity, Zero FAR
+#### V-D.3 Results: Coded Capacity and Bounded False-Acceptance Evidence
 
 | Metric | Value |
 |:-------|:-----:|
-| **Bit Density (BPC)** | **8.00 bpc** |
-| Permutation Latency (N=1,000) | 0.056 ms |
-| Permutation Latency (N=35,000) | 0.568 ms |
-| Channel Loss Recovery (0% loss) | 100.0% |
-| Channel Loss Recovery (5% loss) | 70.0% (2.7 bytes fixed) |
-| **FAR (100 random wrong keys)** | **0/100 (0.000000)** |
-| **FAR (256 single-bit flips)** | **0/256 (0.000000)** |
-| Mean Key Sensitivity $\rho$ | -0.00198 ≈ 0.00 |
+| **Coded bit density (BPC)** | **13.50–13.66, mean 13.60 (DSSC); 8.00 (exact_vcp)** |
+| **User-payload density (BPC)** | **7.00 at 14 B; 12.90 at 500 B (DSSC)** |
+| Permutation Latency (N=1,000) | 0.0575 ms |
+| Permutation Latency (N=35,000) | 0.4056 ms |
+| Substitution Recovery (0%) | 100.0% |
+| Substitution Recovery (5%) | 70.0% (2.7 bytes fixed) |
+| Substitution Recovery (5%, 80-trial extension) | 61.2% [50.3, 71.2] |
+| Carrier Dropout Recovery (≥2%) | 0.0% exact; 0.0% accepted after hardening |
+| Pre-hardening dropout false accepts | 41/320 trials at 2 through 5 percent deletion, documented in the archived artifact |
+| **CRC-passing decodes (100 random wrong keys)** | **0/100; Wilson 95% upper 3.70%** |
+| **CRC-passing decodes (256 single-bit flips)** | **0/256; Wilson 95% upper 1.48%** |
+| Key Sensitivity $\rho$ | -0.00198 at N = 35,000 ($\approx$ 0.00); the mean over the five recorded sizes is +0.0054 |
 
-**Table 5:** Codec capacity, channel fault tolerance, and cryptographic isolation. **Zero False Acceptance Rate** across all key-mutation attacks.
+**Component 4 metrics:** Codec capacity, substitution and dropout tolerance, and cryptographic isolation. Zero CRC-passing decodes were observed across all 356 unauthorized-key attempts. The intervals are wide enough that this campaign is consistent with, but does not resolve, the theoretical CRC-16 bound.
 
-![Capacity Comparison](storage/benchmarks/plots/fig_4a_capacity_comparison.png) ![Permutation Scaling](storage/benchmarks/plots/fig_4b_permutation_scaling.png) ![ECC Recovery](storage/benchmarks/plots/fig_4b_ecc_recovery_curve.png) ![Key Separation](storage/benchmarks/plots/fig_4b_key_separation.png)
-*Figure 4: (a) Bit-density scaling vs. legacy methods. (b) Permutation latency $O(N \log N)$. (c) RS-ECC recovery curve vs. Shannon bound. (d) Key separation: zero acceptance for all 356 mutated keys.*
+![Capacity Comparison](storage/benchmarks/plots/fig_4a_capacity_comparison.png) ![Permutation Scaling](storage/benchmarks/plots/fig_4b_permutation_scaling.png) ![ECC Recovery](storage/benchmarks/plots/fig_4b_ecc_recovery_curve.png) ![Key Separation](storage/benchmarks/plots/fig_4b_key_separation.png) ![ECC Failure Modes](storage/benchmarks/plots/fig_4c_ecc_failure_modes.png)
+*Figure 4: (a) Bit-density scaling vs. the exact_vcp baseline. (b) Permutation latency scaling with candidate pool size. (c) RS-ECC substitution recovery against the algebraic threshold $t = 4$. (d) Key separation: zero CRC-passing decodes across 356 wrong-key attempts, with Wilson 95 percent upper bounds of 3.70 and 1.48 percent. (e) ECC failure anatomy: substitution and dropout with the erasure-bound replay; dropout fails closed after the framing hardening.*
+
+**Component 4c extension.** The 80-trial failure anatomy resolves the recovery curve: one substituted carrier damages about 2.2 codeword bytes, exact recovery matches the $t = 4$ damage budget in all 640 substitution trials, and the CRC-passing acceptance count also recorded no acceptance above the limit in that arm. The 5 percent point refines to 61.2% [50.3, 71.2]. Substitution replacements are random corpus IDs, so same-symbol no-ops are included and the artifact records the symbol-change share. Carrier deletion is the harder channel: an early dropout damages about 32.7 codeword bytes and exact recovery is 0% at every recorded rate, because positional enumeration shifts every later carrier. A few deletions at or near the end leave at most four damaged bytes but still fail because the received list is short rather than shifted. The first rebuilt run also found a legacy raw fallback that accepted 41 of the 320 dropout trials at 2 through 5 percent deletion with wrong plaintext while reporting success. The decoder now requires framed payloads when ECC is enabled; the pre-hardening artifact is archived and the current artifact records zero false accepts. Exact recovery is unchanged. The erasure-bound replay shows that known carrier positions would extend tolerance to the 8-byte erasure budget, roughly 10% of carriers, which the current wire format does not reach.
 
 #### V-D.4 Cryptographic & Algebraic Causality
-**Why capacity = 8.00 bpc:** With $K=256$ centroids, $\log_2 256 = 8$ bits/carrier deterministically.
+**Why coded capacity exceeds 8 bits per carrier:** exact_vcp is fixed at $\log_2 256 = 8.00$ because each carrier indexes one public centroid. DSSC reads each symbol from a session-private candidate pool, so the per-chunk width is $\lfloor \log_2 |\mathcal{C}_i| \rfloor$ clamped to 16 bits, and the recorded coded mean is 13.60 bits per carrier. The user-payload figure is 7.00–12.90 bpc because the coded count includes framing and parity.
 
-**Why FAR = 0.000000:** An incorrect key applies a random permutation $\pi_{\text{wrong}}^{-1}$ to the RS codewords. The Berlekamp-Massey decoder computes a non-zero syndrome polynomial with uncorrectable errors, raising an uncorrectable exception and rejecting the forgery. The 256-bit session key space ensures $\rho \approx 0.00$ between correct and mutated key permutations.
+**Why zero acceptances were observed:** An incorrect key derives different families and a different permutation, so the symbol stream is scrambled; the Reed-Solomon layer then reports uncorrectable damage without raising an exception, and the CRC-16 frame rejects whatever survives. The decoder now also requires a frame marker whenever ECC is enabled, which closes the legacy raw fallback that the dropout arm exposed. The observed zero count has Wilson 95 percent upper bounds of 3.70 percent and 1.48 percent on the two arms, so it is consistent with the theoretical CRC-16 per-attempt bound of about $2^{-16}$ but does not measure it. The optional HMAC frame raises the bound to $2^{-256}$; the HMAC-SHA256 expansion of the 256-bit session key keeps $\rho \approx 0.00$ between correct and mutated key permutations.
 
 ---
 
-### V-E. Computational Performance, Latency & Concurrency Stress
+### V-E. Computational Performance, Direct-Engine Latency & Concurrency Stress
 
 #### V-E.1 Metric Formulations
-* **End-to-End Encoding Latency ($T_{\mathrm{enc}}$):** Plaintext → carrier IDs.
-* **End-to-End Decoding Latency ($T_{\mathrm{dec}}$):** Carrier IDs → plaintext.
-* **Latency Percentiles ($p_{50}, p_{95}, p_{99}$):** Under concurrent thread load.
-* **Session Cross-Talk Rate:** Leakage probability across concurrent sessions.
-* **Requests Per Second (RPS):** Sustained throughput.
+* **Direct-Engine Encoding Latency ($T_{\mathrm{enc}}$):** `SemanticEngine.encode`, plaintext to carrier IDs.
+* **Direct-Engine Decoding Latency ($T_{\mathrm{dec}}$):** `SemanticEngine.decode`, carrier IDs to plaintext.
+* **Latency Percentiles ($p_{50}, p_{90}, p_{95}, p_{99}$):** In-task encode-plus-decode service time under worker-thread load; queue wait, HTTP, and transmit delays are excluded.
+* **Observed Swap Rate:** A decoded payload that differs from the session's own secret and carries the shared marker.
+* **Sessions Per Second:** Completed direct-engine sessions; each session is one encode and one decode.
 
-#### V-E.2 Results: Sub-100ms Encoding, Zero Cross-Talk
+#### V-E.2 Results: Encoding Under 210 ms, Zero Observed Payload Swaps
 
 | Payload | Carriers | Encode (ms) | Decode (ms) | Throughput (KB/s) | Carrier Speed (c/s) |
 |:-------:|:--------:|:-----------:|:-----------:|:-----------------:|:-------------------:|
-| 32 B    | 27       | 94.6        | 216.0       | 0.33              | 86.9                |
-| 64 B    | 46       | 99.1        | 298.1       | 0.63              | 115.8               |
-| 128 B   | 83       | 117.7       | 462.5       | 1.06              | 143.0               |
-| 256 B   | 163      | 136.0       | 787.6       | 1.84              | 176.5               |
-| 512 B   | 317      | 191.6       | 1442.1      | 2.61              | 194.0               |
+| 32 B    | 27       | 107.1       | 222.6       | 0.29              | 81.9                |
+| 64 B    | 46       | 111.0       | 321.7       | 0.56              | 106.3               |
+| 128 B   | 83       | 123.2       | 484.7       | 1.01              | 136.5               |
+| 256 B   | 163      | 158.5       | 856.6       | 1.58              | 160.6               |
+| 512 B   | 317      | 206.3       | 1590.0      | 2.42              | 176.5               |
 
-**Table 6:** Payload scaling — encoding remains <200 ms even at 512 B.
+**Table 5A:** Payload scaling. Encoding remains under 210 ms even at 512 B.
 
-| Threads | Throughput (RPS) | $p_{50}$ (ms) | $p_{95}$ (ms) | Success Rate | Cross-Talk |
-|:-------:|:----------------:|:-------------:|:-------------:|:------------:|:----------:|
-| 10      | 2.73             | 3,632         | 4,129         | 100.0%       | 0.000%     |
-| 20      | 2.62             | 7,229         | 8,969         | 100.0%       | 0.000%     |
-| 50      | 2.57             | 17,668        | 20,573        | 100.0%       | **0.000%** |
+| Threads | Throughput (sessions/s) | $p_{50}$ (ms) | $p_{90}$ (ms) | $p_{95}$ (ms) | $p_{99}$ (ms) | Success Rate | Observed Swap Rate |
+|:-------:|:----------------:|:-------------:|:-------------:|:-------------:|:-------------:|:------------:|:----------:|
+| 10      | 2.00             | 4,976         | 5,502         | 5,706         | 5,979         | 100.0%       | 0.000%     |
+| 20      | 1.95             | 10,089        | 11,220        | 11,455        | 11,730        | 100.0%       | 0.000%     |
+| 50      | 1.89             | 24,367        | 26,989        | 27,598        | 27,949        | 100.0%       | **0.000%** |
 
-**Table 7:** Concurrency stress — **zero session cross-talk** at 50 parallel threads.
+**Table 5B:** Direct-engine concurrency. **Zero observed marker-payload swaps** at 50 worker threads. The FastAPI transmit path is not exercised by this benchmark.
 
 ![Latency Breakdown](storage/benchmarks/plots/fig5_latency_breakdown.png) ![Concurrency Scaling](storage/benchmarks/plots/fig5_concurrency_scaling.png)
-*Figure 5: (Left) Granular latency breakdown (FAISS search dominant at ~94 ms). (Right) Throughput and latency percentiles under concurrent load.*
+*Figure 5: (Left) Residual latency breakdown with FAISS search dominant, 107.1 ms at 32 B and 193.3 ms at 512 B. (Right) Throughput and latency percentiles under direct-engine worker-thread load.*
 
 #### V-E.3 Systems Causality
-**Why encoding < 100 ms:** FAISS IVFFlat GPU search over 245,000 items completes in ~94 ms. HMAC-DRBG permutation (0.066 ms) and RS-ECC framing (0.022 ms) are negligible.
+**Why encoding stays under 210 ms:** the FAISS search over 245,279 items is the dominant residual stage, at 107.1 ms for 32 B and 193.3 ms for 512 B. HMAC-DRBG permutation (0.067 ms) and RS-ECC framing (0.022 ms) are negligible. The stage rows are computed by subtraction, not by direct FAISS instrumentation. The shipped indices are exact CPU `IndexFlatIP` indexes, so this is a brute-force scan rather than an approximate GPU search.
 
-**Why cross-talk = 0.000%:** Session state is strictly partitioned per UUID and 32-byte cryptographic key; no global mutable state in the critical path.
+**Why observed swaps = 0.000% in the direct-engine test:** Each direct-engine session uses a distinct 32-byte key and a distinct keyed permutation of the candidate space. The benchmark checks for a different payload that carries the shared marker. It does not test the FastAPI session map or inbox isolation, and the current API admits concurrent transmissions up to a bounded limit.
 
 ---
 
 ## LaTeX Integration Commands
 
 ```latex
+% main.tex preamble
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}   % required by table4b for \checkmark
+\usepackage{graphicx}  % required by the generated tables for \resizebox
+
 % Section V in main.tex
 \section{Experimental Evaluation and Security Analysis}
 \label{sec:experiments}
 
 \subsection{Media-Layer Steganalysis Blindness}
 \input{storage/benchmarks/tables/table1_steganalysis.tex}
-\begin{figure}[htbp]
+\begin{figure*}[htbp]
   \centering
-  \includegraphics[width=\linewidth]{storage/benchmarks/plots/fig1_roc_curves.pdf}
-  \caption{Steganalysis detection accuracy and ROC AUC evaluation.}
+  \includegraphics[width=0.48\linewidth]{storage/benchmarks/plots/fig1_roc_curves.pdf}
+  \includegraphics[width=0.48\linewidth]{storage/benchmarks/plots/fig1_payload_sweep.pdf}
+  \caption{Steganalysis detection accuracy and ROC AUC evaluation, with the payload sweep from 1.0 down to 0.1 bits per pixel.}
   \label{fig:roc_curves}
-\end{figure}
+\end{figure*}
 
 \subsection{Semantic Distribution Invariance}
 \input{storage/benchmarks/tables/table2_distributional_drift.tex}
+\input{storage/benchmarks/tables/table2b_cluster_uniformity.tex}
 \begin{figure*}[htbp]
   \centering
+  \includegraphics[width=0.32\linewidth]{storage/benchmarks/plots/fig2_distributional_stats.png}
   \includegraphics[width=0.32\linewidth]{storage/benchmarks/plots/fig_ks_heatmap.png}
-  \includegraphics[width=0.32\linewidth]{storage/benchmarks/plots/fig_wasserstein_heatmap.png}
   \includegraphics[width=0.32\linewidth]{storage/benchmarks/plots/fig_manifold_tsne.png}
   \caption{Cross-modal distributional drift evaluation.}
   \label{fig:distributional_drift}
 \end{figure*}
 
-\subsection{Network Traffic Cadence and DPI Warden Evasion}
+\subsection{Network Traffic Cadence and DPI Warden Interaction}
 \input{storage/benchmarks/tables/table3_traffic_evasion.tex}
+\input{storage/benchmarks/tables/table3b_warden_score_quantiles.tex}
 \begin{figure*}[htbp]
   \centering
   \includegraphics[width=0.32\linewidth]{storage/benchmarks/plots/fig_interarrival_cdf.png}
@@ -250,25 +277,27 @@ DCASS employs a three-tier fallback scheduler:
 \subsection{Codec Capacity, Fault Tolerance, and Cryptographic Isolation}
 \input{storage/benchmarks/tables/table4a_capacity.tex}
 \input{storage/benchmarks/tables/table4b_codec_robustness.tex}
+\input{storage/benchmarks/tables/table4c_ecc_failure_modes.tex}
 \begin{figure*}[htbp]
   \centering
-  \includegraphics[width=0.24\linewidth]{storage/benchmarks/plots/fig_4a_capacity_comparison.png}
-  \includegraphics[width=0.24\linewidth]{storage/benchmarks/plots/fig_4b_permutation_scaling.png}
-  \includegraphics[width=0.24\linewidth]{storage/benchmarks/plots/fig_4b_ecc_recovery_curve.png}
-  \includegraphics[width=0.24\linewidth]{storage/benchmarks/plots/fig_4b_key_separation.png}
-  \caption{Codec performance.}
+  \includegraphics[width=0.19\linewidth]{storage/benchmarks/plots/fig_4a_capacity_comparison.png}
+  \includegraphics[width=0.19\linewidth]{storage/benchmarks/plots/fig_4b_permutation_scaling.png}
+  \includegraphics[width=0.19\linewidth]{storage/benchmarks/plots/fig_4b_ecc_recovery_curve.png}
+  \includegraphics[width=0.19\linewidth]{storage/benchmarks/plots/fig_4b_key_separation.png}
+  \includegraphics[width=0.19\linewidth]{storage/benchmarks/plots/fig_4c_ecc_failure_modes.png}
+  \caption{Codec performance and failure anatomy: coded bit-density scaling, permutation latency, substitution recovery, and key-separation results.}
   \label{fig:codec_performance}
 \end{figure*}
 
 \subsection{Computational Performance and System Scalability}
 \input{storage/benchmarks/tables/table5_system_performance.tex}
-\begin{figure}[htbp]
+\begin{figure*}[htbp]
   \centering
-  \includegraphics[width=0.49\linewidth]{storage/benchmarks/plots/fig5_latency_breakdown.png}
-  \includegraphics[width=0.49\linewidth]{storage/benchmarks/plots/fig5_concurrency_scaling.png}
+  \includegraphics[width=0.48\linewidth]{storage/benchmarks/plots/fig5_latency_breakdown.png}
+  \includegraphics[width=0.48\linewidth]{storage/benchmarks/plots/fig5_concurrency_scaling.png}
   \caption{Computational overhead and concurrency scaling.}
   \label{fig:system_performance}
-\end{figure}
+\end{figure*}
 ```
 
 ---
@@ -277,10 +306,10 @@ DCASS employs a three-tier fallback scheduler:
 
 | Reviewer Objection | Scientific Defense & Benchmark Proof |
 |:-------------------|:-------------------------------------|
-| **"Coverless steganography vulnerable to semantic selection bias?"** | **Component 2:** $W_1 < 0.02$, $D_{\mathrm{KS}} < 0.05$, $H(C) = 7.994\text{ bits}$. HMAC-DRBG permutation uniformly scatters across 256 centroids. |
-| **"Automated transmission triggers DPI flow alarms?"** | **Component 3:** DCASS Hybrid achieves **100% evasion** via refractory floor (>1.5 s), channel cooldown compliance, circadian adaptation (3.19 s day vs 13.07 s night). |
-| **"Packet loss or key forgery?"** | **Component 4:** RS-ECC over $\mathrm{GF}(2^8)$ recovers dropouts; 256-bit key sensitivity yields $\rho \approx 0.00$ and **FAR = 0.000000** (356 mutated keys all rejected). |
-| **"Vector search too slow for real-time?"** | **Component 5:** Encoding **94.6 ms** at 32 B; **194 carriers/sec** throughput; **0.000% cross-talk** at 50 parallel threads. |
+| **"Coverless steganography vulnerable to semantic selection bias?"** | **Component 2:** Energy distance and MMD² see image and text carriers shifted about one ten-thousandth away from a uniform corpus draw at permutation $p = 0.009$ and $0.004$, nothing for audio; zero of 1,536 KS coordinates reject under Benjamini-Hochberg control; combined cluster entropy is 7.8090 bits on 27,850 slots and 7.7814 on unique media, with the deficit fully explained by the modality mixture identity. **Component 2b:** the cluster histogram is consistent with the pipeline's public mechanism, chi-square 268.6 on 253 degrees of freedom, permutation $p = 0.21$. |
+| **"Automated transmission triggers DPI flow alarms?"** | **Component 3:** The recorded composite warden flags DCASS Hybrid in 50 of 50 trials, as it does the WGAN arm, while static cadence is flagged at 100% and Poisson at 54%. The retrained PPO arm is not flagged. The soft branch is a trained traffic detector whose threshold is calibrated on held-out human traffic at a measured 4.60% false-positive rate, so the rates are measurements rather than artifacts. Diurnal conditioning measurably shifts the delays (3.89 s at hour 14 versus 14.93 s at hour 3 under one identical mapping), though interception is unchanged across regimes. A separate diagnostic establishes that the shipped WGAN-GP warden is a collapsed model whose neural term is constant and whose `bot_probability` is a float32 underflow, and that the RL arm trained with a zero stealth penalty; the generator's own training path has since been repaired and re-measured, and the interception rates are unchanged. The current result is negative/limited, not demonstrated evasion, and the human reference is the repository's own synthetic traffic corpus rather than recorded human browsing. |
+| **"Packet loss or key forgery?"** | **Component 4:** RS-ECC over $\mathrm{GF}(2^8)$ corrects up to 4 damaged bytes per $RS(63,55)$ block and recovers 70.0% of messages at 5% carrier substitution, refined to 61.2% [50.3, 71.2] by the 80-trial extension, with an algebraic cliff beyond the correction budget; carrier dropout is disclosed as unrecoverable in the current format. The rebuilt anatomy also found a pre-hardening legacy fallback that accepted 41 of the 320 dropout trials at 2 through 5 percent deletion with wrong plaintext; the decoder now requires framed payloads when ECC is enabled, and the current artifact records zero false accepts. 256-bit key sensitivity yields $\rho \approx 0.00$ and an **observed FAR of 0/356** wrong-key attempts, with the per-attempt bound set by the CRC-16 frame scope. |
+| **"Vector search too slow for real-time?"** | **Component 5:** Direct-engine encoding **107.1 ms** at 32 B and **206.3 ms** at 512 B; **81.9 carriers/s** at 32 B and **176.5 carriers/s** at 512 B; **0.000% observed marker-payload swaps** at 50 worker threads. The run does not exercise the FastAPI transmit path. |
 
 ---
 
@@ -288,10 +317,10 @@ DCASS employs a three-tier fallback scheduler:
 
 | Component | Metrics JSON | LaTeX Tables | Plots (PNG/PDF) |
 |:----------|:-------------|:-------------|:----------------|
-| 1. Media Steganalysis | `component_1_summary.json` | `table1_steganalysis.tex` | `fig1_roc_curves.{png,pdf}` |
-| 2. Semantic Drift | `component_2_results.json` | `table2_distributional_drift.tex` | `fig_ks_heatmap.png`, `fig_wasserstein_heatmap.png`, `fig_manifold_tsne.png` |
-| 3. Traffic Evasion | `component_3_results.json` | `table3_traffic_evasion.tex` | `fig_interarrival_cdf.png`, `fig_interception_rates.png`, `fig_circadian_diurnal.png` |
-| 4. Codec & Security | `component_4a_capacity_results.json`, `component_4b_robustness_results.json` | `table4a_capacity.tex`, `table4b_codec_robustness.tex` | `fig_4a_capacity_comparison.png`, `fig_4b_permutation_scaling.png`, `fig_4b_ecc_recovery_curve.png`, `fig_4b_key_separation.png` |
-| 5. System Performance | `component_5_results.json` | `table5_system_performance.tex` | `fig5_latency_breakdown.png`, `fig5_concurrency_scaling.png` |
+| 1. Media Steganalysis | `component_1_summary.json` | `table1_steganalysis.tex` | `fig1_roc_curves.png`, `fig1_roc_curves.pdf`, `fig1_payload_sweep.png`, `fig1_payload_sweep.pdf` |
+| 2. Semantic Drift | `component_2_results.json`, `component_2b_cluster_usage_results.json` | `table2_distributional_drift.tex`, `table2b_cluster_uniformity.tex` | `fig2_distributional_stats.png`, `fig_ks_heatmap.png`, `fig_manifold_tsne.png`, `fig_2b_cluster_usage.png` |
+| 3. Traffic Evasion | `component_3_results.json`, `component_3b_warden_score_summary.json` | `table3_traffic_evasion.tex`, `table3b_warden_score_quantiles.tex` | `fig_interarrival_cdf.png`, `fig_interception_rates.png`, `fig_circadian_diurnal.png`, `fig_3b_warden_scores.png` |
+| 4. Codec & Security | `component_4a_capacity_results.json`, `component_4b_robustness_results.json`, `component_4c_ecc_failure_results.json` | `table4a_capacity.tex`, `table4b_codec_robustness.tex`, `table4c_ecc_failure_modes.tex` | `fig_4a_capacity_comparison.png`, `fig_4b_permutation_scaling.png`, `fig_4b_ecc_recovery_curve.png`, `fig_4b_key_separation.png`, `fig_4c_ecc_failure_modes.png` |
+| 5. Codec Concurrency | `component_5_results.json` | `table5_system_performance.tex` | `fig5_latency_breakdown.png`, `fig5_concurrency_scaling.png` |
 
 All artifacts located under `DCASS/storage/benchmarks/`.

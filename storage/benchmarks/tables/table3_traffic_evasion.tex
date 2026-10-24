@@ -1,23 +1,24 @@
 % Component 3: Traffic Timing & DPI Evasion Benchmark Results
-\begin{table}[htbp]
+\begin{table*}[htbp]
 \centering
-\caption{Traffic Timing Evasion: Warden Interception Rates and Timing Fidelity}
+\caption{Traffic Timing: Warden Interception Rates and Timing Fidelity. The second column is the not-flagged rate, not an evasion rate. (n = 5 schedulers x 50 trials x 50 carriers; scope = recorded composite warden; the soft branch is a trained traffic detector with a threshold calibrated on held-out human traffic, with the human side being the repository's own synthetic traffic corpus rather than recorded human browsing, so a not-flagged rate is a measurement and not an artifact; commit = 9b02563f956c5bbfb39201fea39965be1348b5b4)}
 \label{tab:traffic_evasion}
-\begin{tabular}{lcccccc}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccccccc}
 \toprule
-Scheduler & Interception Rate (\%) & Evasion Rate (\%) & Delay Entropy (bits) & KS Distance & KS $p$-value & Mean Latency (s) \\
+Scheduler & Interception Rate (\%) & Not Flagged Rate (\%) & Delay Entropy (bits) & KS Distance & KS $p$-value & Mean Latency (s) & Cooldown Violations & Triggering Rule (trials) \\
 \midrule
-Static Cadence & 100.0 & 0.0 & 0.0000 & 0.5814 & 0.0000 & 3.00 \\
-Stochastic Poisson & 60.0 & 40.0 & 4.2609 & 0.2889 & 0.0023 & 2.95 \\
-DCASS Temporal WGAN & 0.0 & 100.0 & 3.3807 & 0.3916 & 0.0000 & 3.93 \\
-DCASS Hybrid Engine & 0.0 & 100.0 & 3.4349 & 0.3933 & 0.0000 & 3.92 \\
-DCASS PPO RL Agent & 30.0 & 70.0 & 4.5704 & 0.7219 & 0.0000 & 15.22 \\
+Static Cadence & 100.0 & 0.0 & 0.0000 & 0.5330 & 1.20e-13 & 3.00 & 2450 & periodic cv 50/50 \\
+Stochastic Poisson & 54.0 & 46.0 & 4.2335 & 0.2211 & 4.88e-02 & 3.04 & 1276 & burst 27/50, soft 23/50 \\
+DCASS Temporal WGAN & 100.0 & 0.0 & 3.6586 & 0.5595 & 1.06e-06 & 7.50 & 982 & soft 50/50 \\
+DCASS Hybrid Engine & 100.0 & 0.0 & 3.6584 & 0.5553 & 7.75e-05 & 7.44 & 13 & soft 50/50 \\
+DCASS PPO RL Agent & 0.0 & 100.0 & 3.5809 & 0.2538 & 1.24e-02 & 5.20 & 15 & soft 50/50 \\
 \midrule
-\multicolumn{7}{l}{\textbf{Circadian Diurnal Rhythm Adaptation (WGAN):}} \\
-~~	\textendash~Daytime Peak (14:00) & 0.0 & 100.0 & 3.6161 & 0.4507 & -- & 3.19 \\
-~~	\textendash~Night Dormancy (03:00) & 0.0 & 100.0 & 3.4076 & 0.7487 & -- & 13.07 \\
+\multicolumn{9}{l}{\textbf{Diurnal Conditioning Check (WGAN, identical mapping):}} \\
+~~\textendash~Daytime Hour (14:00) & 100.0 & 0.0 & 2.7290 & 0.4303 & -- & 3.89 & -- & soft 25/25 \\
+~~\textendash~Night Hour (03:00) & 100.0 & 0.0 & 4.4098 & 0.8357 & -- & 14.93 & -- & soft 24/25, periodic cv 1/25 \\
 \midrule
-Human Baseline & -- & -- & 0.8618 & -- & -- & -- \\
+Human Baseline & -- & -- & 1.1735 & -- & -- & -- & -- & -- \\
 \bottomrule
-\end{tabular}
-\end{table}
+\end{tabular}}
+\end{table*}

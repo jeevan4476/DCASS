@@ -199,7 +199,7 @@ export default function LogsPage() {
             {[
               { name: 'FAISS Vector Index', desc: '512d Multi-Modal Vectors', status: 'ok', detail: metrics?.totalItems.toLocaleString() || '0', icon: <Database className="w-4 h-4" /> },
               { name: 'Voronoi Codebook (VCP)', desc: '256 Centroids, Unit Norm', status: 'ok', detail: '||c||₂ = 1.0', icon: <Shield className="w-4 h-4" /> },
-              { name: 'Reed-Solomon ECC', desc: 'GF(2⁸) Berlekamp-Massey', status: 'ok', detail: '0% Bit Error Rate', icon: <Activity className="w-4 h-4" /> },
+              { name: 'Reed-Solomon ECC', desc: 'GF(2⁸) Berlekamp-Massey', status: 'ok', detail: 'CRC-verified; clean channel', icon: <Activity className="w-4 h-4" /> },
               { name: 'Stealth Scheduler', desc: 'RL/GAN/Static Fallback', status: metrics?.stealthModels.rl_checkpoint || metrics?.stealthModels.gan_checkpoint ? 'ok' : 'warning', detail: metrics?.stealthModels.rl_checkpoint ? 'RL Ready' : metrics?.stealthModels.gan_checkpoint ? 'GAN Ready' : 'Static Only', icon: <Cpu className="w-4 h-4" /> },
               { name: 'FastAPI Server', desc: 'REST + WebSocket', status: ready?.ready === true ? 'ok' : ready?.initializing ? 'warning' : 'error', detail: 'Port 8000', icon: <Server className="w-4 h-4" /> },
             ].map((module) => (

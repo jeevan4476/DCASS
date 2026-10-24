@@ -7,9 +7,9 @@ In DCASS, secret information is transmitted by selecting specific media items fr
 
 $$W = \log_2(N) \quad \text{(bits / carrier item)}$$
 
-For our multi-modal index of $N = 153,281$ total vectors (Images + Text + Audio):
+For our multi-modal index of $N = 245,279$ total vectors (Images + Text + Audio):
 
-$$W = \log_2(153,281) \approx 17.2257 \quad \text{bits / carrier item}$$
+$$W = \log_2(245,279) \approx 17.9041 \quad \text{bits / carrier item}$$
 
 ---
 
@@ -86,7 +86,7 @@ When receiving corrupted codeword $C'(x) = C(x) + E(x)$:
 1. **Syndrome Evaluation**: Compute $S_j = C'(\alpha^j) = E(\alpha^j)$ for $j = 0, \dots, R-1$.
 2. **Berlekamp-Massey Algorithm**: Finds error locator polynomial $\Lambda(x) = \prod_{k=1}^\nu (1 - x X_k)$ of degree $\nu \le t$.
 3. **Chien Search**: Evaluates $\Lambda(\alpha^{-i})$ to locate exact corrupted byte positions.
-4. **Forney Algorithm**: Computes error values $Y_k$ and subtracts $E(x)$, restoring $M(x)$ with **0% Bit Error Rate (100% exact recovery)**.
+4. **Forney Algorithm**: Computes error values $Y_k$ and subtracts $E(x)$, restoring $M(x)$ when the damaged-byte count stays within $t=4$. The recorded clean-channel campaign reaches 0% BER; carrier dropout is unrecoverable in the current wire format.
 
 ---
 
@@ -102,4 +102,4 @@ The Kullback-Leibler (KL) Divergence is strictly:
 
 $$D_{\text{KL}}(P_{\text{cover}} \parallel P_{\text{stego}}) = \sum_{x \in \mathcal{X}} P_{\text{cover}}(x) \log_2 \left( \frac{P_{\text{cover}}(x)}{P_{\text{stego}}(x)} \right) = 0.0 \quad \text{bits}$$
 
-Under **Cachin's Theorem**, $D_{\text{KL}} = 0.0$ guarantees **perfect information-theoretic security**, making DCASS mathematically undetectable by deep-learning steganalysts like SRNet or Ye-Net.
+Cachin's Theorem says that $D_{\text{KL}} = 0$ between two distributions makes them **information-theoretically indistinguishable to any observer of that variable**. For DCASS the argument holds for the **carrier-content distribution**: the transmitted files are bit-identical to public corpus items, so a passive adversary inspecting the carriers gains no information from their content. It does **not** extend to the selection distribution. The recorded Component 2 run measures a non-zero selection shift between the transmitted and corpus distributions, and the recorded Component 1 run measures carrier detection at ROC AUC 0.4973 to 0.4993 with every 95% interval covering 0.5000. See `docs/benchmarking/CLAIM_LEDGER.md` rows `SEC-KL-06`, `C2-ENERGY-01`, and `C1-AUC-01`.

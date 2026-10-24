@@ -16,6 +16,8 @@ import torch.nn as nn
 from dataclasses import dataclass
 from typing import Optional, Iterator, Tuple
 
+from src.stealth.delay_contract import raw_delay_band_transform
+
 
 @dataclass
 class TimingSchedule:
@@ -23,7 +25,12 @@ class TimingSchedule:
     Output of the Generator.
 
     Attributes:
-        delays: Inter-transmission delays in seconds, shape (batch_size, sequence_length)
+        delays: Raw delay-band scalars straight from the model's
+            `raw_delay_band_transform` output (src/stealth/delay_contract.py),
+            shape (batch_size, sequence_length). These are NOT seconds: the
+            scheduler applies `canonical_delay_mapping`
+            (`src/stealth/delay_contract.canonical_delay_mapping`) before
+            they become inter-transmission delays.
         channel_logits: Channel selection logits, shape (batch_size, sequence_length, num_channels)
         confidence: Generator's confidence score, shape (batch_size,)
     """
@@ -234,8 +241,18 @@ class TemporalPatternGenerator(nn.Module):
         # Apply causal temporal block
         temporal_features = self.temporal_block(gru_out)
 
-        # Output predictions (add minimum 0.5s baseline delay)
-        delays = self.delay_head(temporal_features).squeeze(-1) + 0.5
+        # Output predictions.
+        #
+        # The delay head's Softplus output is folded into the band of raw
+        # values the canonical delay mapping can turn into the deployment
+        # window without clipping, so the mapping is never saturated and
+        # the gradient always reaches the head. Emitting the Softplus
+        # value directly left the raw output unbounded, and the mapping
+        # flattened everything outside a 1.97 percent slice of it against
+        # the clip, where the gradient is zero.
+        delays = raw_delay_band_transform(
+            self.delay_head(temporal_features).squeeze(-1)
+        )
         channel_logits = self.channel_head(temporal_features)
 
         final_state = temporal_features[:, -1, :]
@@ -264,6 +281,11 @@ class TemporalPatternGenerator(nn.Module):
         """
         Autoregressively stream (delay, channel) one packet at a time.
         Allows real-time transmission scheduling without memory overhead.
+
+        The yielded `delay` is a raw delay-band scalar from the model, NOT
+        seconds — the same value `TimingSchedule.delays` carries; apply
+        `canonical_delay_mapping` before treating it as a transmission
+        delay (the deployed scheduler path does exactly that).
         """
         if time_of_day is None:
             import datetime

@@ -19,14 +19,14 @@ import uuid
 from pathlib import Path
 from typing import Optional, Literal
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from src.corpus.index.unified_index import resolve_indices_base_path
 from src.api import auth as _auth
-from src.api.auth import AuthenticatedUser, get_current_user, get_optional_current_user
+from src.api.auth import AuthenticatedUser, get_current_user
 
 
 # ---------------------------------------------------------------------------
@@ -69,18 +69,28 @@ def require_api_token(
     """
     Gate sensitive routes when DCASS_API_TOKEN is configured.
 
-    When the env var is unset, auth is skipped (local/dev). Production
-    deployments must set DCASS_API_TOKEN.
+    When the env var is unset in development, auth is skipped (local/dev).
+    Under DCASS_ENV=production an unset DCASS_API_TOKEN is a configuration
+    error, not a decision: the request fails closed with 503, because the
+    alternative is serving sensitive routes to anonymous callers silently.
     """
     expected = os.environ.get("DCASS_API_TOKEN")
-    if not expected:
+    if expected:
+        if (
+            credentials is None
+            or credentials.scheme.lower() != "bearer"
+            or credentials.credentials != expected
+        ):
+            raise HTTPException(status_code=401, detail="Unauthorized")
         return
-    if (
-        credentials is None
-        or credentials.scheme.lower() != "bearer"
-        or credentials.credentials != expected
-    ):
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    if os.environ.get("DCASS_ENV", "development").lower() == "production":
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Authentication is not configured: set DCASS_API_TOKEN (or "
+                "stop claiming DCASS_ENV=production). Refusing to serve open."
+            ),
+        )
 
 
 def _context_secret_from_env() -> Optional[bytes]:
@@ -172,6 +182,21 @@ _ready = False
 _transmission_sessions: dict[str, dict] = {}  # session_id -> {active, progress, stop_requested}
 _transmission_sessions_lock = threading.Lock()
 
+# Maximum number of transmissions admitted at once. The shared engine and
+# the shared_channel directory are both shared resources, so admission is
+# bounded rather than unlimited: the sessions themselves are independent
+# (per-session packet filenames and per-session manifests), but each one
+# holds a scheduler and writes into a common directory.
+MAX_CONCURRENT_TRANSMISSIONS = int(
+    os.environ.get("DCASS_MAX_CONCURRENT_TRANSMISSIONS", "4")
+)
+
+# Serializes engine encode/decode across threads. The engine is a
+# singleton, and the encoder/decoder hold mutable scratch state, so
+# concurrent calls would interleave. The transmission threads themselves
+# only sleep and write files, so this lock is held briefly.
+_engine_work_lock = threading.Lock()
+
 def _get_session_state(session_id: Optional[str]) -> dict:
     """Get or create transmission session state."""
     if session_id is None:
@@ -181,7 +206,8 @@ def _get_session_state(session_id: Optional[str]) -> dict:
             _transmission_sessions[session_id] = {
                 "active": False,
                 "stop_requested": False,
-                "progress": {"current": 0, "total": 0, "status": "idle"}
+                "progress": {"current": 0, "total": 0, "status": "idle"},
+                "owner": None,
             }
         return _transmission_sessions[session_id]
 
@@ -192,23 +218,45 @@ def _cleanup_session(session_id: str) -> None:
         _transmission_sessions.pop(session_id, None)
 
 
-def _claim_transmission(session_id: str) -> bool:
+def _claim_transmission(session_id: str, owner: Optional[int] = None) -> bool:
     """Atomically claim a transmission slot for the given session.
-    Returns True if claimed, False if another session is active."""
+
+    Sessions are independent: each writes packets under its own
+    `<session_id>__<media_id>.json` name and its own
+    `_manifest_<session_id>.json`, so several can run against the same
+    recipient directory without colliding.
+
+    Admission is nevertheless bounded by MAX_CONCURRENT_TRANSMISSIONS.
+    Beyond the bound the claim fails and the endpoint answers 429, so a
+    burst of clients cannot spawn an unbounded number of scheduler threads
+    writing into one directory.
+
+    `owner` stamps the authenticated user so /api/transmit/stop can scope
+    its effects to the caller's own sessions.
+
+    Returns True if claimed, False if the concurrency bound is reached.
+    """
     with _transmission_sessions_lock:
-        # Check if any session is already active
-        for sid, state in _transmission_sessions.items():
-            if state["active"] and sid != session_id:
-                return False
+        active = sum(1 for s in _transmission_sessions.values() if s["active"])
+        if active >= MAX_CONCURRENT_TRANSMISSIONS:
+            return False
         # Create or update our session state
         if session_id not in _transmission_sessions:
             _transmission_sessions[session_id] = {
                 "active": False,
                 "stop_requested": False,
-                "progress": {"current": 0, "total": 0, "status": "idle"}
+                "progress": {"current": 0, "total": 0, "status": "idle"},
+                "owner": owner,
             }
         _transmission_sessions[session_id]["active"] = True
+        _transmission_sessions[session_id]["owner"] = owner
         return True
+
+
+def _active_transmission_count() -> int:
+    """Number of transmissions currently running."""
+    with _transmission_sessions_lock:
+        return sum(1 for s in _transmission_sessions.values() if s["active"])
 
 # Cached index counts for /api/status (avoids re-reading FAISS files per call)
 _index_counts_cache: Optional[dict] = None
@@ -425,10 +473,14 @@ def auth_me(current_user: AuthenticatedUser = Depends(get_current_user)):
 @app.get("/api/users", response_model=UsersListResponse)
 def list_users(
     exclude_current: bool = False,
-    current_user: Optional[AuthenticatedUser] = Depends(get_optional_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """List users. When exclude_current is True and user is authenticated, excludes current user."""
-    if exclude_current and current_user is not None:
+    """List users (authentication required).
+
+    Usernames are account identifiers; an unauthenticated caller must not
+    be able to enumerate the membership of the deployment, in either env.
+    """
+    if exclude_current:
         users = _auth.list_users_excluding(current_user.id)
     else:
         users = _auth.list_all_users()
@@ -470,17 +522,20 @@ def encode(req: EncodeRequest, _: None = Depends(require_api_token)):
 
     try:
         engine = _get_engine()
-        result = engine.encode(
-            message=req.message,
-            mode=engine_mode,
-            session_key=session_key,
-            modalities=req.modalities,
-            use_ecc=req.use_ecc,
-            ecc_parity_bytes=req.ecc_parity_bytes,
-            diversity_mode=diversity_mode,
-            context_manager=context_manager,
-            cover_story=req.cover_story,
-        )
+        # The engine is a singleton and its encoder holds mutable scratch
+        # state, so concurrent calls are serialized here.
+        with _engine_work_lock:
+            result = engine.encode(
+                message=req.message,
+                mode=engine_mode,
+                session_key=session_key,
+                modalities=req.modalities,
+                use_ecc=req.use_ecc,
+                ecc_parity_bytes=req.ecc_parity_bytes,
+                diversity_mode=diversity_mode,
+                context_manager=context_manager,
+                cover_story=req.cover_story,
+            )
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -607,16 +662,19 @@ def decode(req: DecodeRequest, _: None = Depends(require_api_token)):
 
     try:
         engine = _get_engine()
-        result = engine.decode(
-            media_ids=req.media_ids,
-            mode=engine_mode,
-            session_key=session_key,
-            modalities=req.modalities,
-            use_ecc=req.use_ecc,
-            ecc_parity_bytes=req.ecc_parity_bytes,
-            context_manager=context_manager,
-            context_epoch_hint=req.context_epoch_hint,
-        )
+        # Serialized for the same reason as encode: the decoder is shared
+        # mutable state.
+        with _engine_work_lock:
+            result = engine.decode(
+                media_ids=req.media_ids,
+                mode=engine_mode,
+                session_key=session_key,
+                modalities=req.modalities,
+                use_ecc=req.use_ecc,
+                ecc_parity_bytes=req.ecc_parity_bytes,
+                context_manager=context_manager,
+                context_epoch_hint=req.context_epoch_hint,
+            )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -851,14 +909,21 @@ def get_wire_packets(current_user: AuthenticatedUser = Depends(get_current_user)
 
 
 @app.delete("/api/wire/packets")
-def clear_wire_packets(_: None = Depends(require_api_token)):
-    """Clear all packets from shared_channel directory."""
-    shared_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
-    shared_dir.mkdir(parents=True, exist_ok=True)
+def clear_wire_packets(current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Clear the authenticated user's own inbox.
+
+    Deletion is scoped to `storage/shared_channel/<current_user.id>/`;
+    other users' packets are never touched.
+    """
+    base_dir = Path(__file__).parent.parent.parent / "storage" / "shared_channel"
+    shared_dir = base_dir / str(current_user.id)
+
+    if not base_dir.exists() or not shared_dir.exists():
+        return {"success": True, "deleted": 0}
 
     deleted_count = 0
     try:
-        for f in shared_dir.rglob("*.json"):
+        for f in shared_dir.glob("*.json"):
             # Keep sender-side control files (e.g. _manifest.json), consistent
             # with the GET endpoint which skips them.
             if f.name.startswith("_"):
@@ -1041,11 +1106,17 @@ def transmit_sequence(
 
     session_id = uuid.uuid4().hex[:16]
 
-    # Atomically claim the transmitter for this session
-    if not _claim_transmission(session_id):
+    # Atomically claim a transmission slot for this session. Several
+    # sessions may run at once, up to the concurrency bound.
+    if not _claim_transmission(session_id, current_user.id):
         raise HTTPException(
-            status_code=409,
-            detail="Transmission already in progress. Wait for it to complete or check /api/transmit/status",
+            status_code=429,
+            detail=(
+                "Too many transmissions in progress "
+                f"({_active_transmission_count()} active, limit "
+                f"{MAX_CONCURRENT_TRANSMISSIONS}). Retry shortly or check "
+                "/api/transmit/status"
+            ),
         )
 
     try:
@@ -1110,31 +1181,75 @@ def transmit_sequence(
 
 @app.get("/api/transmit/status")
 def get_transmission_status():
-    """Get the current transmission status for all sessions."""
+    """Get the current transmission status for all sessions.
+
+    The top-level keys are the first active session, kept for backward
+    compatibility with clients that read `active`/`current`/`total`/
+    `status` directly. `sessions` lists every active session, and
+    `active_count` and `max_concurrent` expose the admission bound.
+    """
     with _transmission_sessions_lock:
-        sessions = {}
-        for session_id, state in _transmission_sessions.items():
-            if state["active"]:
-                sessions[session_id] = {
-                    "active": state["active"],
-                    **state["progress"]
-                }
+        sessions = {
+            session_id: {"active": state["active"], **state["progress"]}
+            for session_id, state in _transmission_sessions.items()
+            if state["active"]
+        }
         if not sessions:
-            return {"active": False, "current": 0, "total": 0, "status": "idle"}
-        # Return the first active session (for backward compatibility)
+            return {
+                "active": False,
+                "current": 0,
+                "total": 0,
+                "status": "idle",
+                "sessions": {},
+                "active_count": 0,
+                "max_concurrent": MAX_CONCURRENT_TRANSMISSIONS,
+            }
+        # Return the first active session at the top level (backward
+        # compatibility) and list them all under `sessions`.
         first_session = next(iter(sessions.values()))
-        return {"active": True, **first_session}
+        return {
+            "active": True,
+            **first_session,
+            "sessions": sessions,
+            "active_count": len(sessions),
+            "max_concurrent": MAX_CONCURRENT_TRANSMISSIONS,
+        }
 
 
 @app.post("/api/transmit/stop")
-def stop_transmission(_: None = Depends(require_api_token)):
-    """Stop the current transmission (best effort)."""
+def stop_transmission(
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Stop the caller's own active transmissions (best effort).
+
+    `session_id` in the query string stops one session — the caller's
+    only; another user's session id is indistinguishable from an unknown
+    one (404). Without `session_id`, the caller's active sessions stop.
+    """
+    session_id = request.query_params.get("session_id")
     with _transmission_sessions_lock:
-        for session_id, state in _transmission_sessions.items():
-            if state["active"]:
+        if session_id:
+            state = _transmission_sessions.get(session_id)
+            if state is None or state.get("owner") != current_user.id:
+                raise HTTPException(status_code=404, detail="unknown session")
+            targets = [session_id]
+        else:
+            targets = [
+                sid
+                for sid, s in _transmission_sessions.items()
+                if s["active"] and s.get("owner") == current_user.id
+            ]
+        for sid in targets:
+            state = _transmission_sessions.get(sid)
+            if state is not None and state["active"]:
                 state["stop_requested"] = True
                 state["progress"]["status"] = "stopping"
-                return {"success": True, "message": "Transmission stop requested"}
+        if targets:
+            return {
+                "success": True,
+                "message": f"Transmission stop requested for {len(targets)} session(s)",
+            }
         return {"success": False, "message": "No active transmission"}
 
 
@@ -1285,7 +1400,10 @@ def inbox_decode(
     t0 = time.perf_counter()
     try:
         engine = _get_engine()
-        decode_result = engine.decode(media_ids=media_ids, mode="exact_vcp", use_ecc=True)
+        with _engine_work_lock:
+            decode_result = engine.decode(
+                media_ids=media_ids, mode="exact_vcp", use_ecc=True
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"decode failed: {e}")
     elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 1)
@@ -1352,3 +1470,16 @@ def inbox_delete(
     if deleted == 0:
         raise HTTPException(status_code=404, detail="session not found")
     return {"success": True, "deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
+# Demo showcase router: live steganalysis, carrier verification, pipeline traces
+# Mounted after route definitions so require_api_token is already defined.
+# ---------------------------------------------------------------------------
+from src.api.demo import router as demo_router  # noqa: E402
+
+app.include_router(
+    demo_router,
+    prefix="/api/demo",
+    dependencies=[Depends(require_api_token)],
+)

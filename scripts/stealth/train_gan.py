@@ -12,7 +12,7 @@ See docs/GAN_RL_INTEGRATION_PLAN.md (Phase A) for the full rationale.
 
 Usage:
     python scripts/stealth/train_gan.py \\
-        --data data/human_traffic.json \\
+        --data storage/data/traffic/human_traffic.json \\
         --epochs 20 --batch-size 32 --val-fraction 0.1 \\
         --out storage/models/gan_generator.pt
 """
@@ -25,6 +25,11 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+# The real recorded traffic corpus. The previous default (`data/human_traffic.json`)
+# does not exist in the repository, so every run silently trained on the
+# synthetic fallback unless the operator passed the path by hand.
+DEFAULT_HUMAN_DATA = PROJECT_ROOT / "storage" / "data" / "traffic" / "human_traffic.json"
 
 import torch
 
@@ -41,7 +46,7 @@ def main() -> None:
     parser.add_argument(
         "--data",
         type=Path,
-        default=PROJECT_ROOT / "data" / "human_traffic.json",
+        default=DEFAULT_HUMAN_DATA,
         help="Path to real human-traffic JSON (synthetic fallback if missing)",
     )
     parser.add_argument("--epochs", type=int, default=20)
@@ -63,7 +68,31 @@ def main() -> None:
         help="Disable WGAN-GP's gradient penalty (not recommended — training "
         "is unstable without it; kept as an escape hatch)",
     )
-    parser.add_argument("--lambda-gp", type=float, default=10.0)
+    parser.add_argument("--lambda-gp", type=float, default=100.0)
+    parser.add_argument(
+        "--critic-offset-penalty",
+        type=float,
+        default=0.0,
+        help=(
+            "Penalty on the critic score's offset. The Wasserstein loss "
+            "leaves the offset free, and the generator's loss does not "
+            "cancel it, so the offset runs away unless something "
+            "anchors it. This anchors the score's centre without "
+            "saturating the critic's gradient."
+        ),
+    )
+    parser.add_argument(
+        "--critic-score-bound",
+        type=float,
+        default=0.0,
+        help=(
+            "Bound on the critic's score. The bound has to be comfortably "
+            "larger than the score gap a 1-Lipschitz critic can produce "
+            "over the traffic's own scale, or the critic saturates "
+            "against it and its input gradient dies. Pass 0 for an "
+            "unbounded score."
+        ),
+    )
     parser.add_argument("--generator-lr", type=float, default=1e-4)
     parser.add_argument("--warden-lr", type=float, default=2e-4)
     parser.add_argument("--warden-steps", type=int, default=5)
@@ -98,6 +127,10 @@ def main() -> None:
         warden_steps=args.warden_steps,
         use_gradient_penalty=not args.no_gradient_penalty,
         lambda_gp=args.lambda_gp,
+        critic_score_bound=(
+            args.critic_score_bound if args.critic_score_bound > 0 else None
+        ),
+        critic_offset_penalty=args.critic_offset_penalty,
         device=args.device,
         checkpoint_dir=args.checkpoint_dir,
     )
@@ -107,6 +140,8 @@ def main() -> None:
     print(f"  Data: {args.data}")
     print(f"  Epochs: {args.epochs}  Batch: {args.batch_size}  Device: {args.device}")
     print(f"  Gradient penalty: {config.use_gradient_penalty} (lambda={config.lambda_gp})")
+    print(f"  Critic score bound: {config.critic_score_bound}")
+    print(f"  Critic offset penalty: {config.critic_offset_penalty}")
     print("=" * 60)
 
     dataset = HumanTrafficDataset(args.data, config.max_sequence_length)
@@ -138,6 +173,13 @@ def main() -> None:
         "warden_optimizer": trainer.warden_optimizer.state_dict(),
         "config": trainer.config,
         "metrics_history": trainer.metrics_history,
+        # The critic's scoring configuration is part of the model (the
+        # same two keys save_checkpoint writes): a checkpoint whose
+        # critic was bounded is not the same model as one whose critic
+        # was not, even though their parameters have the same shapes, so
+        # it is recorded and restored by every loader downstream.
+        "critic_bounded": trainer.warden.bounded_critic,
+        "critic_score_bound": trainer.warden.critic_score_bound,
     }
     torch.save(checkpoint, args.out)
     print(f"\n✓ Final checkpoint written to {args.out}")

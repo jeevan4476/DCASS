@@ -420,6 +420,12 @@ export interface TransmissionStatus {
   current: number;
   total: number;
   status: string;
+  /** Every active session, keyed by session id. */
+  sessions?: Record<string, { active: boolean; current: number; total: number; status: string }>;
+  /** How many transmissions are running right now. */
+  active_count?: number;
+  /** The admission bound on concurrent transmissions. */
+  max_concurrent?: number;
 }
 
 export async function getWirePackets(): Promise<WirePacketsResponse> {
@@ -434,6 +440,92 @@ export async function clearWirePackets(): Promise<{ success: boolean; deleted: n
 
 export async function getTransmissionStatus(): Promise<TransmissionStatus> {
   const response = await api.get('/transmit/status');
+  return response.data;
+}
+
+// ============================================================================
+// Production Showcase: pipeline trace, carrier verification, live steganalysis
+// ============================================================================
+
+export interface PipelineTraceStage {
+  stage_id: string;
+  name: string;
+  status: 'completed' | 'skipped' | 'degraded' | string;
+  duration_ms: number;
+  detail: Record<string, unknown>;
+}
+
+export interface PipelineTraceResponse {
+  message_preview: string;
+  stages: PipelineTraceStage[];
+  mode: string;
+  carrier_count: number;
+  bits_per_carrier: number;
+  media_ids: string[];
+  engine_warm: boolean;
+  total_duration_ms: number;
+}
+
+export interface VerifyCarrierResponse {
+  media_id: string;
+  modality?: string | null;
+  catalog?: string | null;
+  corpus_path: string;
+  corpus_sha256: string;
+  corpus_size_bytes: number;
+  transmitted_sha256: string;
+  transmitted_size_bytes: number;
+  transmitted_found: boolean;
+  transmitted_packet?: {
+    path?: string;
+    session_id?: string | null;
+    channel?: number | null;
+    modified?: number;
+  } | null;
+  bytes_modified: number;
+  bytes_total_compared: number;
+  integrity: 'verified' | 'modified' | string;
+  comparison_basis?: string;
+  modified_since_transmission?: boolean | null;
+  verification_method?: string;
+  note?: string;
+}
+
+export interface LiveSteganalysisResponse {
+  detector: string;
+  sample_count: number;
+  clean_probability: number;
+  lsb_probability: number;
+  dcass_probability: number;
+  per_sample: {
+    clean: number[];
+    lsb: number[];
+    dcass: number[];
+  };
+  input_size: number;
+  engine_trained: boolean;
+  note: string;
+}
+
+export async function runPipelineTrace(request: {
+  message: string;
+  use_ecc?: boolean;
+  ecc_parity_bytes?: number;
+}): Promise<PipelineTraceResponse> {
+  const response = await apiLongTimeout.post('/demo/pipeline-trace', request);
+  return response.data;
+}
+
+export async function verifyCarrier(mediaId: string): Promise<VerifyCarrierResponse> {
+  const response = await api.post('/demo/verify-carrier', { media_id: mediaId });
+  return response.data;
+}
+
+export async function runLiveSteganalysis(request: {
+  detector: 'sr_net' | 'zhu_net' | 'ye_net';
+  sample_count?: number;
+}): Promise<LiveSteganalysisResponse> {
+  const response = await apiLongTimeout.post('/demo/live-steganalysis', request);
   return response.data;
 }
 

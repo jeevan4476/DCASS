@@ -2,8 +2,9 @@
 ## Pixel-Level & Acoustic Invariance Evaluation
 
 > **Author:** DCASS Security & Steganography Core Architecture Team  
-> **Theoretical Goal:** Empirical Proof of Cachin $\epsilon$-Steganographic Security ($\epsilon = 0$) against Deep Residual and Statistical Detectors  
+> **Goal:** Measure image-layer detectability of unmodified DCASS carriers against three gated deep detectors. This is a negative control for zero content modification, not a proof of system-level $\epsilon$-security.
 > **Implementation Script:** `scripts/analysis/benchmark_1_media_steganalysis.py`
+> **As-run scope:** image-only; SRNet, ZhuNet, YeNet; 2,000-image Flickr30k pool; 3 folds; 20 epochs; 1,000 requested carriers per fold. Audio is not part of this campaign.
 
 ---
 
@@ -22,20 +23,23 @@ The high-frequency noise variance $\sigma_n^2$ disrupts local inter-pixel depend
 $$R = I * K$$
 In natural regions, smooth image content cancels out ($R \approx 0$). In stego images, the independent embedding noise does not cancel out, causing a detectable surge in residual variance and co-occurrence energy.
 
-### 1.2 Why DCASS Achieves Strict Invariance ($D_{KL} \equiv 0.0000$)
+### 1.2 Why the Media-Layer Signal Is Zero (and Why That Is Not a Full Security Proof)
+
 DCASS employs **Dynamic Semantic State-Space Coding (DSSC)**. Under DSSC:
 1. The message is decomposed into semantic chunks.
 2. The sender selects an unmodified carrier media item $I_{\text{carrier}}$ directly from the public corpus $\mathcal{C}_{\text{public}}$ based on a session-keyed permutation of Voronoi cluster states.
 3. The transmitted file is **bit-for-bit identical** to the public corpus file:
    $$\Delta \equiv 0 \implies I_{\text{carrier}} \equiv I_{\text{cover}}$$
-4. Consequently, for any feature extraction function $\Phi(\cdot)$ and any detector classifier $f_\theta(\cdot)$:
+4. For any feature extraction function $\Phi(\cdot)$ and any detector classifier $f_\theta(\cdot)$, the score distribution on a selected carrier is identical to the score distribution on the same cover:
    $$f_\theta(\Phi(I_{\text{carrier}})) \equiv f_\theta(\Phi(I_{\text{cover}}))$$
-   $$P(f_\theta = 1 \mid \mathcal{H}_1) \equiv P(f_\theta = 1 \mid \mathcal{H}_0)$$
-   $$\text{ROC AUC} \equiv 0.5000 \quad \text{and} \quad P_E \equiv 0.5000 \quad (\text{Pure Coin Flip})$$
+
+This is why the measured image-detector AUC sits at chance. It is a **negative control**, not a proof that the complete system is $\epsilon$-secure: the covert object also includes which carriers were selected and when they were sent. Components 2 and 3 evaluate those layers, and the current C3 result is negative/limited.
 
 ---
 
-## 2. In-Depth Architecture of the 5 Image Steganalysis Detectors
+## 2. Detector Architecture: Three Gated Detectors and Two Disclosed Foils
+
+The official C1 result uses **SRNet, ZhuNet, and YeNet**. SRM+FLDA and Xu-Net are included below as disclosed foils: they were executed, failed the 0.90 positive-control gate, and are excluded from the official summary. StegExpose is not implemented and is not part of any recorded C1 claim.
 
 ```
                        ┌──────────────────────────────────────────────┐
@@ -65,7 +69,7 @@ DCASS employs **Dynamic Semantic State-Space Coding (DSSC)**. Under DSSC:
 
 ---
 
-### 2.1 Detector 1: Spatial Rich Model (SRM) + FLDA
+### 2.1 Disclosed Foil: Spatial Rich Model (SRM) + FLDA
 * **Citation:** J. Fridrich and J. Kodovský, *"Rich Models for Steganalysis of Digital Images"*, IEEE Transactions on Information Forensics and Security (TIFS), 2012.
 * **Filter Bank:** 30 high-pass submodel filters capturing horizontal, vertical, diagonal, edge, and corner dependencies:
   - 1st-order differences: $D_h = [ -1, 1 ]$, $D_v = [ -1, 1 ]^T$
@@ -85,7 +89,7 @@ DCASS employs **Dynamic Semantic State-Space Coding (DSSC)**. Under DSSC:
 
 ---
 
-### 2.2 Detector 2: Xu-Net
+### 2.2 Disclosed Foil: Xu-Net
 * **Citation:** G. Xu, H. Z. Wu, and Y. Q. Shi, *"Structural Design of Convolutional Neural Networks for Steganalysis"*, IEEE Signal Processing Letters, 2016.
 * **Key Theoretical Contributions:**
   1. **Fixed KV High-Pass Filter:** Layer 1 is frozen with the $5\times 5$ KV kernel to strip low-frequency image content:
@@ -104,7 +108,7 @@ DCASS employs **Dynamic Semantic State-Space Coding (DSSC)**. Under DSSC:
 
 ---
 
-### 2.3 Detector 3: Ye-Net
+### 2.3 Gated Detector 1: Ye-Net
 * **Citation:** J. Ye, J. Ni, and Y. Yi, *"Deep Learning Hierarchical Representations for Image Steganalysis"*, IEEE Transactions on Information Forensics and Security (TIFS), 2017.
 * **Key Theoretical Contributions:**
   1. **30-SRM Filter Initialization:** Layer 1 is initialized with all 30 SRM spatial filters and fine-tuned during backpropagation.
@@ -121,7 +125,7 @@ DCASS employs **Dynamic Semantic State-Space Coding (DSSC)**. Under DSSC:
 
 ---
 
-### 2.4 Detector 4: Zhu-Net
+### 2.4 Gated Detector 2: Zhu-Net
 * **Citation:** K. Zhu, C. Chen, and Y. Q. Shi, *"Universal Steganalysis of Digital Images Based on Deep Separable Convolutions"*, IEEE Transactions on Information Forensics and Security (TIFS), 2020.
 * **Key Theoretical Contributions:**
   1. **Depthwise Separable Convolutions:** Splits standard spatial-channel convolution into:
@@ -133,7 +137,7 @@ DCASS employs **Dynamic Semantic State-Space Coding (DSSC)**. Under DSSC:
 
 ---
 
-### 2.5 Detector 5: SRNet (Spatial Residual Network — The Gold Standard)
+### 2.5 Gated Detector 3: SRNet (Spatial Residual Network — The Gold Standard)
 * **Citation:** M. Boroumand, M. Chen, and J. Fridrich, *"Deep Residual Network for Steganalysis of Digital Images"*, IEEE Transactions on Information Forensics and Security (TIFS), 2018.
 * **The Paradigm Shift:**
   Previous CNNs (ResNet, VGG) failed in steganalysis because standard downsampling early in the network averages out subtle embedding noise. SRNet introduced a **12-layer residual architecture** with four distinct block types:
@@ -154,19 +158,11 @@ DCASS employs **Dynamic Semantic State-Space Coding (DSSC)**. Under DSSC:
 
 ---
 
-## 3. Acoustic Steganalysis (Audio Carrier Verification)
+## 3. Audio Carriers: Scope and Limitation
 
-In addition to image carriers, DCASS transmits audio carriers (ESC-50 environmental sounds).
-* **Adversarial Evaluator:** Acoustic Spectral Residual Detector.
-* **Feature Extraction:**
-  1. Short-Time Fourier Transform (STFT) with Hann window (2048 FFT size, 512 hop length).
-  2. Compute 128-band Mel-spectrogram: $\mathbf{S}_{\text{mel}}(f, t)$.
-  3. Extract high-frequency acoustic spectral flux and phase modulation variance:
-     $$\Delta \Phi(f, t) = \left| \mathbf{S}(f, t) - \mathbf{S}(f, t-1) \right|$$
-* **Baseline Comparison:**
-  - Positive Control: Echo steganography (delay $\tau = 1\text{ms}$) and phase coding on ESC-50 clips.
-  - DCASS Audio Carriers: Unmodified WAV files selected by DSSC.
-  - Metric: Spectral distortion distance and relative entropy $D_{KL} = 0.0000$.
+DCASS also transmits audio carriers from the `libretta` corpus (13,496 clips). No acoustic steganalysis detector was included in the recorded C1 campaign. The audio modality is covered by the Component 2 distributional analysis, not by this image-only detector evaluation.
+
+The earlier version of this section described an acoustic spectral-residual detector on ESC-50 with echo and phase-coding controls. That campaign is not present in the recorded artifacts and is withdrawn. Because the audio files are transmitted as corpus-identical bytes, a media-layer signal is expected to be zero, but that expectation has not been measured here and must not be reported as a C1 result.
 
 ---
 
@@ -182,11 +178,13 @@ In addition to image carriers, DCASS transmits audio carriers (ESC-50 environmen
 │                                                                             │
 │ 2. OPTION B PROTOCOL (Standard in Top-Tier Security Conferences):           │
 │    • Train the detectors directly on the Flickr30k corpus.                  │
-│    • Negative Class: 350 Natural Flickr Images.                             │
-│    • Positive Class: 350 Flickr Images + Spatial ±1 LSB Stego (0.4 bpp).    │
-│    • Verify: Detector achieves > 90% accuracy on held-out stego test set!   │
-│    • Test on DCASS: Feed 150 untouched DCASS carriers into the SAME model! │
-│    • Result: Accuracy collapses to 50.00% (AUC = 0.5000, D_KL = 0.0000).    │
+│    • Protocol: 3 image-level folds over a 2,000-image pool.                 │
+│    • Positive control: spatial ±1 twins at 1.0 bpp, gated at                │
+│      0.90 held-out accuracy per fold before any DCASS claim.                │
+│    • Test on DCASS: freeze the gated model and score 922–944                │
+│      untouched carriers per fold with the SAME weights.                     │
+│    • Result: measured AUC 0.4973–0.4993, every 95% interval                 │
+│      covering 0.5000; balanced accuracy 0.50 within interval.               │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -202,11 +200,11 @@ In addition to image carriers, DCASS transmits audio carriers (ESC-50 environmen
 
 2. **Empirical ROC Area Under Curve (AUC):**
    $$\text{AUC} = \int_{0}^{1} \text{TPR}(\text{FPR}) \, d(\text{FPR})$$
-   Computed via `sklearn.metrics.roc_auc_score` over model predicted probabilities.
-   - Traditional Stego: $\text{AUC} \ge 0.9400$.
-   - DCASS Carriers: $\text{AUC} = 0.5000 \pm \epsilon$ (pure random guessing).
+   Computed by rank statistics over the recorded per-sample posteriors, with a stratified bootstrap interval over folds.
+   - Positive control at 1.0 bpp: AUC 0.984–0.986 for the three gated detectors.
+   - DCASS carriers: measured AUC 0.4973–0.4993, every 95 percent interval covering 0.5000.
 
 3. **Relative Entropy / Kullback-Leibler Divergence ($D_{KL}$):**
    $$D_{KL}(P_{\text{cover}} \parallel P_{\text{carrier}}) = \sum_{i=1}^B P_{\text{cover}}(b_i) \log_2 \left( \frac{P_{\text{cover}}(b_i)}{P_{\text{carrier}}(b_i)} \right)$$
-   Computed via `scipy.stats.entropy` over empirical probability density histograms (30 bins).
-   - Proves Cachin $\epsilon$-security: $\epsilon = 0.0000$ bits.
+   Computed as a plug-in estimate over 50 posterior histogram bins and calibrated by label permutation, which reproduces the estimator's own sparsity.
+   - The theoretical cover-versus-carrier pixel divergence is exactly zero because carrier bytes are corpus-identical; the recorded plug-in values of 0.18–0.23 bits carry per-fold permutation $p$ values of 0.238–0.937.

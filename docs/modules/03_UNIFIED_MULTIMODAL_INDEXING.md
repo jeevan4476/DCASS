@@ -5,14 +5,14 @@
 
 DCASS establishes a unified multi-modal semantic search and retrieval architecture across three distinct sensory modalities: visual images, textual sentences, and spoken audio recordings. Rather than siloing steganographic carriers by media type, DCASS projects all modalities onto a shared 512-dimensional unit hypersphere $\mathbb{S}^{511}$ using OpenAI CLIP (`ViT-B/32`) and LAION CLAP (`clap-htsat-unfused`).
 
-The indexing subsystem manages 153,281 precomputed unit vectors using GPU-accelerated FAISS `IndexFlatIP` (Exact Inner Product Search). It implements cross-modal score calibration (Z-score normalization and sigmoid scaling) to enable direct comparison and ranking across heterogeneous modalities, and provides dynamic local disk file path resolution via the `MediaItem.file_path` property.
+The indexing subsystem manages 245,279 precomputed unit vectors using FAISS `IndexFlatIP` (exact brute-force inner-product search). The query encoder runs on CUDA when a GPU is available; the FAISS search itself runs on the CPU because the project depends on `faiss-cpu`. It implements cross-modal score calibration (Z-score normalization and sigmoid scaling) to enable direct comparison and ranking across heterogeneous modalities, and provides dynamic local disk file path resolution via the `MediaItem.file_path` property.
 
 ```mermaid
 flowchart TD
     subgraph Encoders["Feature Extraction & Embedding Space"]
-        IMG["Flickr Images\n(39,783 items)"] --> CLIP_V["CLIP ViT-B/32 Vision\n(512d)"]
-        TXT["Wikipedia Text\n(100,000 items)"] --> CLIP_T["CLIP ViT-B/32 Text\n(512d)"]
-        AUD["LibriTTS Audio\n(13,498 items)"] --> CLAP_A["CLAP HTSAT Audio\n(512d)"]
+        IMG["Flickr Images\n(31,783 items)"] --> CLIP_V["CLIP ViT-B/32 Vision\n(512d)"]
+        TXT["Wikipedia Text\n(200,000 items)"] --> CLIP_T["CLIP ViT-B/32 Text\n(512d)"]
+        AUD["libretta Audio\n(13,496 items)"] --> CLAP_A["CLAP HTSAT Audio\n(512d)"]
     end
 
     CLIP_V --> NORM["L2 Normalization\n(||x||_2 = 1.0)"]
@@ -20,9 +20,9 @@ flowchart TD
     CLAP_A --> NORM
 
     subgraph FAISS["FAISS GPU Indices (storage/data/indices/)"]
-        NORM --> I_IMG["image.index\n(IndexFlatIP - 81.5 MB)"]
-        NORM --> I_TXT["text.index\n(IndexFlatIP - 204.8 MB)"]
-        NORM --> I_AUD["audio.index\n(IndexFlatIP - 27.6 MB)"]
+        NORM --> I_IMG["image.index\n(IndexFlatIP - 62.1 MB)"]
+        NORM --> I_TXT["text.index\n(IndexFlatIP - 390.6 MB)"]
+        NORM --> I_AUD["audio.index\n(IndexFlatIP - 26.4 MB)"]
     end
 
     subgraph Retrieval["Unified Search & Calibration Pipeline"]
@@ -40,13 +40,13 @@ flowchart TD
 
 | Metric / Parameter | Value | Details |
 | :--- | :--- | :--- |
-| **Total Indexed Corpus** | **153,281 vectors** | 39,783 Images + 100,000 Text + 13,498 Audio |
+| **Total Indexed Corpus** | **245,279 vectors** | 31,783 Images + 200,000 Text + 13,496 Audio |
 | **Vector Dimensionality ($D$)** | 512 | Constant across all modalities |
-| **FAISS Index Type** | `IndexFlatIP` | Exact brute-force inner product (100% recall, zero approximation loss) |
-| **Total Index Disk Footprint** | 313.9 MB | `image.index` (81.5 MB), `text.index` (204.8 MB), `audio.index` (27.6 MB) |
-| **Total Metadata Footprint** | 63.7 MB | `image_metadata.json`, `text_metadata.json`, `audio_metadata.json` |
-| **Search Latency (CUDA)** | $< 3.5\ \text{ms}$ | Parallel search across all 153,281 items ($k=50$) |
-| **Throughput (Batch Search)** | $> 1,200\ \text{queries/sec}$ | GPU matrix multiplication $\mathbf{S} = \mathbf{Q} \mathbf{X}^T$ |
+| **FAISS Index Type** | `IndexFlatIP` | Exact brute-force inner product, no approximation loss; the shipped indices are CPU indexes |
+| **Total Index Disk Footprint** | 479.1 MB | `image.index` (62.1 MB), `text.index` (390.6 MB), `audio.index` (26.4 MB) |
+| **Total Metadata Footprint** | 92.4 MB | `image_metadata.json` (22.8 MB), `text_metadata.json` (65.4 MB), `audio_metadata.json` (4.2 MB) |
+| **Search Latency** | Not separately benchmarked in the current artifacts | The end-to-end encode path is measured in Component 5; a per-stage FAISS latency table is not recorded |
+| **Throughput (Batch Search)** | Not recorded in the current artifacts | The engine issues one query per carrier, not a batched matrix product |
 
 ---
 
@@ -209,7 +209,7 @@ def file_path(self) -> Optional[str]:
         return str((project_root / "storage/data/indices/image_metadata.json").resolve())
 
     elif self.modality == "audio":
-        # Resolve LibriTTS audio file in cache or raw datasets
+        # Resolve libretta audio file in cache or raw datasets
         cand_aud = project_root / "storage/data/audio/cache"
         if cand_aud.exists():
             for file_p in cand_aud.rglob("*.arrow"):
@@ -233,10 +233,10 @@ def file_path(self) -> Optional[str]:
 ```
 +------------------------------------------------------------------------------------+
 |                                 DCASS UNIFIED CORPUS                               |
-|                                (153,281 Total Items)                               |
+|                                (245,279 Total Items)                               |
 +--------------------------+----------------------------+----------------------------+
-|     Flickr Images        |     Wikipedia Text         |      LibriTTS Audio        |
-|     39,783 vectors       |    100,000 vectors         |      13,498 vectors        |
+|     Flickr Images        |     Wikipedia Text         |      libretta Audio        |
+|     31,783 vectors       |    200,000 vectors         |      13,496 vectors        |
 |     (26.0% of Corpus)    |    (65.2% of Corpus)       |      (8.8% of Corpus)      |
 +--------------------------+----------------------------+----------------------------+
 ```
@@ -247,26 +247,21 @@ All indices reside in `storage/data/indices/`:
 
 | File Name | Modality | Vector Count | Dimensions | Disk Size |
 | :--- | :--- | :--- | :--- | :--- |
-| `image.index` | Image | 39,783 | 512 (FP32) | 81.5 MB |
-| `image_metadata.json` | Image (Meta) | 39,783 records | Captions, paths | 24.1 MB |
+| `image.index` | Image | 31,783 | 512 (FP32) | 62.1 MB |
+| `image_metadata.json` | Image (Meta) | 31,783 records | Captions, paths | 22.8 MB |
 | `text.index` | Text | 100,000 | 512 (FP32) | 204.8 MB |
 | `text_metadata.json` | Text (Meta) | 100,000 records | Sentences, sources | 35.2 MB |
-| `audio.index` | Audio | 13,498 | 512 (FP32) | 27.6 MB |
-| `audio_metadata.json` | Audio (Meta) | 13,498 records | Transcripts, speakers | 4.4 MB |
-| **Total** | **All 3 Modalities** | **153,281** | **512d** | **377.6 MB** |
+| `audio.index` | Audio | 13,496 | 512 (FP32) | 26.4 MB |
+| `audio_metadata.json` | Audio (Meta) | 13,496 records | Transcripts, speakers | 4.2 MB |
+| **Total** | **All 3 Modalities** | **245,279** | **512d** | **571.5 MB** |
 
 ### 6.3 Retrieval Latency & Throughput
 
-Benchmarked on Linux x86_64 with NVIDIA RTX GPU (CUDA 12.x) vs 16-core CPU:
+**No current artifact records a per-stage retrieval latency breakdown.** The earlier table of CUDA-versus-CPU latencies and speedups for query encoding, per-index search, and score merging was never produced by a recorded benchmark, and it also described a GPU FAISS backend that the shipped code does not use: the indices are CPU `IndexFlatIP` and the project depends on `faiss-cpu`.
 
-| Operation | CUDA GPU Latency | CPU Latency (16 Threads) | Speedup |
-| :--- | :--- | :--- | :--- |
-| **CLIP Query Encoding (1 Text)** | 4.2 ms | 38.5 ms | $9.2\times$ |
-| **Search `image.index` ($k=20$)** | 0.8 ms | 4.2 ms | $5.3\times$ |
-| **Search `text.index` ($k=20$)** | 1.8 ms | 10.1 ms | $5.6\times$ |
-| **Search `audio.index` ($k=20$)** | 0.4 ms | 1.6 ms | $4.0\times$ |
-| **Score Normalization & Merging** | 0.3 ms | 0.5 ms | $1.7\times$ |
-| **Total End-to-End Query Time** | **7.5 ms** | **54.9 ms** | **$7.3\times$** |
+The measured numbers that do exist are the end-to-end encode and decode latencies in Component 5 (`storage/benchmarks/component_5_results.json`), measured on the direct engine with `device: cuda`. They range from 107.1 ms encode at 32 B to 206.3 ms encode at 512 B, with decode from 222.6 ms to 1,590.0 ms.
+
+A per-stage retrieval benchmark is a Phase 1 candidate if the paper needs to attribute latency to the search stage.
 
 ---
 

@@ -1,0 +1,94 @@
+{
+  "component": "component_3_traffic_evasion",
+  "generated_utc": "2026-10-21T19:00:32.485421+00:00",
+  "command": "benchmark_3_traffic_evasion.py",
+  "argv": [
+    "/home/img1/projects/DCASS/scripts/analysis/benchmark_3_traffic_evasion.py"
+  ],
+  "git": {
+    "commit": "9b02563f956c5bbfb39201fea39965be1348b5b4",
+    "branch": "feature/gan-rl-pipeline",
+    "dirty": true,
+    "dirty_paths": [
+      "M storage/benchmarks/component_3_results.json",
+      " M storage/benchmarks/generator_path_repair.json",
+      " M storage/benchmarks/plots/fig_circadian_diurnal.png",
+      " M storage/benchmarks/plots/fig_interarrival_cdf.png",
+      " M storage/benchmarks/tables/table3_traffic_evasion.tex",
+      " M storage/models/gan_generator.pt",
+      "?? storage/benchmarks/critic_sensitivity_repaired_run.json"
+    ]
+  },
+  "python": {
+    "version": "3.12.8",
+    "implementation": "CPython"
+  },
+  "platform": "Linux-7.2.10-200.fc44.x86_64-x86_64-with-glibc2.43",
+  "packages": {
+    "torch": "2.14.1+cu126",
+    "numpy": "1.26.4",
+    "scipy": "1.17.1",
+    "sklearn": "1.9.1",
+    "faiss": "1.15.1",
+    "matplotlib": "3.11.2"
+  },
+  "seeds": {
+    "global_seed": 42,
+    "self_test_seed": 43,
+    "torch_manual_seed": 42,
+    "numpy_seed": 42
+  },
+  "inputs": [
+    {
+      "path": "storage/models/gan_generator.pt",
+      "bytes": 65738309,
+      "sha256": "1e74f03e09346b1c9d13aedc6efff5ba3b303fe99991a1f6b588728e3bedec47"
+    },
+    {
+      "path": "storage/models/rl_agent.pt",
+      "bytes": 2316617,
+      "sha256": "02991c52e001e6c330d47ceec3fecc6905c86e1e4372913013dfdfce073e23f7"
+    },
+    {
+      "path": "storage/models/warden.pt",
+      "bytes": 16814649,
+      "sha256": "2094d58283bc83eeeced547b53642364da568685dc6366ab39d624763a9963c3"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "storage/benchmarks/component_3_results.json",
+      "bytes": 38228,
+      "sha256": "c2f0b86e68ee4f6429b4d8c15cdac7216b7a8b71158987790af6b84f45e64fa8"
+    },
+    {
+      "path": "storage/benchmarks/tables/table3_traffic_evasion.tex",
+      "bytes": 1703,
+      "sha256": "dc78acad6c0bc0417409171c3746ced8ace3a3cb27a95e0a2569b017bc4b10a3"
+    },
+    {
+      "path": "storage/benchmarks/plots/fig_interarrival_cdf.png",
+      "bytes": 178917,
+      "sha256": "a85d3053dd5321af6dec6268ac6ba1ed76dedad4452fef934085baf5ec07b76c"
+    },
+    {
+      "path": "storage/benchmarks/plots/fig_circadian_diurnal.png",
+      "bytes": 132466,
+      "sha256": "b1227685ed6dbbb9700a0a66d5d9d6f1f71e6c6b2f25a1b9acb452f258ad2d04"
+    },
+    {
+      "path": "storage/benchmarks/plots/fig_interception_rates.png",
+      "bytes": 133103,
+      "sha256": "2b0baeb644990bf429fb906c16d8175bbb384427ff12c01d906b20bfd88971fa"
+    }
+  ],
+  "extra": {
+    "num_trials": 50,
+    "carriers_per_message": 50,
+    "base_delay_seconds": 3.0,
+    "num_channels": 3,
+    "device": "cuda",
+    "delay_mapping": "(raw - 0.5) * 1500 + 1.5, clipped to [0.5, 30.0] s, shared by the deployed GAN path, the deployed hybrid path, and this benchmark",
+    "warden_note": "The shipped warden is a collapsed model; see docs/benchmarking/C3_WARDEN_DIAGNOSTIC.md. The neural term is inert."
+  }
+}

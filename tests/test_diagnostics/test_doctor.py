@@ -7,7 +7,6 @@ failure mode.
 
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 
@@ -83,20 +82,13 @@ class TestFingerprintBinding:
         shutil.copytree(blessed_indices_dir, work)
 
         idx = faiss.read_index(str(work / "image.index"))
-        vec = np.asarray(idx.reconstruct(0), dtype=np.float32)
-        vec[0] += 1.0  # rebuild-style perturbation -> different fingerprint
+        # Rebuild every row, perturbing exactly one vector. ntotal stays
+        # identical so only the CONTENT fingerprint changes - proving the
+        # fingerprint catches what a count check cannot.
+        vectors = idx.reconstruct_n(0, idx.ntotal).copy()
+        vectors[0, 0] += 1.0  # rebuild-style perturbation, same vector count
         new_index = type(idx)(idx.d)
-        new_index.add(
-            np.stack(
-                [vec]
-                + [
-                    np.asarray(idx.reconstruct(i), dtype=np.float32)
-                    for i in range(1, min(idx.ntotal, 50))
-                ]
-            )
-        )
-        # Keep ntotal identical so only the CONTENT fingerprint changes -
-        # proving the fingerprint catches what a count check cannot.
+        new_index.add(vectors)
         faiss.write_index(new_index, str(work / "image.index"))
 
         from src.engine.vcp_payload import VCPPayloadMapper
@@ -122,13 +114,9 @@ class TestFingerprintBinding:
             timeout=300,
             cwd=Path(__file__).parent.parent.parent,
         )
-        if (
-            "No sidecar" in result.stdout
-            or "ERROR: no codebook" in result.stdout
-            or result.returncode != 0
-            and "codebook" in result.stdout
-        ):
+        if "No sidecar" in result.stdout or "ERROR: no codebook" in result.stdout:
             pytest.skip("codebook or sidecar not present")
+        assert result.returncode == 0, result.stdout + result.stderr
         assert "BINDING OK" in result.stdout, result.stdout + result.stderr
 
 

@@ -1,0 +1,84 @@
+{
+  "schema": "traffic-detector-v1",
+  "seed": 1337,
+  "device": "cuda",
+  "epochs": 10,
+  "batch_size": 24,
+  "lr": 0.0002,
+  "bot_multiplier": 1,
+  "corpus": {
+    "human_sessions": 12000,
+    "bot_sessions": 8400,
+    "source": "storage/data/traffic/{human_traffic,real_human_traffic}.json plus synthesized bot sessions"
+  },
+  "split": {
+    "train": 16800,
+    "calibration": 3600,
+    "holdout": 3600,
+    "human_train": 8400,
+    "human_calibration": 1800,
+    "human_holdout": 1800,
+    "note": "the split is over the human sessions; each subset's bot sessions are synthesized only from the human sessions in that same subset, so no held-out human session has a perturbed twin in the training set"
+  },
+  "calibration": {
+    "threshold": 0.27586688263511655,
+    "target_fpr": 0.05,
+    "calibration_fpr": 0.049444444444444444,
+    "calibration_tpr": 0.9811111111111112,
+    "calibration_human_n": 1800,
+    "calibration_bot_n": 1800,
+    "calibration_human_max": 0.9995504021644592,
+    "calibration_human_p95": 0.26501500308513587
+  },
+  "holdout": {
+    "n": 3600,
+    "bot_fraction": 0.5,
+    "bot_probability_auc": 0.996841975308642,
+    "anomaly_mean_auc": 0.9968518518518518,
+    "bot_probability_best_accuracy": 0.5,
+    "anomaly_mean_best_accuracy": 0.5
+  },
+  "history": [
+    {
+      "epoch": 0,
+      "loss": 0.31021995975369854
+    },
+    {
+      "epoch": 1,
+      "loss": 0.20282182194259285
+    },
+    {
+      "epoch": 2,
+      "loss": 0.15994674056701894
+    },
+    {
+      "epoch": 3,
+      "loss": 0.38780841439496727
+    },
+    {
+      "epoch": 4,
+      "loss": 0.5743680519530816
+    },
+    {
+      "epoch": 5,
+      "loss": 0.1560852363266583
+    },
+    {
+      "epoch": 6,
+      "loss": 0.12521455464352454
+    },
+    {
+      "epoch": 7,
+      "loss": 0.12609630426707943
+    },
+    {
+      "epoch": 8,
+      "loss": 0.1230487058611886
+    },
+    {
+      "epoch": 9,
+      "loss": 0.15900439746544828
+    }
+  ],
+  "note": "The human corpus is the project's own traffic data. Its time-of-day distribution is uniform and its delay values are bounded, so it is a synthetic surrogate rather than recorded human browsing. This detector therefore measures how well a supervised detector separates the two traffic families present in the repository, not how detectable DCASS traffic is to a real network observer."
+}

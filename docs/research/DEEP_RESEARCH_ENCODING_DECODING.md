@@ -7,7 +7,7 @@ The DCASS project architecture is divided into 5 distinct engineering and resear
 ```mermaid
 flowchart LR
     P1["Phase 1: Multi-Modal Corpus & Ingestion\n(153k Vectors / 177k Files)"] --> P2["Phase 2: Unified 512d Vector Indexing\n(CLIP & CLAP GPU Batching)"]
-    P2 --> P3["Phase 3: Reed-Solomon ECC Integration\n(0% BER over GF(2^8))"]
+    P2 --> P3["Phase 3: Reed-Solomon ECC\n(0% clean-channel BER within t=4)"]
     P3 --> P4["Phase 4: Dynamic Stealth Scheduling\n(Context & GAN Steganalysis)"]
     P4 --> P5["Phase 5: Full Stack API & Dashboard\n(FastAPI + Next.js UI)"]
 ```
@@ -16,8 +16,8 @@ flowchart LR
 
 | Phase | Title | Objectives & Key Deliverables | Status |
 | :--- | :--- | :--- | :---: |
-| **Phase 1** | **Multi-Modal Corpus Ingestion** | Ingest 63,566 images (Flickr30k/8k), 100,000 text sentences (Wikipedia), and 13,496 audio clips (LibriTTS). | **Completed** |
-| **Phase 2** | **Unified 512d Vector Indexing** | Build GPU-accelerated FAISS `IndexFlatIP` indices using 512-dim CLIP (image/text) & CLAP (audio) space. | **Completed** |
+| **Phase 1** | **Multi-Modal Corpus Ingestion** | Ingest 31,783 images (Flickr30k/8k), 200,000 text sentences (Wikipedia), and 13,496 audio clips (`libretta`). | **Completed** |
+| **Phase 2** | **Unified 512d Vector Indexing** | Build FAISS `IndexFlatIP` indices using 512-dim CLIP (image/text) & CLAP (audio) space. | **Completed** |
 | **Phase 3** | **Reed-Solomon ECC Integration** | Implement $GF(2^8)$ RS algebraic coding to eliminate vector quantization noise, raising accuracy from 70% to 100%. | **Completed** |
 | **Phase 4** | **Dynamic Stealth Scheduling** | Synthesize public context feeds & GAN-based mimicry models to schedule carrier bursts without detection. | **In Progress** |
 | **Phase 5** | **Production API & Dashboard** | Deploy FastAPI REST endpoints and Next.js 14 Web UI with live Wire View telemetry. | **Completed** |
@@ -29,7 +29,7 @@ flowchart LR
 ### Decision 1: Zero-Modification Steganography Policy (No LSB or Sample Modification)
 - **Traditional Steganography Defect**: Methods like LSB (Least Significant Bit) insertion or spatial pixel tweaking alter image bytes or audio waveforms. Modern deep-learning steganalysis tools (e.g., SRNet, Ye-Net) detect these high-frequency pixel/audio statistics with >99% accuracy.
 - **DCASS Solution**: **Zero modification**. Carrier media files are published **100% untouched** in their raw form. The secret is encoded *purely through the sequence selection* of naturally occurring public media items.
-- **Advantage**: KL-divergence between transmitted media and cover media distribution is strictly **$D_{KL}(P_{cover} \parallel P_{stego}) = 0.0$**, rendering statistical detection mathematically impossible.
+- **Advantage**: the carrier bytes are identical to the corpus bytes, so nothing is modified for a steganalyzer to find. That is a property of the carrier, not a guarantee about the overall system: the recorded C2 run measures a non-zero selection shift between the transmitted and corpus distributions, and the recorded C1 run measures carrier detection at ROC AUC 0.4973 to 0.4993 with intervals covering 0.5000. See `docs/benchmarking/CLAIM_LEDGER.md` rows `SEC-KL-06` and `C2-ENERGY-01`.
 
 ### Decision 2: Unified 512-Dimensional Vector Space Across All Modalities
 - **Problem**: Mixing 384-dimensional text embeddings with 512-dimensional image embeddings prevents direct cross-modal cosine comparisons.
@@ -63,7 +63,7 @@ When a secret chunk or payload symbol is mapped to a target vector $v_{target} \
 $$\hat{x} = \arg\max_{x_i \in \mathcal{X}} \langle v_{target}, x_i \rangle$$
 
 #### The Origin of Nearest-Neighbor Noise
-Because the corpus size $N = 153,281$ is finite, the hypersphere $\mathbb{S}^{511}$ is partitioned into Voronoi cells $\mathcal{V}(x_i)$:
+Because the corpus size $N = 245,279$ is finite, the hypersphere $\mathbb{S}^{511}$ is partitioned into Voronoi cells $\mathcal{V}(x_i)$:
 
 $$\mathcal{V}(x_i) = \{ v \in \mathbb{S}^{511} : \langle v, x_i \rangle \ge \langle v, x_j \rangle \quad \forall j \neq i \}$$
 
@@ -114,7 +114,7 @@ Decoding proceeds in 4 algebraic steps:
 2. **Key Equation Solver (Berlekamp-Massey Algorithm)**: Find the error locator polynomial $\Lambda(x)$ satisfying:
    $$\Lambda(x) \cdot S(x) \equiv \Omega(x) \pmod{x^R}$$
 3. **Chien Search**: Find roots of $\Lambda(x)$ in $GF(2^8)$ to determine exact byte error locations $X_k = \alpha^{-i_k}$.
-4. **Forney Algorithm**: Calculate error magnitudes $Y_k$ and subtract $E(x)$ to recover $C(x)$ and $M(x)$ with **0% Bit Error Rate (BER)**.
+4. **Forney Algorithm**: Calculate error magnitudes $Y_k$ and subtract $E(x)$ to recover $C(x)$ and $M(x)$ while the damaged-byte count stays within $t=4$. Beyond that budget the decoder reports failure; the recorded clean-channel BER is 0%, and carrier dropout is unrecoverable in the current wire format.
 
 ---
 
@@ -125,7 +125,7 @@ By treating vector retrieval as a noisy communication channel, the maximum secre
 $$C_{semantic} = W \log_2 \left( 1 + \frac{S}{N} \right) \quad \text{bits/carrier}$$
 
 Where:
-- $W$: Entropy per carrier media item (bits of payload per vector choice). For $N=153,281$ items, raw capacity $W = \log_2(153,281) \approx 17.22$ bits/item.
+- $W$: Entropy per carrier media item (bits of payload per vector choice). For $N=245,279$ items, raw capacity $W = \log_2(245,279) \approx 17.90$ bits/item.
 - $\frac{S}{N}$: Signal-to-Noise Ratio of FAISS cosine matching.
 - **With RS-ECC**: The effective payload rate $R_{eff}$ is:
 
@@ -137,6 +137,6 @@ For $K=20, R=8$, code rate $\eta = \frac{20}{28} \approx 0.714$, giving **$12.3$
 
 ## 4. Summary of Research Breakthroughs
 
-1. **Eliminated the 70–85% Accuracy Plateau**: RS-ECC over $GF(2^8)$ mathematically guarantees **0% Bit Error Rate (BER)** under real-world FAISS vector noise.
+1. **Reduced the 70–85% Accuracy Plateau**: RS-ECC over $GF(2^8)$ corrects up to $t=4$ damaged bytes and records **0% BER on clean channels and within that budget** under recorded FAISS noise. It does not correct dropout or damage beyond the budget.
 2. **Zero Pixel/Sample Modification**: Steganalysis tools targeting image pixels or audio PCM samples fail completely because carrier files are transmitted untouched.
 3. **Unified 512d Multi-Modal Topology**: CLIP (image/text) + CLAP (audio) integrated into a single FAISS vector index stack.

@@ -18,9 +18,7 @@ storage/*
 !storage/.gitkeep
 !storage/models/
 storage/models/*
-!storage/models/gan_generator.pt
-!storage/models/rl_agent.pt
-!storage/models/warden.pt
+!storage/models/checkpoints_manifest.json
 
 # Benchmark Results, Publication Tables, and Plots (explicitly tracked)
 !storage/benchmarks/

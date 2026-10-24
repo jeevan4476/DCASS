@@ -79,7 +79,7 @@ When continuous vector spaces are partitioned into discrete Voronoi cells around
 To achieve exact reconstruction without altering media, DCASS uses Reed-Solomon error-correcting codes over Galois Field $GF(2^8)$ with primitive polynomial $p(x) = x^8 + x^4 + x^3 + x^2 + 1$ (0x11D):
 - The payload is split into chunks and framed with length, CRC-16, and parity symbols ([`RSErrorCorrection`](file:///home/img1/projects/DCASS/src/engine/ecc.py#L18-L165) and [`frame_payload`](file:///home/img1/projects/DCASS/src/engine/payload_framing.py#L15-L80)).
 - Adding $R = 2t$ parity symbols allows the receiver to correct up to $t$ corrupted symbols per codeword using the Berlekamp-Massey algorithm, Chien search, and Forney algorithm.
-- This resolves the Voronoi drift plateau, yielding 0% Bit Error Rate (100% exact message recovery).
+- This reduces the Voronoi drift plateau: the recorded clean-channel result is 0% BER within the $t=4$ correction budget. Errors beyond the budget and carrier dropout are not recovered.
 
 ### 3. Dynamic Context Keys
 To prevent an adversary from constructing a static dictionary of media-to-symbol associations, DCASS uses dynamic context keys:

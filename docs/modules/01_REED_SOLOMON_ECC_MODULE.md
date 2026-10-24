@@ -1,9 +1,10 @@
 # Reed-Solomon Error Correction Code (RS-ECC) Module Specification
 
+> **As-run correction (2026-10-21).** The recorded C4 campaign does not support an unconditional 0% BER or 100% recovery claim. Recovery is 100% on clean channels and within the $t=4$ byte budget, 70% at 5% carrier substitution in the 20-trial arm, 61.2% at 5% in the 80-trial extension, and 0% exact recovery under $\ge 2\%$ carrier dropout in the current wire format. See `CLAIM_LEDGER.md` C4-FAR-04 and the C4 report.
 
 ## 1. Executive Summary & Overview
 
-In Dynamic Context-Aware Semantic Steganography (DCASS), covert payloads are conveyed through semantic vector selections across public multi-modal media corpora. Unlike traditional spatial steganography which mutates raw carrier bits, DCASS maps secret data into high-dimensional embedding spaces. However, continuous embedding representations suffer from quantization drift, floating-point rounding variance, and boundary misclassifications. These continuous perturbations induce an uncorrected symbol error rate of 15% to 30% (yielding an unacceptable 70% to 85% message recovery rate).
+In Dynamic Context-Aware Semantic Steganography (DCASS), covert payloads are conveyed through semantic vector selections across public multi-modal media corpora. Unlike traditional spatial steganography which mutates raw carrier bits, DCASS maps secret data into high-dimensional embedding spaces. However, continuous embedding representations suffer from quantization drift, floating-point rounding variance, and boundary misclassifications. In an illustrative pre-build simulation carried over from earlier revisions of this document, these perturbations were modeled as an uncorrected symbol error rate of 15% to 30% (yielding a 70% to 85% message recovery rate); no artifact of that simulation survives in the repository, so the figure is a design rationale, not a measurement.
 
 To eliminate this continuous vector noise, DCASS integrates an algebraic block error correction layer based on Reed-Solomon codes over the Galois Field $GF(2^8)$. By appending $R = 2t$ parity bytes to the secret payload prior to Voronoi partitioning and FAISS vector lookup, the receiver uses algebraic decoding algorithms (Syndrome Evaluation, Berlekamp-Massey, Chien Search, and Forney Algorithm) to identify and correct up to $t = \lfloor R / 2 \rfloor$ corrupted carrier selections.
 
@@ -24,7 +25,7 @@ flowchart LR
         RCV --> SYN["Syndrome Evaluation\nS_i = R(alpha^i)"]
         SYN --> BM["Berlekamp-Massey\nError Locator Lambda(x)"]
         BM --> CHIEN["Chien Search & Forney\nError Locations & Values"]
-        CHIEN --> DEC["Corrected Message M(x)\n(0.0% Bit Error Rate)"]
+        CHIEN --> DEC["Corrected Message M(x)\n(CRC-verified within t=4)"]
     end
 ```
 
@@ -37,9 +38,10 @@ flowchart LR
 | **Default Parity Bytes ($R$)** | 8 bytes ($2t = 8$) | Appends 8 bytes per message block |
 | **Error Correction Capacity ($t$)** | $t = \lfloor R / 2 \rfloor = 4$ byte symbols | Corrects up to 4 completely mismatched media carriers |
 | **Erasure Capacity ($e + 2v \le 2t$)** | Up to 8 known erasures ($v = 8$) | Handles dropped carriers during network transmission |
-| **Baseline Vector Noise BER** | 15.0% - 30.0% (without ECC) | 70.0% - 85.0% payload recovery bottleneck |
-| **DCASS Final System BER** | **0.0% Bit Error Rate** | **100.0% Exact Message Reconstruction** |
-| **Codec Latency** | $< 120\ \mu\text{s}$ per 255-byte block | Negligible computational overhead on CPU |
+| **Baseline Vector Noise BER** | 15.0% - 30.0% (illustrative legacy figure; no artifact) | 70.0% - 85.0% payload recovery bottleneck in that same illustrative simulation |
+| **Recorded Clean-Channel BER** | **0.000%** (0 errors) | 100% exact reconstruction on zero-error and within-budget channels |
+| **Recorded Dropout Recovery** | **0% exact at $\ge 2\%$ carrier loss** | Unrecoverable in the current wire format; no positional markers |
+| **Codec Latency** | Not measured per 255-byte block | Recorded end-to-end pipeline stage timings: 0.02–0.26 ms encode-side, 0.04–0.29 ms syndrome-measurement side across 32–512 B payloads (`component_5_results.json`) |
 
 ---
 
@@ -76,11 +78,11 @@ Semantic steganography encodes information by selecting media carriers whose con
 2. **Voronoi Boundary Ambiguity**: Vectors residing near the boundary between two Voronoi cells $\mathcal{V}(\mathbf{c}_i)$ and $\mathcal{V}(\mathbf{c}_j)$ can cross the decision threshold if even slight variations occur in normalization or index search parameters.
 3. **Cross-Modal Embedding Gap**: Aligning image, text, and audio embeddings into a single 512d space introduces variance in cluster density and inter-centroid distance.
 
-Without algebraic error correction, these factors produce a raw symbol error rate of 15% to 30%, which breaks cryptographic hashes, compressed payloads, and natural language semantics.
+Without algebraic error correction, these factors would place the raw symbol error rate well above the budget any downstream consumer tolerates — the illustrative legacy figure cited in §1 puts it at 15% to 30%, breaking cryptographic hashes, compressed payloads, and natural language semantics long before parity exhaustion.
 
 ### 3.2 Transition to Exact Algebraic Determinism
 
-By placing an algebraic block code over $GF(2^8)$ beneath the Voronoi partitioning layer, DCASS decouples carrier selection from hard error failure. Even if a vector search returns an adjacent cluster centroid, the error manifests as an isolated byte substitution. The algebraic decoder detects this substitution and removes it, achieving a verified 0.0% Bit Error Rate.
+By placing an algebraic block code over $GF(2^8)$ beneath the Voronoi partitioning layer, DCASS decouples carrier selection from hard error failure within the correction budget. Even if a vector search returns an adjacent cluster centroid, the error manifests as an isolated byte substitution. The algebraic decoder detects this substitution and removes it while the damaged-byte count stays at or below $t=4$. The recorded clean-channel and within-budget campaign reaches 0.0% BER; the result is not unconditional, because 5% substitution already drops exact recovery to 61.2–70% and carrier dropout is unrecoverable in the current wire format.
 
 ---
 
@@ -283,24 +285,24 @@ Once the error locations $X_j = \alpha^{i_j}$ are known, the error magnitude $e_
 
 ## 5. End-to-End Concrete Numerical Walkthrough
 
-Consider a compact example demonstrating $GF(2^8)$ encoding and decoding:
+Consider a compact example demonstrating $GF(2^8)$ encoding and decoding. The numbers below are generated by the repository's own codec path — `reedsolo.RSCodec(4)` with field prime `0x11D`, generator 2, and first consecutive root 0 — so the walkthrough can be re-derived by running the module directly.
 
 ### Encoding Step
 - **Payload**: `"DCASS"` $\to$ ASCII `[0x44, 0x43, 0x41, 0x53, 0x53]` ($k = 5$ bytes).
 - **Parity Setting**: $R = 4$ parity bytes ($t = 2$ correctable errors).
 - **Generator Polynomial**: $G(x) = (x + 1)(x + \alpha)(x + \alpha^2)(x + \alpha^3) = x^4 + 0x0F x^3 + 0x36 x^2 + 0x78 x + 0x40$.
-- **Parity Calculation**: $P(x) = (M(x) \cdot x^4) \pmod{G(x)} \to [0x8A, 0x2E, 0xF1, 0x0D]$.
-- **Transmitted Codeword**: `[0x44, 0x43, 0x41, 0x53, 0x53, 0x8A, 0x2E, 0xF1, 0x0D]` ($n = 9$ bytes).
+- **Parity Calculation**: $P(x) = (M(x) \cdot x^4) \pmod{G(x)} \to$ `[0xB6, 0x6C, 0x51, 0xCD]`.
+- **Transmitted Codeword**: `[0x44, 0x43, 0x41, 0x53, 0x53, 0xB6, 0x6C, 0x51, 0xCD]` ($n = 9$ bytes).
 
 ### Corruption Step (Simulated Vector Drift)
 - Corrupt byte at index 1 (`0x43` $\to$ `0xEE`) and byte at index 3 (`0x53` $\to$ `0x11`).
-- **Received Codeword $R$**: `[0x44, 0xEE, 0x41, 0x11, 0x53, 0x8A, 0x2E, 0xF1, 0x0D]`.
+- **Received Codeword $R$**: `[0x44, 0xEE, 0x41, 0x11, 0x53, 0xB6, 0x6C, 0x51, 0xCD]`.
 
 ### Decoding Step
 1. **Syndrome Evaluation**:
-   $$S_0 = R(1) = 0xAD, \quad S_1 = R(\alpha) = 0x5C, \quad S_2 = R(\alpha^2) = 0x12, \quad S_3 = R(\alpha^3) = 0x98$$
+   $$S_0 = R(1) = 0xEF, \quad S_1 = R(\alpha) = 0xB8, \quad S_2 = R(\alpha^2) = 0x4C, \quad S_3 = R(\alpha^3) = 0x14$$
 2. **Berlekamp-Massey**:
-   Synthesizes $\Lambda(x) = 1 + \Lambda_1 x + \Lambda_2 x^2$ with roots corresponding to locations 1 and 3.
+   Synthesizes $\Lambda(x) = 1 + 0x0A\,x + 0x10\,x^2$, whose roots correspond to locations 1 and 3.
 3. **Chien Search**:
    Evaluates $\Lambda(\alpha^{-k}) = 0$ for $k \in \{1, 3\}$.
 4. **Forney Algorithm**:
@@ -410,14 +412,14 @@ def test_rs_ecc_basic_encoding_decoding():
 
 ### 7.2 Performance and Accuracy Comparison
 
-| Metric | Without RS-ECC (Direct Vector $k$-NN) | With RS-ECC ($R=8, t=4$) | With RS-ECC ($R=16, t=8$) |
+| Metric | Without RS-ECC (illustrative legacy figures, no artifact) | With RS-ECC ($R=8, t=4$, recorded) | With RS-ECC ($R=16, t=8$, theory) |
 | :--- | :--- | :--- | :--- |
-| **Bit Error Rate (BER)** | 18.4% (measured mean) | **0.000% (0 errors)** | **0.000% (0 errors)** |
-| **Message Recovery Rate** | 74.2% | **100.0%** | **100.0%** |
+| **Bit Error Rate (BER)** | 18.4% (unverified legacy figure) | **0.000% within budget; 0% exact recovery under dropout** | 0% within budget (not separately recorded) |
+| **Message Recovery Rate** | 74.2% (unverified legacy figure) | **100% within budget; 0% under $\ge2\%$ dropout** | 100% within budget (not separately recorded) |
 | **Max Noise Tolerance** | 0 symbol errors | 4 byte substitutions | 8 byte substitutions |
 | **Payload Expansion Rate** | 0% (No overhead) | +8 bytes / message block | +16 bytes / message block |
-| **Encoding Speed (CPU)** | N/A | 14,200 msg/sec | 11,800 msg/sec |
-| **Decoding Speed (CPU)** | N/A | 8,900 msg/sec | 6,400 msg/sec |
+
+No recorded benchmark artifact measures standalone codec throughput or per-255-byte-block ECC latency; earlier revisions of this document quoted encoder/decoder rates of 14,200/11,800 and 8,900/6,400 msg/sec and a $<120\ \mu\text{s}$ per-block figure without provenance, and they have been withdrawn. The nearest recorded quantities are the Component-5 pipeline stage timings quoted in §1 (`component_5_results.json:payload_scaling[].stage_breakdown`).
 
 ---
 

@@ -160,7 +160,7 @@ function LoginForm() {
           <div className="mt-6 p-3 bg-surface/50 border border-border rounded-lg">
             <p className="text-body-xs text-muted mb-2 font-medium">Demo accounts (local only)</p>
             <div className="flex flex-wrap gap-2 justify-center">
-              {['alice/alice1234', 'bob/bob1234', 'charlie/charlie1234'].map((cred) => (
+              {['alice/alice12345', 'bob/bob12345', 'charlie/charlie12345'].map((cred) => (
                 <code key={cred} className="bg-surface px-2 py-1 rounded text-body-xs text-primary font-mono border border-border">
                   {cred}
                 </code>

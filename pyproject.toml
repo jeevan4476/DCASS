@@ -1,12 +1,12 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=84.2.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "dcass"
 version = "0.3.0"
 description = "Dynamic Context-Aware Semantic Steganography via Zero-Modification Media Curation"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dynamic = ["dependencies"]
 
 [tool.setuptools.dynamic]
@@ -25,9 +25,23 @@ addopts = "-q"
 markers = [
     "integration: mark test as integration test (requires indices)",
     "slow: mark test as slow running",
+    "needs_models: mark test as requiring trained model checkpoints under storage/models",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
+]
+
+# ---------------------------------------------------------------------------
+# Coverage (drives .venv coverage run -m pytest; pytest-cov is not installed)
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = [
+    "if __name__ == .__main__.:",
 ]
 
 # ---------------------------------------------------------------------------

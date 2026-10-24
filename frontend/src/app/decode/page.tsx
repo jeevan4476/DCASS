@@ -296,7 +296,7 @@ function DecodeContent() {
                     />
                     <StatCard
                       label="ECC Status"
-                      value={result.ecc_success ? 'OK (0% BER)' : 'FAILED'}
+                      value={result.ecc_success ? 'OK (CRC-verified)' : 'FAILED'}
                       variant={result.ecc_success ? 'success' : 'error'}
                     />
                     <StatCard

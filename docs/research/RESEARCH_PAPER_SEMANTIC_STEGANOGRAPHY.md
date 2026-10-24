@@ -1,7 +1,7 @@
 # Theoretical Foundations & Mathematical Mechanics of Dynamic Context-Aware Semantic Steganography (DCASS)
 
 ## Abstract
-Traditional steganographic techniques embed covert messages by modifying lower-order bits, frequency coefficients, or temporal samples of carrier media. However, physical signal perturbations leave distinct statistical signatures detectable by deep neural network steganalysts (e.g., SRNet). This paper presents **Dynamic Context-Aware Semantic Steganography (DCASS)**, a paradigm shift that eliminates physical media modifications entirely. DCASS encodes secret payloads into sequences of *naturally occurring, unmodified multi-modal media items* (images, text, audio) indexed in a unified 512-dimensional embedding hypersphere $\mathbb{S}^{511}$. To solve the inherent 15–25% quantization error plateau caused by continuous vector space drift, we integrate Reed-Solomon Error Correcting Codes over $GF(2^8)$. We prove that RS-ECC guarantees **0% Bit Error Rate (100.0% payload recovery)** while preserving a zero Kullback-Leibler divergence ($D_{KL} = 0.0$) against cover distributions. Furthermore, we derive the theoretical channel capacity of semantic codebook channels, demonstrating effective secret throughputs of up to 12.3 bits per carrier item under $N=153,281$ vector search spaces.
+Traditional steganographic techniques embed covert messages by modifying lower-order bits, frequency coefficients, or temporal samples of carrier media. However, physical signal perturbations leave distinct statistical signatures detectable by deep neural network steganalysts (e.g., SRNet). This paper presents **Dynamic Context-Aware Semantic Steganography (DCASS)**, a paradigm shift that eliminates physical media modifications entirely. DCASS encodes secret payloads into sequences of *naturally occurring, unmodified multi-modal media items* (images, text, audio) indexed in a unified 512-dimensional embedding hypersphere $\mathbb{S}^{511}$. To address the 15–25% quantization error plateau caused by continuous vector space drift, we integrate Reed-Solomon Error Correcting Codes over $GF(2^8)$. RS-ECC corrects up to $t=4$ damaged bytes per block and reaches 0% BER on clean channels and within that budget; it does not recover from carrier dropout or errors beyond $t$. Because transmitted carrier content is corpus-identical, the content-conditional divergence is zero, but this is not a full-system $D_{KL}=0$ claim: selection and timing remain separate surfaces. We also derive the theoretical channel capacity of semantic codebook channels, with up to 12.3 bits per carrier item under $N=245,279$ vector search spaces (theory; the recorded coded mean is 13.60 and user payload is 7.00–12.90 bpc).
 
 ---
 
@@ -106,7 +106,7 @@ flowchart TD
    $$\Lambda(x) = \prod_{k=1}^{\nu} (1 - x X_k) = 1 + \Lambda_1 x + \Lambda_2 x^2 + \dots + \Lambda_\nu x^\nu$$
    The Berlekamp-Massey algorithm solves the matrix equation $S_j + \sum_{i=1}^\nu \Lambda_i S_{j-i} = 0$.
 3. **Chien Search**: Evaluates $\Lambda(\alpha^{-i})$ for all $i \in \{0, 1, \dots, 254\}$. Roots identify the exact corrupted byte positions.
-4. **Forney Algorithm**: Computes error magnitudes $Y_k$ and subtracts $E(x)$ from $C'(x)$, achieving **100% bit-exact payload recovery (0% BER)**.
+4. **Forney Algorithm**: Computes error magnitudes $Y_k$ and subtracts $E(x)$ from $C'(x)$, recovering the codeword while the damaged-byte count stays at or below $t=4$. Beyond that budget the decoder reports failure; it does not silently recover.
 
 ---
 
@@ -119,9 +119,9 @@ The raw information capacity per carrier media item $W$ is:
 
 $$W = \log_2(N) \quad \text{bits / carrier item}$$
 
-For our multi-modal index of $N = 153,281$ FAISS vectors:
+For our multi-modal index of $N = 245,279$ FAISS vectors:
 
-$$W = \log_2(153,281) \approx 17.2257 \quad \text{bits / carrier item}$$
+$$W = \log_2(245,279) \approx 17.9041 \quad \text{bits / carrier item}$$
 
 ### 4.2 Shannon Capacity under Continuous Vector Noise
 If vector quantization is modeled as a continuous Memoryless Channel with additive Gaussian vector noise $\mathcal{N}(0, \sigma^2)$ on the hypersphere, the discrete-time Shannon channel capacity $C_{semantic}$ is:
@@ -152,14 +152,12 @@ $$R_{eff} = \eta \cdot W = \left( \frac{K}{K + R} \right) \cdot \log_2(N) \quad 
 
 ## 5. Stegananalytic Imperceptibility & Proof of Security
 
-Let $P_{cover}(X)$ denote the empirical probability distribution of public media items published on social networks. Let $P_{stego}(X)$ denote the distribution of media items selected by DCASS.
+Let $P_{cover}(X)$ denote the empirical distribution of bytes in public media items, and let $P_{stego}(X \mid \text{selected}=x)$ denote the distribution of transmitted bytes conditional on selecting item $x$. Because DCASS selects items **directly from the natural cover corpus** without modifying any pixels, audio PCM samples, or characters:
 
-Because DCASS selects items **directly from the natural cover corpus** without modifying any pixels, audio PCM samples, or characters:
+$$P_{stego}(X \mid \text{selected}=x) = P_{cover}(X \mid \text{selected}=x)$$
 
-$$P_{stego}(X) = P_{cover}(X)$$
+The conditional KL divergence for carrier content is therefore zero:
 
-The Kullback-Leibler (KL) Divergence (Relative Entropy) between cover and stego streams is:
+$$D_{KL}\big(P_{cover}(X \mid \text{selected}) \parallel P_{stego}(X \mid \text{selected})\big) = 0.0 \quad \text{bits}$$
 
-$$D_{KL}(P_{cover} \parallel P_{stego}) = \sum_{x \in \mathcal{X}} P_{cover}(x) \log_2 \left( \frac{P_{cover}(x)}{P_{stego}(x)} \right) = 0.0 \quad \text{bits}$$
-
-According to **Cachin's Information-Theoretic Model of Steganography**, a steganographic system is **perfectly secure** if $D_{KL} = 0.0$. Thus, DCASS provides provable information-theoretic secrecy against all physical steganalysis models.
+According to **Cachin's Information-Theoretic Model of Steganography**, a system is $\epsilon$-secure when the modeled distributions satisfy $D_{KL} \le \epsilon$. The zero above is **conditional on carrier content** and does not extend to the selection distribution, traffic timing, or payload confidentiality. The recorded C2 result includes small image/text selection shifts, and the recorded C3 warden result is negative/limited. Do not cite this as a full-system $D_{KL}=0$ proof.

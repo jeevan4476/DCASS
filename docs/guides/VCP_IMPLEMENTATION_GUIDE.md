@@ -10,7 +10,7 @@ Traditional vector steganography relies on unconstrained nearest-neighbor ($k$-N
 VCP eliminates continuous vector ambiguity by creating a **100% deterministic symbol-to-cluster mapping**:
 - Every byte value $m \in \{0x00, 0x01, \dots, 0xFF\} \subset GF(2^8)$ corresponds directly to a unique Voronoi centroid $\mathbf{c}_m \in \mathbb{S}^{511}$.
 - Soft-margin boundary filtering ($\delta_{\text{margin}} \ge 0.05$) filters out boundary-edge vectors, selecting only robust interior points.
-- Pairing VCP with Reed-Solomon Error Correction Code (RS-ECC) guarantees **0% Bit Error Rate (BER)** during decoding.
+- Pairing VCP with Reed-Solomon Error Correction Code (RS-ECC) records **0% clean-channel BER within the $t=4$ correction budget**. It is not a guarantee under carrier dropout or damage beyond the budget.
 
 ### High-Level Architecture Diagram
 
@@ -30,7 +30,7 @@ flowchart TD
         VEXT --> VASS["Voronoi Codebook Assignment (arg max <x, c_m>)"]
         VASS --> DSYM["Decoded Byte Symbols"]
         DSYM --> RSDEC["RS-ECC Decoder"]
-        RSDEC --> OEMSG["Recovered Payload (0% BER)"]
+        RSDEC --> OEMSG["Recovered Payload (CRC-verified)"]
     end
 ```
 
@@ -109,16 +109,18 @@ This $2.86^{\circ}$ angular buffer prevents floating-point noise or lossy channe
 
 ### 2.4 Corpus Capacity & Cluster Density Analysis
 
-With a unified multi-modal index of $N = 153,281$ vectors partitioned across $K = 256$ clusters:
+With a unified multi-modal index of $N = 245,279$ vectors partitioned across $K = 256$ clusters:
 
-$$\bar{\rho} = \frac{N}{K} = \frac{153,281}{256} \approx 598.75 \text{ vectors / cluster}$$
+$$\bar{\rho} = \frac{N}{K} = \frac{245,279}{256} \approx 958.1 \text{ vectors / cluster}$$
 
 | Modality | Vector Volume ($N$) | Average Density ($\bar{\rho}$) | Candidate Pool Quality |
 | :--- | :--- | :--- | :--- |
-| **Image** | 39,785 | 155.4 vectors / byte symbol | Rich candidate selection |
-| **Text** | 100,000 | 390.6 vectors / byte symbol | High narrative payload capacity |
+| **Image** | 31,783 | 124.2 vectors / byte symbol | Rich candidate selection |
+| **Text** | 200,000 | 781.3 vectors / byte symbol | High narrative payload capacity |
 | **Audio** | 13,496 | 52.7 vectors / byte symbol | Adequate burst scheduling |
-| **Unified Corpus** | **153,281** | **598.8 vectors / byte symbol** | **Optimal multi-modal diversity** |
+| **Unified Corpus** | **245,279** | **958.1 vectors / byte symbol** | **Optimal multi-modal diversity** |
+
+Per-cluster density in the shipped codebook ranges from 59 to 8,814 vectors, a 149-fold spread that follows the corpus density rather than the codec. The figures above are per-modality averages, not the per-cluster values.
 
 ---
 
@@ -295,7 +297,7 @@ sequenceDiagram
         VCP-->>Bob: Decoded Byte Symbol b_k
     end
     Bob->>RS: decode_bytes(Decoded Bytes)
-    RS-->>Bob: Original Message "Secret Message" (0% BER)
+    RS-->>Bob: Original Message "Secret Message" (CRC-verified)
 ```
 
 ---
@@ -321,7 +323,7 @@ To integrate `VoronoiCodebook` into [`SemanticDecoder`](file:///DCASS/src/engine
 2. **Voronoi Centroid Assignment**: Pass embeddings to `codebook.assign(embeddings)`. This computes:
    $$b_k = \arg\max_{c \in \{0, \dots, 255\}} \langle \mathbf{v}_k, \mathbf{c}_c \rangle$$
 3. **RS-ECC Error Correction**: Pass decoded byte sequence $[b_1, b_2, \dots, b_L]$ to `RSErrorCorrection.decode_bytes()`.
-4. **Message Reconstruction**: Recover original plaintext string with 100% exact fidelity.
+4. **Message Reconstruction**: Recover the original plaintext exactly on clean channels and within the correction budget. Dropout is unrecoverable in the current wire format.
 
 ---
 

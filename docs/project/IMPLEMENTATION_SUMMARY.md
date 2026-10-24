@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the complete implementation of the AI-driven stealth layer for DCASS (Dynamic Context-Aware Semantic Steganography). The system uses adversarial machine learning to schedule transmissions that are indistinguishable from organic human behavior.
+This document summarizes the complete implementation of the AI-driven stealth layer for DCASS (Dynamic Context-Aware Semantic Steganography). The system uses adversarial machine learning to schedule transmissions that attempt to resemble organic human behavior. The recorded Component 3 result is negative/limited: the WGAN and Hybrid schedules are flagged at 100% by a detector calibrated on the repository's own synthetic traffic corpus, so nothing here is a claim of indistinguishability in the field. See `docs/benchmarking/C3_TRAFFIC_DETECTOR_EVALUATION.md`.
 
 ---
 
@@ -71,7 +71,7 @@ This document summarizes the complete implementation of the AI-driven stealth la
 - Transmission history statistics (mean delay, variance, diversity)
 
 **Action Space:**
-- `delay`: Continuous [0, ∞] seconds
+- `delay`: Continuous, clamped to [0.5 s, 20.0 s] at action time
 - `channel`: Discrete [0, num_channels-1]
 
 **Reward Function:**
@@ -262,7 +262,7 @@ docker-compose up
 
 ### Example 1: Quick Test
 ```bash
-python scripts/test_stealth_system.py
+python scripts/testing/test_stealth_system.py
 ```
 
 ### Example 2: Train Warden
@@ -271,7 +271,7 @@ from src.stealth.gan.trainer import train_gan
 from pathlib import Path
 
 train_gan(
-    data_path=Path("data/human_traffic.json"),
+    data_path=Path("storage/data/traffic/human_traffic.json"),
     num_epochs=50
 )
 ```
@@ -284,7 +284,7 @@ from src.analysis.adversarial.warden import DeepPacketInspectionWarden
 
 # Load trained Warden
 warden = DeepPacketInspectionWarden(num_channels=3)
-warden.load_state_dict(torch.load("checkpoints/warden.pt"))
+warden.load_state_dict(torch.load("storage/models/warden.pt"))
 
 # Create environment
 env = StealthEnvironment(num_channels=3, warden=warden)
@@ -328,12 +328,14 @@ DCASS/
 │           ├── warden.py             # Statistical Traffic Classifier
 │           └── __init__.py
 ├── scripts/
-│   ├── run_sender.py                 # Alice (sender) script
-│   ├── run_receiver.py               # Bob (receiver) script
-│   └── test_stealth_system.py        # Integration tests
+│   ├── runtime/
+│   │   ├── run_sender.py             # Alice (sender) script
+│   │   └── run_receiver.py           # Bob (receiver) script
+│   └── testing/
+│       └── test_stealth_system.py    # Integration tests
 ├── Dockerfile                         # Container image
 ├── docker-compose.yml                 # Alice-Bob network
-└── DOCKER_SETUP.md                    # Docker guide
+└── docs/guides/DOCKER_SETUP.md        # Docker guide
 ```
 
 ---
@@ -365,13 +367,15 @@ DCASS/
 ## 🎓 Theoretical Foundation
 
 ### Game Theory:
-DCASS is a **two-player zero-sum game**:
+DCASS is modelled as a **two-player zero-sum game**:
 - **Alice (Generator/RL Agent)**: Maximize stealth + throughput
 - **Eve (Warden)**: Maximize detection accuracy
 
-At Nash equilibrium:
+A Nash equilibrium of this game would mean:
 - Alice's transmissions are indistinguishable from human traffic
 - Eve cannot detect steganography better than random guessing
+
+This is the design target, not a recorded result. The current C3 campaign does not demonstrate it: a trained traffic detector flags the WGAN and Hybrid schedules at 100% against a threshold calibrated on held-out human traffic, while the retrained PPO arm is not flagged, and the human side of that comparison is the repository's own synthetic traffic corpus rather than recorded human browsing. See `docs/benchmarking/CLAIM_LEDGER.md` rows C3-DETECT-06 and C3-WARDEN-02.
 
 ### Information Theory:
 - **Channel Capacity**: Limited by stealth constraint
@@ -435,7 +439,7 @@ The DCASS Stealth System is now complete and ready for:
 2. **Simulation**: Docker sandbox testing
 3. **Deployment**: Real-world API integration (future work)
 
-The system represents a novel application of adversarial machine learning to steganography, achieving **provable stealth** through game-theoretic equilibrium.
+The system represents a novel application of adversarial machine learning to steganography. Provable stealth through game-theoretic equilibrium is a design target, not a recorded result: the recorded Component 3 result is negative/limited.
 
 **Next Steps:**
 1. Collect real human traffic data
