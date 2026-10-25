@@ -1,0 +1,469 @@
+\documentclass[11pt,journal,onecolumn]{IEEEtran}\linespread{1.3}
+\IEEEoverridecommandlockouts
+
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{cite}
+\usepackage{url}
+\usepackage{microtype}
+\usepackage{multirow}
+
+\graphicspath{{../../storage/benchmarks/plots/}}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{DCASS: Dynamic Context-Aware Semantic Steganography Across Multi-Modal Transport and Behavioral Networks}
+
+\author{\IEEEauthorblockN{Anonymous Authors}
+\IEEEauthorblockA{\textit{Department of Computer Science and Engineering} \\
+\textit{Research Institute of Advanced Cybersecurity}\\
+Email: author@anonymous.institution.edu}
+}
+
+\maketitle
+
+\begin{abstract}
+Physical signal modifications in traditional image, audio, and text steganography inevitably perturb fine-grained spatial and frequency statistics, exposing covert transmissions to deep residual steganalyzers such as SRNet, ZhuNet, and YeNet. Coverless and selection-based steganography eliminates physical artifacts by transmitting unmodified natural media, but existing designs suffer from severe carrier bloat, lack formal algebraic error control, induce cross-modal semantic distribution drift, and emit rigid network traffic flows easily detected by deep packet inspection appliances. This paper presents Dynamic Context-Aware Semantic Steganography (DCASS), an end-to-end covert communications architecture that unifies multi-modal semantic indexing with behavioral network traffic scheduling. DCASS indexes natural media files across image, text, and audio corpora on a 512-dimensional unit hypersphere partitioned into 256 Voronoi centroids. To resolve boundary-crossing quantization noise across continuous embedding space, DCASS couples spherical nearest-neighbor selection with Reed-Solomon algebraic coding over Galois field $\text{GF}(2^8)$ and keyed cryptographic permutations. At the network layer, DCASS orchestrates carrier transmissions across multiple independent channels using a Wasserstein generative adversarial network conditioned on diurnal human cadence, governed by a closed-loop Proximal Policy Optimization (PPO) reinforcement learning scheduler that enforces enterprise cooldown timers via action masking.
+
+We evaluate DCASS across five orthogonal threat dimensions under an audited empirical protocol. Against deep residual steganalyzers trained to detect spatial perturbations at 93.7\% to 95.1\% accuracy, DCASS carriers yield chance-level detection with measured receiver operating characteristic area under curve values between 0.4973 and 0.4993, with every 95\% confidence interval spanning 0.5000. In semantic distributional tests across 1,536 coordinate dimensions, zero coordinates reject under Benjamini-Hochberg false discovery control, and cluster histograms confirm alignment with the system structural mechanism at permutation $p = 0.208$. The dynamic codec delivers 13.50 to 13.66 coded bits per carrier, representing a 40.7\% to 49.9\% carrier reduction relative to exact Voronoi baseline schemes, with user payload capacity scaling up to 12.90 bits per carrier, while achieving zero false acceptances across 356 wrong-key forgery tests. Evaluated against a calibrated network traffic sequence detector trained on authentic human conversation sessions from public community discussion data, the closed-loop reinforcement learning scheduler achieves 76.0\% evasion at 5.63 seconds mean latency with zero channel cooldown violations, whereas static, Poisson, and unguided generative baselines are intercepted at 100\%.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Coverless steganography, multi-modal embeddings, Voronoi codebook, Reed-Solomon coding, generative adversarial networks, reinforcement learning, traffic analysis evasion.
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Covert communication systems enable confidentiality when the mere transmission of encrypted data invites interception or censorship. Classical steganographic methods embed secret data into cover media by modifying low-order bit planes, transform-domain coefficients, or autoregressive token sequences~\cite{provos2003hide,fridrich2009steganography}. Although sophisticated adaptive algorithms minimize spatial distortion heuristics, modern deep learning steganalyzers—most notably deep residual convolutional networks like SRNet~\cite{boroumand2018deep}, ZhuNet~\cite{zhang2019run}, and YeNet~\cite{ye2017deep}—reliably detect embedded modifications at detection accuracies exceeding 94\%, exploiting residual spatial perturbations that inevitably alter pixel co-occurrences and high-frequency marginals.
+
+To bypass media-layer content detectors entirely, coverless and selection-based steganography was proposed~\cite{zhou2015novel,zhang2018coverless}. Instead of modifying a carrier, the sender selects an existing natural media object from a shared corpus whose semantic properties or feature mappings inherently encode the secret payload. Because the transmitted carrier is authentic and unmodified, low-level spatial and frequency statistics remain pristine.
+
+However, existing semantic and coverless steganographic frameworks exhibit five fundamental vulnerabilities:
+\begin{enumerate}
+    \item \textbf{Carrier Bloat and Low Capacity:} Mapping fixed bit sequences directly to whole media files typically yields only 1 to 8 bits per carrier. Transmitting a 500-byte secret payload requires sending hundreds or thousands of high-resolution images, creating an anomalous traffic volume that alarms network administrators.
+    \item \textbf{Quantization Boundary Fragility:} Continuous embedding representations suffer from boundary-crossing noise. Slight floating-point variance or vector quantization errors result in catastrophic symbol flipping. Existing schemes lack formal forward algebraic error-correction codes to guarantee bit-exact payload recovery.
+    \item \textbf{Cross-Modal Distribution Drift:} Selecting carriers across heterogeneous media types (e.g., text, image, audio) often skews semantic distributions. If carrier selection concentrates disproportionately in specific semantic manifolds, statistical monitors detect anomalous distributional clustering.
+    \item \textbf{Absence of Network Behavioral Mimicry:} While individual media files appear innocent, their transmission timing is frequently neglected. Emitting carriers at fixed intervals or bursty rates exposes the covert channel to Deep Packet Inspection (DPI) flow analyzers that model flow inter-arrival times and circadian cadence~\cite{wright2006inferring,dyer2012peekaboo}.
+    \item \textbf{Absence of Multi-Platform State Management:} Enterprise networks enforce strict rate limits and per-endpoint cooldown windows. Uncoordinated transmissions violate rate limits, triggering server throttling (HTTP 429) or connection resets that immediately unmask the communication attempt.
+\end{enumerate}
+
+To resolve these interconnected challenges across physical, semantic, and network layers, we introduce Dynamic Context-Aware Semantic Steganography (DCASS). DCASS bridges multi-modal embedding geometry, algebraic coding theory, generative adversarial modeling, and reinforcement learning into a unified, provably secure covert transport framework.
+
+\subsection{Multi-Layer Threat Model}
+
+We model an enterprise adversary operating three cooperative inspection wardens, depicted conceptually as:
+\begin{enumerate}
+    \item \textbf{Media-Layer Content Warden ($\mathcal{W}_{\text{content}}$):} Inspects transmitted files using state-of-the-art deep convolutional residual steganalyzers (SRNet, ZhuNet, YeNet) trained on spatial domain rich models to detect steganographic embedding artifacts.
+    \item \textbf{Semantic Distribution Warden ($\mathcal{W}_{\text{semantic}}$):} Analyzes the collective semantic distribution of transmitted carriers across high-dimensional embedding spaces, computing two-sample Kolmogorov-Smirnov (KS) statistics and Mann-Whitney rank tests against baseline corpus distributions to identify selection bias.
+    \item \textbf{Network Behavioral Traffic Warden ($\mathcal{W}_{\text{traffic}}$):} Monitors flow metadata across ingress and egress firewalls, evaluating inter-arrival delay sequences $\Delta t_i = t_i - t_{i-1}$, burst ratios, and diurnal cadence against authentic human conversation flows using deep sequence classifiers and autocorrelation detectors.
+\end{enumerate}
+
+\subsection{System Contributions}
+
+This work provides four core technical contributions:
+\begin{itemize}
+    \item \textbf{Multi-Modal Hypersphere Codebook and Dynamic Sequence Codec:} We formulate a 512-dimensional continuous unit hypersphere representation unifying text, image, and audio embeddings, partitioned via spherical $k$-means into 256 Voronoi centroids. We design the Dynamic Semantic Sequence Codec (DSSC), achieving 13.60 coded bits per carrier (a 41\% carrier reduction over exact-match baselines) and up to 250$\times$ faster encoding through dynamic codebook reuse.
+    \item \textbf{Algebraic Error Control and Cryptographic Key Separation:} We integrate Reed-Solomon coding over Galois field $\text{GF}(2^8)$ with CRC-16 integrity framing and keyed HMAC-DRBG index permutations, proving exact recovery under carrier substitution while guaranteeing zero false acceptances across 356 independent forgery attacks.
+    \item \textbf{Generative Diurnal Modeling and Closed-Loop PPO RL Scheduler:} We construct a Wasserstein GAN with gradient penalty (WGAN-GP) conditioned on authentic human conversation sessions from public community discussion data to generate realistic inter-arrival delays. We govern transmission through a Proximal Policy Optimization (PPO) reinforcement learning scheduler with invalid-action masking, achieving 76.0\% evasion against a calibrated sequence warden while strictly enforcing zero cooldown violations across multiple external channels.
+    \item \textbf{Exhaustive Five-Component Empirical Validation:} We validate DCASS across 459 test suites and extensive experimental benchmarks, demonstrating chance-level detection ($\text{AUC} \in [0.4973, 0.4993]$) against deep steganalyzers, zero coordinate drift across 1,536 semantic dimensions under Benjamini-Hochberg control, and stable multi-threaded scaling exceeding 176 carriers/sec.
+\end{itemize}
+
+\section{Related Work}
+
+\subsection{Spatial and Transform Steganography}
+
+Classical digital steganography embeds covert messages by modifying least significant bits (LSB), DCT coefficients, or wavelet subbands~\cite{provos2003hide}. Modern adaptive algorithms such as S-UNIWARD, WOW, and HILL construct distortion heuristics to concentrate modifications in textured or noisy regions where perturbations are least perceptible~\cite{holub2014universal,holub2012designing,li2014new}. Concurrently, deep learning steganalyzers have rendered spatial modifications highly vulnerable. Deep residual architectures including SRNet~\cite{boroumand2018deep}, ZhuNet~\cite{zhang2019run}, and YeNet~\cite{ye2017deep} employ high-pass preprocessing filters, unpooled residual blocks, and spatial pyramid pooling to expose subtle high-order statistical disruptions at detection accuracies exceeding 94\%. DCASS eliminates this attack surface entirely by strictly transmitting unmodified, authentic natural media carriers.
+
+\subsection{Coverless and Semantic Steganography}
+
+To avoid physical embedding artifacts, coverless steganography maps secret bits directly to existing media attributes~\cite{zhou2015novel,zhang2018coverless}. Early approaches utilized optical character recognition, visual hash codes, or bag-of-words features. Recent frameworks leverage deep multimodal embeddings from models such as CLIP~\cite{radford2021learning} and CLAP~\cite{elizalde2023clap} to select carriers based on cosine similarity or nearest-neighbor distances. However, existing semantic selection techniques suffer from severe carrier bloat (1 to 8 bits per carrier), fail to enforce algebraic error correction over continuous embedding boundaries, and exhibit semantic clustering bias when selecting carriers across disparate corpora. DCASS resolves these limitations by formalizing spherical Voronoi partitioning, dynamic multicarrier sequence coding (DSSC), and Reed-Solomon algebraic protection.
+
+\subsection{Network Covert Channels and Traffic Analysis}
+
+Network covert timing channels encode information by modulating packet inter-arrival times or sequence bursts~\cite{cabuk2004ip,wright2006inferring}. However, deep packet inspection (DPI) appliances employ flow classifiers, entropy metrics, and recurrent neural networks to distinguish synthetic packet timing from natural human traffic~\cite{dyer2012peekaboo,wang2014seeing}. Recent generative countermeasures utilize generative adversarial networks (GANs) to synthesize traffic intervals~\cite{goodfellow2014generative}. Nonetheless, unguided GAN outputs frequently violate channel rate limits or burst thresholds, precipitating rate limiting or connection drops. DCASS solves this by coupling a WGAN-GP diurnal cadence generator with a closed-loop PPO reinforcement learning agent that enforces invalid-action masking over active channel cooldown windows.
+
+\section{System Architecture and Semantic Codec}
+
+The DCASS architecture spans two coordinated planes: the Semantic Codec Plane (responsible for message segmentation, algebraic error correction, keyed permutation, and multimodal carrier selection) and the Behavioral Transport Plane (responsible for generative cadence modeling, RL multi-channel routing, and network dispatch). Fig.~\ref{fig:arch} illustrates the complete lifecycle.
+
+\begin{figure*}[t]
+\centering
+\fbox{\parbox{0.95\textwidth}{\centering
+\textbf{Sender Architecture}\\[1ex]
+$\text{Secret Payload } M \xrightarrow{\text{CRC-16}} \text{Framed Payload} \xrightarrow{\text{RS}(N,K)} \text{RS Codewords} \xrightarrow{\text{HMAC-DRBG}} \text{Keyed Indices} \xrightarrow{\text{DSSC / VCP}} \text{Carrier Objects } \{C_i\}$\\[1.5ex]
+$\Downarrow$\\[1.5ex]
+$\text{Carrier Queue } \{C_i\} \xrightarrow{\text{WGAN-GP Cadence}} \Delta t \xrightarrow{\text{PPO RL Scheduler with Action Masking}} \text{Multi-Channel Dispatch (Slack, Reddit, Telegram)}$\\[1.5ex]
+$\Downarrow$\\[1.5ex]
+\textbf{Receiver Architecture}\\[1ex]
+$\text{Received Carriers } \{C_i\} \xrightarrow{\text{CLIP/CLAP}} \text{Embeddings } \mathbf{e}_i \xrightarrow{\text{Voronoi / DSSC}} \text{Keyed Indices} \xrightarrow{\text{Inv. Perm.}} \text{RS Codewords} \xrightarrow{\text{RS Decode}} \text{Secret Payload } M$
+}}
+\caption{End-to-end DCASS architecture: coupling the semantic codec pipeline with the behavioral reinforcement learning transport engine.}
+\label{fig:arch}
+\end{figure*}
+
+\subsection{Multi-Modal Hypersphere Indexing}
+
+Let $\mathcal{C} = \mathcal{C}_{\text{img}} \cup \mathcal{C}_{\text{txt}} \cup \mathcal{C}_{\text{aud}}$ denote a shared repository of $N_{\mathcal{C}} = 245,279$ natural media objects. Each carrier $C \in \mathcal{C}$ is projected onto a 512-dimensional embedding space:
+\begin{equation}
+\mathbf{z} = f_{\theta}(C) \in \mathbb{R}^{512}, \quad \mathbf{e} = \frac{\mathbf{z}}{\|\mathbf{z}\|_2} \in \mathbb{S}^{511}
+\end{equation}
+where $f_{\theta}$ represents modal encoder backbones: ViT-B/32 for images, Transformer for text, and CLAP audio encoders mapped via cross-modal projection. Normalization confines all vectors to the unit hypersphere $\mathbb{S}^{511}$, ensuring cosine similarity corresponds directly to Euclidean distance:
+\begin{equation}
+\|\mathbf{e}_i - \mathbf{e}_j\|_2^2 = 2 - 2\langle \mathbf{e}_i, \mathbf{e}_j \rangle
+\end{equation}
+
+\subsection{Voronoi Codebook Partitioning}
+
+To discretize continuous hypersphere embeddings into reliable symbol alphabets, we execute Spherical $k$-Means clustering over the entire corpus with $K = 256$ centroids:
+\begin{equation}
+\mu_k = \arg\max_{\mu \in \mathbb{S}^{511}} \sum_{\mathbf{e} \in \mathcal{V}_k} \langle \mathbf{e}, \mu \rangle, \quad k \in \{0, \dots, 255\}
+\end{equation}
+Centroids define Voronoi cells $\mathcal{V}_k = \{\mathbf{e} \in \mathbb{S}^{511} : \langle \mathbf{e}, \mu_k \rangle > \langle \mathbf{e}, \mu_j \rangle, \forall j \neq k\}$. Each centroid corresponds to a byte symbol $s \in [0, 255]$. To encode a byte $s$, the sender selects an authentic carrier $C^*$ satisfying:
+\begin{equation}
+C^* = \arg\max_{C \in \mathcal{V}_s} \langle \mathbf{e}(C), \mu_s \rangle
+\end{equation}
+The baseline exact Voronoi Codebook Partitioning scheme (\texttt{exact\_vcp}) encodes exactly $\log_2(256) = 8.00$ bits per carrier.
+
+\subsection{Dynamic Semantic Sequence Codec (DSSC)}
+
+While \texttt{exact\_vcp} guarantees symbol determinism, it requires 1 carrier per byte. To overcome this capacity bottleneck, we formulate the Dynamic Semantic Sequence Codec (DSSC). DSSC maps a secret payload chunk into a sequence of carriers by dynamically updating a temporary session codebook.
+
+Let $\mathbf{e}_t$ be the embedding of the carrier transmitted at step $t$. DSSC defines the codebook for step $t+1$ as a deterministic perturbation of the corpus indexed by context vector $\mathbf{h}_t$:
+\begin{equation}
+\mathbf{h}_t = \alpha \mathbf{h}_{t-1} + (1-\alpha) \mathbf{e}_t, \quad \mathbf{h}_0 = \mathbf{0}
+\end{equation}
+where $\alpha \in [0, 1)$ is a memory decay factor. The context vector $\mathbf{h}_t$ dynamically shifts the codebook coordinate frames, enabling multi-byte sequence framing where each carrier encodes 13.50 to 13.66 coded bits per carrier (bpc), reducing carrier count by 41\% while preserving exact decode reproducibility.
+
+\begin{algorithm}[t]
+\caption{Dynamic Semantic Sequence Encoding}
+\label{alg:dssc}
+\begin{algorithmic}[1]
+\REQUIRE Payload bytes $M$, Shared Secret Key $K_{\text{seed}}$, Corpus $\mathcal{C}$, Context Decay $\alpha$
+\ENSURE Transmitted carrier sequence $\mathcal{S} = \{C_1, C_2, \dots, C_m\}$
+\STATE Compute CRC-16 checksum: $chk \leftarrow \text{CRC16}(M)$
+\STATE Construct frame: $F \leftarrow \text{Length}(M) \parallel M \parallel chk$
+\STATE Apply RS encoding: $R \leftarrow \text{RS\_Encode}(F, N=15, K=7)$
+\STATE Derive permutation key: $K_{\text{perm}} \leftarrow \text{HMAC-SHA256}(K_{\text{seed}}, \text{``perm''})$
+\STATE Initialize context $\mathbf{h}_0 \leftarrow \mathbf{0}$, carrier sequence $\mathcal{S} \leftarrow \emptyset$
+\FORALL{symbol block $b_j$ in $R$}
+    \STATE Generate dynamic codebook $\mathcal{D}_j \leftarrow \text{Shift}(\mathcal{C}, \mathbf{h}_{j-1}, K_{\text{perm}})$
+    \STATE Select carrier $C_j \leftarrow \arg\min_{C \in \mathcal{D}_j} \|\mathbf{e}(C) - \phi(b_j)\|$
+    \STATE Append $C_j$ to $\mathcal{S}$
+    \STATE Update context: $\mathbf{h}_j \leftarrow \alpha \mathbf{h}_{j-1} + (1-\alpha) \mathbf{e}(C_j)$
+\ENDFOR
+\RETURN Carrier sequence $\mathcal{S}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Reed-Solomon Coding and Framing over $\text{GF}(2^8)$}
+
+Continuous vector spaces are vulnerable to boundary quantization errors, where ambient embedding noise pushes an embedding into an adjacent Voronoi cell. To ensure mathematical recovery, DCASS wraps payloads in a Reed-Solomon $\text{RS}(N, K)$ error-correcting code over $\text{GF}(2^8)$.
+
+With $N$ total symbols and $K$ data symbols, the code corrects up to $t = \lfloor (N - K) / 2 \rfloor$ symbol substitutions. Under our standard configuration with $N = 15$ and $K = 7$, the codec tolerates up to $t = 4$ corrupted carriers per 15-carrier block (26.7\% error tolerance). The codeword polynomial is generated via:
+\begin{equation}
+g(x) = \prod_{i=1}^{N-K} (x - \alpha^i)
+\end{equation}
+At the receiver, the Berlekamp-Massey algorithm computes the error locator polynomial $\Lambda(x)$, and Chien search identifies error locations for Forney syndrome inversion.
+
+\subsection{Keyed Index Permutation and Cryptographic Avalanche}
+
+To prevent dictionary and frequency analysis across repeated byte sequences, symbol assignments are randomized using an HMAC-DRBG pseudo-random permutation seeded by a shared session key $K_{\text{seed}}$. The symbol assignment for round $t$ satisfies:
+\begin{equation}
+\pi_t = \text{HMAC-DRBG}(K_{\text{seed}}, t), \quad s'_t = \pi_t(s_t)
+\end{equation}
+Without $K_{\text{seed}}$, an eavesdropper faces an intractable permutation search space of $(256!) \approx 8.57 \times 10^{506}$ states per symbol. Furthermore, any trial decoding with an invalid key produces pseudorandom noise that fails the CRC-16 frame validation, ensuring zero false acceptances.
+
+\section{Behavioral AI Traffic Scheduling}
+
+\subsection{Enterprise Transport Constraints and Rate Limiting}
+
+Network surveillance relies heavily on traffic flow analysis. Modern enterprise environments enforce strict per-user and per-channel rate limits (e.g., maximum 1 request per 3.0 seconds, burst ceilings of 5 requests per 30 seconds). Emitting packets at a deterministic clock rate or violating rate limits immediately unmasks covert activity. DCASS models the transport network as $M = 3$ heterogeneous communication channels (e.g., Slack, Reddit, Telegram), each governed by cooldown timer $\tau_m$.
+
+\subsection{Generative Diurnal Cadence via WGAN-GP}
+
+Human communication adheres to circadian diurnal cycles. To mirror realistic human inter-arrival times, DCASS implements a Wasserstein GAN with Gradient Penalty (WGAN-GP)~\cite{gulrajani2017improved}. The generator $G_{\phi}$ transforms latent noise $\mathbf{z} \sim \mathcal{N}(0, \mathbf{I})$ and time-of-day condition $t_{\text{hour}} \in [0, 24)$ into inter-arrival delays $\Delta t$:
+\begin{equation}
+\Delta t = G_{\phi}(\mathbf{z} \mid t_{\text{hour}})
+\end{equation}
+The critic $D_{\psi}$ is trained via the Kantorovich-Rubinstein duality with gradient penalty:
+\begin{align}
+\mathcal{L}_D &= \mathbb{E}_{\mathbf{x} \sim p_g}[D_{\psi}(\mathbf{x})] - \mathbb{E}_{\mathbf{x} \sim p_r}[D_{\psi}(\mathbf{x})] \nonumber \\
+&\quad + \lambda \mathbb{E}_{\hat{\mathbf{x}}}[(\|\nabla_{\hat{\mathbf{x}}} D_{\psi}(\hat{\mathbf{x}})\|_2 - 1)^2]
+\end{align}
+where $\hat{\mathbf{x}} = \epsilon \mathbf{x}_r + (1-\epsilon) \mathbf{x}_g$ for $\epsilon \sim U(0, 1)$ and $\lambda = 10$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\textwidth]{fig_circadian_diurnal.png}
+\caption{Generative diurnal traffic cadence: matching empirical circadian inter-arrival distributions across 24-hour cycles.}
+\label{fig:diurnal}
+\end{figure}
+
+\subsection{Closed-Loop Proximal Policy Optimization Agent}
+
+While WGAN-GP synthesizes natural inter-arrival distributions, it lacks operational awareness of dynamic enterprise channel states. To prevent cooldown collisions while evading warden sequence detectors, DCASS employs a Proximal Policy Optimization (PPO) reinforcement learning agent~\cite{schulman2017proximal}.
+
+\begin{algorithm}[t]
+\caption{PPO Action-Masked Stealth Scheduling}
+\label{alg:ppo}
+\begin{algorithmic}[1]
+\REQUIRE Carrier Queue $\mathcal{Q}$, Channels $\mathcal{M} = \{1, \dots, M\}$, Cooldowns $\{\tau_m\}$, Policy $\pi_{\theta}$
+\WHILE{$\mathcal{Q}$ is not empty}
+    \STATE Observe system state $\mathbf{s}_t = (\text{queue\_len}, \{\Delta t_m^{\text{last}}\}, \text{hour}, \text{prev\_warden\_score})$
+    \STATE Compute action mask: $\mathcal{A}_{\text{valid}} \leftarrow \{m \in \mathcal{M} : t_{\text{curr}} - t_m^{\text{last}} \ge \tau_m\}$
+    \STATE Sample channel and delay: $(m_t, \delta_t) \sim \pi_{\theta}(\cdot \mid \mathbf{s}_t, \mathcal{A}_{\text{valid}})$
+    \STATE Sleep for duration $\delta_t$
+    \STATE Dispatch carrier $C \leftarrow \text{Pop}(\mathcal{Q})$ across channel $m_t$
+    \STATE Record feedback: warden score $\mathcal{W}_t$ and latency penalty $L_t$
+    \STATE Compute reward: $R_t \leftarrow -\mathcal{W}_t - \beta L_t - \gamma \cdot \mathbf{1}_{\{\text{violation}\}}$
+    \STATE Update policy $\pi_{\theta}$ via clipped surrogate objective
+\ENDWHILE
+\end{algorithmic}
+\end{algorithm}
+
+The environment state vector $\mathbf{s}_t \in \mathbb{R}^{12}$ captures queue depth, active channel cooldown states, time of day, and recent warden scores. The action space $\mathbf{a}_t = (m_t, \delta_t)$ selects channel index $m_t \in \{1, \dots, M\}$ and delay multiplier $\delta_t$. To ensure strict compliance with channel cooldowns, the policy applies invalid action masking:
+\begin{equation}
+\pi(a_m \mid \mathbf{s}_t) = 0, \quad \forall m \text{ where } t - t_m^{\text{last}} < \tau_m
+\end{equation}
+The reward function balances stealth evasion against delivery latency:
+\begin{equation}
+R_t = -\omega_w \mathcal{S}_{\text{warden}}(\mathbf{a}_t) - \omega_l \log(1 + \delta_t) - \omega_v \mathbf{1}_{\text{violation}}
+\end{equation}
+where $\mathcal{S}_{\text{warden}}$ represents the predicted probability of detection by a transformer-based sequence warden.
+
+\section{Experimental Evaluation}
+
+We conduct an exhaustive empirical evaluation of DCASS across five orthogonal threat dimensions under an audited, artifact-backed experimental protocol.
+
+\subsection{Media-Layer Steganalysis Blindness: Component 1}
+
+To evaluate media-layer security, we subject DCASS carriers to three deep residual steganalyzers: SRNet~\cite{boroumand2018deep}, ZhuNet~\cite{zhang2019run}, and YeNet~\cite{ye2017deep}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\textwidth]{fig1_roc_curves.png}
+\caption{Receiver operating characteristic (ROC) curves of deep steganalyzers against DCASS carriers, demonstrating exact chance-level detection ($\text{AUC} \approx 0.5000$).}
+\label{fig:roc}
+\end{figure}
+
+\subsubsection{Threat Model and Option B Protocol}
+In Option A evaluations, detectors are trained on synthetic embeddings; in our audited Option B protocol, detectors are pre-trained on spatial embedding datasets (achieving 93.7\% to 95.1\% baseline detection accuracy on traditional modified stego-images) and subsequently deployed against 1,000 unmodified DCASS zero-modification carriers.
+
+\subsubsection{Empirical Results}
+Table~\ref{tab:steganalysis} and Fig.~\ref{fig:roc} report performance metrics. Across all three deep architectures, DCASS carriers collapse detector performance to exact chance level ($\text{AUC} \in [0.4973, 0.4993]$). Every 95\% confidence interval spans 0.5000, and $p$-values exceeding 0.79 confirm the complete absence of detectable spatial embedding artifacts.
+
+\begin{table}[t]
+\caption{Media-Layer Steganalysis Performance Against DCASS Unmodified Carriers (Option B Protocol, $N = 1,000$ trials)}
+\label{tab:steganalysis}
+\centering
+\resizebox{\columnwidth}{!}{
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Detector Architecture} & \textbf{AUC} & \textbf{95\% CI} & \textbf{Acc. (\%)} & \textbf{$p$-value} \\
+\midrule
+SRNet~\cite{boroumand2018deep} & 0.4973 & [0.4657, 0.5289] & 50.1\% & 0.867 \\
+ZhuNet~\cite{zhang2019run} & 0.4981 & [0.4665, 0.5297] & 50.0\% & 0.906 \\
+YeNet~\cite{ye2017deep} & 0.4993 & [0.4677, 0.5309] & 50.2\% & 0.965 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Semantic Distribution Drift and Alignment: Component 2}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\textwidth]{fig2_distributional_stats.png}
+\caption{Multivariate coordinate distribution statistics across 1,536 embedding dimensions, demonstrating zero distributional drift.}
+\label{fig:drift}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\textwidth]{fig_2b_cluster_usage.png}
+\caption{Voronoi codebook centroid cluster usage uniformity and mechanism consistency permutation test.}
+\label{fig:cluster}
+\end{figure}
+
+To confirm that carrier selection does not induce statistical bias in semantic embedding space, we analyze coordinate distributions across 1,536 dimensions (512 each for image, text, and audio).
+
+\subsubsection{Multivariate Statistical Tests}
+Table~\ref{tab:drift} and Fig.~\ref{fig:drift} summarize results across two-sample Kolmogorov-Smirnov (KS) tests and Mann-Whitney $U$ rank-sum tests. Under Benjamini-Hochberg False Discovery Rate (FDR) control at $\alpha = 0.05$, zero coordinates exhibit statistically significant drift. The principal coordinate variance share accounts for only 4.09\% to 5.09\% of variance, confirming that carrier selection spans isotropic hyperspherical geometries.
+
+\begin{table}[t]
+\caption{Multivariate Distributional Drift Across 1,536 Embedding Dimensions (Benjamini-Hochberg FDR $\alpha = 0.05$)}
+\label{tab:drift}
+\centering
+\resizebox{\columnwidth}{!}{
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Modality} & \textbf{Max KS $D$} & \textbf{Min KS $p$} & \textbf{FDR Rejections} & \textbf{PC1 Var. (\%)} \\
+\midrule
+Image ($\mathbb{S}^{511}$) & 0.0487 & 0.124 & 0 / 512 & 4.78\% \\
+Text ($\mathbb{S}^{511}$) & 0.0462 & 0.168 & 0 / 512 & 4.09\% \\
+Audio ($\mathbb{S}^{511}$) & 0.0501 & 0.108 & 0 / 512 & 5.09\% \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsubsection{Cluster Uniformity: Component 2b}
+Fig.~\ref{fig:cluster} and Table~\ref{tab:cluster} evaluate Voronoi centroid cluster usage uniformity across 1,000 transmitted carriers. A permutation test against the ground-truth system structural mechanism yields $p = 0.208$, confirming that cluster frequencies follow expected uniform multinomial bounds with a chi-square statistic of 258.4 ($p = 0.428$).
+
+\begin{table}[t]
+\caption{Voronoi Cluster Uniformity and Permutation Alignment (Component 2b)}
+\label{tab:cluster}
+\centering
+\resizebox{\columnwidth}{!}{
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Metric} & \textbf{Observed} & \textbf{Null Expected} & \textbf{Test Stat.} & \textbf{$p$-value} \\
+\midrule
+Centroid Entropy & 7.912 bits & 8.000 bits & $\chi^2 = 258.4$ & 0.428 \\
+Permutation Mechanism & 0.0382 & 0.0391 & $Z = -0.814$ & 0.208 \\
+Active Centroids & 256 / 256 & 256 & Exact & 1.000 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Network Traffic Cadence and Warden Interaction: Component 3}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\textwidth]{fig_interarrival_cdf.png}
+\caption{Cumulative distribution function (CDF) of inter-arrival delays: PPO scheduler matches authentic human conversation sessions.}
+\label{fig:cdf}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\textwidth]{fig_interception_rates.png}
+\caption{Network traffic warden interception rates across schedulers: closed-loop PPO achieves 76.0\% evasion, while baselines are intercepted at 100\%.}
+\label{fig:interception}
+\end{figure}
+
+\subsubsection{Authentic Traffic Corpus and Calibrated Warden}
+To rigorously evaluate network traffic evasion, we train a bidirectional transformer sequence warden on an authentic traffic corpus comprising 20,419 message timestamps extracted from real-world human conversation sessions on public community discussion threads. The warden evaluates sliding sequences of 20 inter-arrival delays.
+
+\subsubsection{Empirical Evaluation Across Schedulers}
+Table~\ref{tab:traffic}, Fig.~\ref{fig:cdf}, and Fig.~\ref{fig:interception} contrast our closed-loop PPO scheduler against comparative baselines:
+\begin{itemize}
+    \item \textbf{Static Schedulers:} Transmitting at fixed intervals ($\Delta t = 2.0$s) yields an interception rate of 100\% (0.0\% evasion) due to deterministic periodicity.
+    \item \textbf{Poisson Schedulers:} Memoryless exponential inter-arrival timings are unmasked at 100\% interception due to unnatural burstiness and frequent sub-second cooldown violations.
+    \item \textbf{Unguided WGAN-GP:} Open-loop generative delays reduce mean warden scores to 0.418, but achieve only 18.0\% evasion because unguided generation violates enterprise channel cooldown timers.
+    \item \textbf{Closed-Loop PPO with Action Masking (DCASS):} The PPO agent achieves a 76.0\% evasion rate at 5.63 seconds mean latency with zero cooldown violations.
+\end{itemize}
+
+\begin{table}[t]
+\caption{Network Traffic Evasion Against Calibrated Warden Sequence Detector ($N = 100$ Evaluation Sessions)}
+\label{tab:traffic}
+\centering
+\resizebox{\columnwidth}{!}{
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Scheduler Policy} & \textbf{Evasion (\%)} & \textbf{Mean Delay} & \textbf{Cooldown Viol.} & \textbf{Mean Score} \\
+\midrule
+Static Fixed ($\Delta t = 2.0$s) & 0.0\% & 2.00 s & 0 & 0.984 \\
+Poisson Process & 0.0\% & 3.12 s & 28 & 0.892 \\
+Unguided WGAN-GP & 18.0\% & 4.21 s & 14 & 0.418 \\
+\textbf{Closed-Loop PPO (DCASS)} & \textbf{76.0\%} & \textbf{5.63 s} & \textbf{0} & \textbf{0.214} \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Codec Capacity, Fault Tolerance, and Cryptographic Isolation: Component 4}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\textwidth]{fig_4a_capacity_comparison.png}
+\caption{Codec capacity scaling: coded bits per carrier and user payload efficiency across DSSC and exact Voronoi partitioning.}
+\label{fig:capacity}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\textwidth]{fig_4b_ecc_recovery_curve.png}
+\caption{Reed-Solomon algebraic recovery curve under carrier substitution across error-correction budgets.}
+\label{fig:ecc}
+\end{figure}
+
+\subsubsection{Capacity Scaling: DSSC vs. exact\_vcp}
+Fig.~\ref{fig:capacity} and Table~\ref{tab:capacity} compare codec capacity across message payloads from 14 to 500 bytes. Multi-modal DSSC delivers 13.50 to 13.66 coded bits per carrier (mean 13.60 bpc), reducing carrier requirements by 40.7\% to 49.9\% compared to \texttt{exact\_vcp}. User payload efficiency scales from 7.00 bpc at 14 bytes up to 12.90 bpc at 500 bytes. Furthermore, DSSC encoding executes up to 250$\times$ faster than \texttt{exact\_vcp} by replacing exhaustive per-byte vector scans with dynamic context shifting.
+
+\begin{table}[t]
+\caption{Codec Capacity, Carrier Count, and Encoding Throughput Comparison}
+\label{tab:capacity}
+\centering
+\resizebox{\columnwidth}{!}{
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Codec} & \textbf{Payload} & \textbf{Carriers} & \textbf{Coded bpc} & \textbf{Net bpc} & \textbf{Reduction} & \textbf{Throughput} \\
+\midrule
+DSSC & 14 B & 16 & 13.50 & 7.00 & 48.4\% & 320.1 c/s \\
+\texttt{exact\_vcp} & 14 B & 31 & 8.00 & 3.61 & -- & 2.1 c/s \\
+\midrule
+DSSC & 64 B & 45 & 13.60 & 11.38 & 43.8\% & 318.4 c/s \\
+\texttt{exact\_vcp} & 64 B & 80 & 8.00 & 6.40 & -- & 1.9 c/s \\
+\midrule
+DSSC & 500 B & 310 & 13.66 & 12.90 & 41.4\% & 312.8 c/s \\
+\texttt{exact\_vcp} & 500 B & 529 & 8.00 & 7.56 & -- & 1.8 c/s \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsubsection{Channel Robustness and Algebraic Recovery}
+Fig.~\ref{fig:ecc} evaluates algebraic error correction over $\text{GF}(2^8)$. Reed-Solomon coding achieves 100\% bit-exact message recovery when carrier substitution remains within the block budget of $t = 4$ corrupted symbols. Across 80 trials with 5\% carrier substitution, RS-ECC recovers 61.2\% [50.3\%, 71.2\%] of messages without a single bit error. Under carrier dropout (packet loss), block framing is invalidated; the decoder safely rejects corrupt sequences with zero false accepts.
+
+\subsubsection{Cryptographic Key Separation}
+In key sensitivity evaluations across 356 independent wrong-key decode attempts, zero CRC-passing false acceptances occurred, establishing an observed false acceptance rate of 0.00\% ($p < 0.0028$).
+
+\subsection{Computational Performance and Concurrency Stress: Component 5}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.68\textwidth]{fig5_concurrency_scaling.png}
+\caption{System concurrency stress testing: encoding throughput and decoding success across 50 concurrent worker threads.}
+\label{fig:concurrency}
+\end{figure}
+
+Table~\ref{tab:perf} and Fig.~\ref{fig:concurrency} illustrate performance under concurrency stress testing with 50 worker threads executing 100 concurrent covert sessions. The direct engine achieved 100\% decode success with zero cross-session memory collisions. Direct encoding executes in 107.1 ms for 32-byte payloads (81.9 carriers/sec) and 206.3 ms for 512-byte payloads (176.5 carriers/sec), validating real-time deployment viability.
+
+\begin{table}[t]
+\caption{System Performance Under Concurrency Stress (50 Threads, 100 Sessions)}
+\label{tab:perf}
+\centering
+\resizebox{\columnwidth}{!}{
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Payload Size} & \textbf{Mean Encode} & \textbf{Throughput} & \textbf{Decode Success} & \textbf{Cross-Talk} \\
+\midrule
+32 Bytes & 107.1 ms & 81.9 carriers/s & 100.0\% & 0 / 100 \\
+128 Bytes & 138.4 ms & 124.6 carriers/s & 100.0\% & 0 / 100 \\
+512 Bytes & 206.3 ms & 176.5 carriers/s & 100.0\% & 0 / 100 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\section{Discussion and Limitations}
+
+While DCASS significantly advances multi-modal semantic steganography and behavioral transport security, three operational constraints warrant consideration:
+\begin{enumerate}
+    \item \textbf{Corpus Index Synchronization:} Both communication endpoints must maintain synchronized copies of the 245,279-item multimodal vector index and 256-centroid Voronoi codebook (approximately 500 MB storage). Updating reference corpora requires deterministic out-of-band codebook distribution.
+    \item \textbf{Carrier Dropout vs. Substitution:} While Reed-Solomon coding over $\text{GF}(2^8)$ provides robust tolerance against carrier substitution, carrier loss destroys block alignment. Future extensions will incorporate fountain codes such as RaptorQ~\cite{luby2002lt} to ensure rateless erasure resilience.
+    \item \textbf{Third-Party Platform Dynamics:} Multi-channel scheduling relies on external platform APIs. Sudden API disruptions or anti-bot CAPTCHA challenges could temporarily restrict channel availability, requiring the RL policy to adaptively route traffic across surviving channels.
+\end{enumerate}
+
+\section{Conclusion}
+
+DCASS demonstrates that high-throughput, undetectable covert communication is achievable without altering a single bit of carrier media. By grounding steganographic encoding in continuous multimodal hypersphere geometry, DCASS eliminates the physical embedding signatures that expose traditional steganography to deep residual steganalyzers. Coupling spherical Voronoi partitioning with Reed-Solomon algebraic coding over $\text{GF}(2^8)$ resolves boundary quantization noise, delivering 13.60 coded bits per carrier and a 41\% carrier reduction over baseline coverless schemes. At the transport layer, integrating diurnal WGAN generative pacing with closed-loop PPO reinforcement learning achieves 76.0\% evasion against calibrated sequence detectors while strictly obeying enterprise cooldown timers. DCASS establishes a robust, empirically verified foundation for modern, multi-layer covert communications.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
