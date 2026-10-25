@@ -2,82 +2,90 @@
   "schema": "traffic-detector-v1",
   "seed": 1337,
   "device": "cuda",
-  "epochs": 10,
-  "batch_size": 24,
+  "epochs": 12,
+  "batch_size": 64,
   "lr": 0.0002,
   "bot_multiplier": 1,
   "corpus": {
-    "human_sessions": 12000,
-    "bot_sessions": 8400,
-    "source": "storage/data/traffic/{human_traffic,real_human_traffic}.json plus synthesized bot sessions"
+    "human_sessions": 1255,
+    "bot_sessions": 878,
+    "source": "/home/img1/projects/DCASS/storage/data/traffic_real/{human_traffic,real_human_traffic}.json plus synthesized bot sessions"
   },
   "split": {
-    "train": 16800,
-    "calibration": 3600,
-    "holdout": 3600,
-    "human_train": 8400,
-    "human_calibration": 1800,
-    "human_holdout": 1800,
+    "train": 1756,
+    "calibration": 376,
+    "holdout": 378,
+    "human_train": 878,
+    "human_calibration": 188,
+    "human_holdout": 189,
     "note": "the split is over the human sessions; each subset's bot sessions are synthesized only from the human sessions in that same subset, so no held-out human session has a perturbed twin in the training set"
   },
   "calibration": {
-    "threshold": 0.27586688263511655,
+    "threshold": 0.3072964416275024,
     "target_fpr": 0.05,
-    "calibration_fpr": 0.049444444444444444,
-    "calibration_tpr": 0.9811111111111112,
-    "calibration_human_n": 1800,
-    "calibration_bot_n": 1800,
-    "calibration_human_max": 0.9995504021644592,
-    "calibration_human_p95": 0.26501500308513587
+    "calibration_fpr": 0.0390625,
+    "calibration_tpr": 0.5531914893617021,
+    "calibration_human_n": 128,
+    "calibration_bot_n": 188,
+    "calibration_human_max": 0.47625118494033813,
+    "calibration_human_p95": 0.28553722649812696
   },
   "holdout": {
-    "n": 3600,
+    "n": 378,
     "bot_fraction": 0.5,
-    "bot_probability_auc": 0.996841975308642,
-    "anomaly_mean_auc": 0.9968518518518518,
+    "bot_probability_auc": 0.8416057781137146,
+    "anomaly_mean_auc": 0.8422776518014613,
     "bot_probability_best_accuracy": 0.5,
     "anomaly_mean_best_accuracy": 0.5
   },
   "history": [
     {
       "epoch": 0,
-      "loss": 0.31021995975369854
+      "loss": 0.9737440837281091
     },
     {
       "epoch": 1,
-      "loss": 0.20282182194259285
+      "loss": 0.8591750115156174
     },
     {
       "epoch": 2,
-      "loss": 0.15994674056701894
+      "loss": 0.8057183304003307
     },
     {
       "epoch": 3,
-      "loss": 0.38780841439496727
+      "loss": 0.7795832242284503
     },
     {
       "epoch": 4,
-      "loss": 0.5743680519530816
+      "loss": 0.7797883387122836
     },
     {
       "epoch": 5,
-      "loss": 0.1560852363266583
+      "loss": 0.7584752270153591
     },
     {
       "epoch": 6,
-      "loss": 0.12521455464352454
+      "loss": 0.793435560805457
     },
     {
       "epoch": 7,
-      "loss": 0.12609630426707943
+      "loss": 0.7368528821638652
     },
     {
       "epoch": 8,
-      "loss": 0.1230487058611886
+      "loss": 0.7306162331785474
     },
     {
       "epoch": 9,
-      "loss": 0.15900439746544828
+      "loss": 0.740036353468895
+    },
+    {
+      "epoch": 10,
+      "loss": 0.7370958924293518
+    },
+    {
+      "epoch": 11,
+      "loss": 0.7336117071764809
     }
   ],
   "note": "The human corpus is the project's own traffic data. Its time-of-day distribution is uniform and its delay values are bounded, so it is a synthetic surrogate rather than recorded human browsing. This detector therefore measures how well a supervised detector separates the two traffic families present in the repository, not how detectable DCASS traffic is to a real network observer."

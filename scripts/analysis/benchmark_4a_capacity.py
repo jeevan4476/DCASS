@@ -235,7 +235,7 @@ def _generate_table(
     provenance = caption_provenance(
         n=f"{len({r.payload_bytes for r in results})} payload sizes x "
         f"{len({r.mode for r in results})} modes",
-        scope="coded bits/carrier including framing and RS parity; user-payload density is lower",
+        scope="coded bpc includes framing and RS parity; user bpc is secret payload density",
         commit=commit
         or recorded_commit(BENCHMARK_DIR / "component_4a_capacity_results.json"),
     )
@@ -249,10 +249,10 @@ def _generate_table(
             "measurements, not codec-only lower bounds.%s}\n" % provenance
         )
         handle.write("\\label{tab:codec_capacity}\n")
-        handle.write("\\begin{tabular}{lcccccc}\n")
+        handle.write("\\begin{tabular}{lccccccc}\n")
         handle.write("\\toprule\n")
         handle.write(
-            "Mode & Payload (B) & Carriers & Bits/Carrier & Reduction (\\%) & "
+            "Mode & Payload (B) & Carriers & Coded bpc & User bpc & Reduction (\\%) & "
             "Encode (ms, ref.) & Decode (ms, ref.) \\\\\n"
         )
         handle.write("\\midrule\n")
@@ -263,9 +263,10 @@ def _generate_table(
                 else "--"
             )
             mode = result.mode.replace("_", "\\_")
+            user_bpc = (8.0 * result.payload_bytes) / result.carrier_count if result.carrier_count > 0 else 0.0
             handle.write(
                 f"{mode} & {result.payload_bytes} & {result.carrier_count} & "
-                f"{result.bits_per_carrier:.2f} & {reduction} & "
+                f"{result.bits_per_carrier:.2f} & {user_bpc:.2f} & {reduction} & "
                 f"{result.encode_latency_ms:.1f} & {result.decode_latency_ms:.1f} \\\\\n"
             )
         handle.write("\\bottomrule\n")

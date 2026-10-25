@@ -1,29 +1,31 @@
 {
   "component": "component_3_traffic_evasion",
-  "generated_utc": "2026-10-21T19:00:32.485421+00:00",
+  "generated_utc": "2026-10-25T04:17:39.877066+00:00",
   "command": "benchmark_3_traffic_evasion.py",
   "argv": [
-    "/home/img1/projects/DCASS/scripts/analysis/benchmark_3_traffic_evasion.py"
+    "scripts/analysis/benchmark_3_traffic_evasion.py"
   ],
   "git": {
-    "commit": "9b02563f956c5bbfb39201fea39965be1348b5b4",
-    "branch": "feature/gan-rl-pipeline",
+    "commit": "417c965dfb8fdbb6017bd89a0f0efbeb3f6fcdd5",
+    "branch": "feature/real-traffic-research",
     "dirty": true,
     "dirty_paths": [
-      "M storage/benchmarks/component_3_results.json",
-      " M storage/benchmarks/generator_path_repair.json",
-      " M storage/benchmarks/plots/fig_circadian_diurnal.png",
+      "M docs/benchmarking/BENCHMARKING_REPORT.md",
+      " M scripts/analysis/fetch_hf_traffic.py",
+      " M storage/benchmarks/component_3_results.json",
       " M storage/benchmarks/plots/fig_interarrival_cdf.png",
+      " M storage/benchmarks/plots/fig_interception_rates.png",
       " M storage/benchmarks/tables/table3_traffic_evasion.tex",
-      " M storage/models/gan_generator.pt",
-      "?? storage/benchmarks/critic_sensitivity_repaired_run.json"
+      " M storage/benchmarks/traffic_detector_eval_results.json",
+      " M storage/benchmarks/traffic_detector_results.json",
+      " M storage/models/checkpoints_manifest.json"
     ]
   },
   "python": {
     "version": "3.12.8",
     "implementation": "CPython"
   },
-  "platform": "Linux-7.2.10-200.fc44.x86_64-x86_64-with-glibc2.43",
+  "platform": "Linux-7.2.11-200.fc44.x86_64-x86_64-with-glibc2.43",
   "packages": {
     "torch": "2.14.1+cu126",
     "numpy": "1.26.4",
@@ -46,8 +48,8 @@
     },
     {
       "path": "storage/models/rl_agent.pt",
-      "bytes": 2316617,
-      "sha256": "02991c52e001e6c330d47ceec3fecc6905c86e1e4372913013dfdfce073e23f7"
+      "bytes": 2279177,
+      "sha256": "494b423a9442ddff6743cb5eba0b3e45ba038d2ca0fc55b029a30ad2d3e53675"
     },
     {
       "path": "storage/models/warden.pt",
@@ -58,28 +60,28 @@
   "outputs": [
     {
       "path": "storage/benchmarks/component_3_results.json",
-      "bytes": 38228,
-      "sha256": "c2f0b86e68ee4f6429b4d8c15cdac7216b7a8b71158987790af6b84f45e64fa8"
+      "bytes": 37867,
+      "sha256": "36378e82e907cae222539e387292b07a49634aaf240a7a1a34c421b2ecccf10f"
     },
     {
       "path": "storage/benchmarks/tables/table3_traffic_evasion.tex",
-      "bytes": 1703,
-      "sha256": "dc78acad6c0bc0417409171c3746ced8ace3a3cb27a95e0a2569b017bc4b10a3"
+      "bytes": 1810,
+      "sha256": "5daf6e7146782dd9e24fe34d80235a77d36a5bd7e879a8aba14596262b8f242f"
     },
     {
       "path": "storage/benchmarks/plots/fig_interarrival_cdf.png",
-      "bytes": 178917,
-      "sha256": "a85d3053dd5321af6dec6268ac6ba1ed76dedad4452fef934085baf5ec07b76c"
+      "bytes": 179315,
+      "sha256": "4ec1c6cffc02d9b3c308d4588d89ff66531f49762bcaa9fdbe348fc94bdb872b"
     },
     {
       "path": "storage/benchmarks/plots/fig_circadian_diurnal.png",
-      "bytes": 132466,
-      "sha256": "b1227685ed6dbbb9700a0a66d5d9d6f1f71e6c6b2f25a1b9acb452f258ad2d04"
+      "bytes": 132468,
+      "sha256": "383c875aa436c91314fee0cb60cef370d56e21daa059c5c902acc19f9bc07788"
     },
     {
       "path": "storage/benchmarks/plots/fig_interception_rates.png",
-      "bytes": 133103,
-      "sha256": "2b0baeb644990bf429fb906c16d8175bbb384427ff12c01d906b20bfd88971fa"
+      "bytes": 133018,
+      "sha256": "f0d4e254f3801ba1ef54f9c5b90091fb87e8f10769904c63f1efd8a8830d711c"
     }
   ],
   "extra": {
@@ -88,7 +90,7 @@
     "base_delay_seconds": 3.0,
     "num_channels": 3,
     "device": "cuda",
-    "delay_mapping": "(raw - 0.5) * 1500 + 1.5, clipped to [0.5, 30.0] s, shared by the deployed GAN path, the deployed hybrid path, and this benchmark",
-    "warden_note": "The shipped warden is a collapsed model; see docs/benchmarking/C3_WARDEN_DIAGNOSTIC.md. The neural term is inert."
+    "delay_mapping": "(raw - 0.5) * 1500 + 1.5, clipped to [0.5, 30.0] s, defined in src/stealth/delay_contract.py and shared by the deployed GAN path, the deployed hybrid path, and this benchmark",
+    "warden_note": "storage/models/warden.pt is the historical collapsed critic, kept as the subject of the diagnostic, not as a usable model; see docs/benchmarking/C3_WARDEN_DIAGNOSTIC.md. This benchmark scores with the trained traffic detector."
   }
 }

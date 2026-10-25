@@ -80,11 +80,11 @@ Defines three services:
 1. **dcass-sender** (Alice):
    - Runs `scripts/runtime/run_sender.py`
    - Sends media sequences using RL scheduling
-   - Writes packet metadata to `/app/storage/shared_channel`
+   - Writes packet metadata to `/app/shared_channel` (mounted from `./storage/shared_channel`)
 
 2. **dcass-receiver** (Bob):
    - Runs `scripts/runtime/run_receiver.py`
-   - Monitors `/app/storage/shared_channel` for incoming packets
+   - Monitors `/app/shared_channel` (mounted from `./storage/shared_channel`) for incoming packets
    - Reassembles sequences after silence threshold
 
 3. **tensorboard** (Optional):
