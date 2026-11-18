@@ -210,7 +210,10 @@ def split_indices(n: int, rng: np.random.Generator) -> tuple[list, list, list]:
 
 
 def split_human_sessions(
-    n: int, rng: np.random.Generator
+    sessions_or_count: int | list[dict],
+    rng: np.random.Generator,
+    *,
+    require_contributor_groups: bool = False,
 ) -> tuple[list, list, list]:
     """Split the *human* sessions into train / calibration / holdout.
 
@@ -220,8 +223,59 @@ def split_human_sessions(
     into the training set, and the held-out human sessions would then have
     their own perturbed twins in training. That leaks the holdout, so the
     split is done here, on the human sessions, before any bot session is
-    synthesized.
+    synthesized. If every session has a `contributor_id`, split by contributor so repeated
+    sessions from one person cannot leak across the partitions. Legacy
+    synthetic corpora without contributor metadata retain the old session
+    split and are labeled as such in the result artifact.
     """
+    if isinstance(sessions_or_count, int):
+        sessions = None
+        n = sessions_or_count
+    else:
+        sessions = sessions_or_count
+        n = len(sessions)
+
+    has_group_ids = sessions is not None and any(
+        session.get("contributor_id") is not None for session in sessions
+    )
+    if require_contributor_groups and not has_group_ids:
+        raise ValueError(
+            "this run requires contributor-held-out evaluation, but no "
+            "contributor_id values were found in the corpus"
+        )
+    if has_group_ids:
+        if any(session.get("contributor_id") is None for session in sessions):
+            raise ValueError(
+                "Contributor-aware split requested but some corpus sessions "
+                "have no contributor_id. Do not mix grouped and ungrouped data."
+            )
+        groups: dict[str, list[int]] = {}
+        for index, session in enumerate(sessions):
+            groups.setdefault(str(session["contributor_id"]), []).append(index)
+        group_ids = list(groups)
+        if len(group_ids) < 3:
+            raise ValueError(
+                "Contributor-aware split needs at least three contributors "
+                "for train, calibration, and holdout partitions."
+            )
+        group_order = rng.permutation(len(group_ids))
+        n_train_groups = min(max(1, int(0.70 * len(group_ids))), len(group_ids) - 2)
+        n_cal_groups = min(
+            max(1, int(0.15 * len(group_ids))),
+            len(group_ids) - n_train_groups - 1,
+        )
+        train_groups = {group_ids[i] for i in group_order[:n_train_groups]}
+        cal_groups = {
+            group_ids[i]
+            for i in group_order[n_train_groups : n_train_groups + n_cal_groups]
+        }
+        hold_groups = set(group_ids) - train_groups - cal_groups
+        return (
+            [i for i, s in enumerate(sessions) if str(s["contributor_id"]) in train_groups],
+            [i for i, s in enumerate(sessions) if str(s["contributor_id"]) in cal_groups],
+            [i for i, s in enumerate(sessions) if str(s["contributor_id"]) in hold_groups],
+        )
+
     order = rng.permutation(n)
     n_train = int(0.70 * n)
     n_cal = int(0.15 * n)
@@ -229,6 +283,22 @@ def split_human_sessions(
         order[:n_train].tolist(),
         order[n_train : n_train + n_cal].tolist(),
         order[n_train + n_cal :].tolist(),
+    )
+
+
+def split_human_sessions_with_seed(
+    sessions: list[dict],
+    *,
+    model_seed: int,
+    split_seed: int | None = None,
+    require_contributor_groups: bool = False,
+) -> tuple[list[int], list[int], list[int]]:
+    """Create data partitions independently of model and augmentation seeds."""
+    effective_seed = model_seed if split_seed is None else split_seed
+    return split_human_sessions(
+        sessions,
+        np.random.default_rng(effective_seed),
+        require_contributor_groups=require_contributor_groups,
     )
 
 
@@ -319,7 +389,7 @@ def calibrate_threshold(
             is_bot = label.numpy() > 0.5
             if is_bot.any():
                 bot_scores.append(per_sample[is_bot])
-            else:
+            if (~is_bot).any():
                 human_scores.append(per_sample[~is_bot])
 
     human = np.concatenate(human_scores) if human_scores else np.array([0.0])
@@ -364,6 +434,12 @@ def main() -> int:
         "valid evaluator for an agent trained against another one.",
     )
     parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=None,
+        help="Optional contributor-split seed. Use the same value for independently initialized detectors to keep their human groups identical.",
+    )
+    parser.add_argument(
         "--model-out",
         type=str,
         default=str(MODEL_PATH),
@@ -374,6 +450,27 @@ def main() -> int:
         type=str,
         default=str(RESULTS_PATH),
         help="Where to write the training summary.",
+    )
+    parser.add_argument(
+        "--require-contributor-groups",
+        action="store_true",
+        help="Fail unless every session has contributor_id and all splits are group-disjoint.",
+    )
+    parser.add_argument(
+        "--scaled-features",
+        action="store_true",
+        help="Use log1p/asinh-scaled statistical features and masked quantiles for heavy-tail stability.",
+    )
+    parser.add_argument(
+        "--ignore-channels",
+        action="store_true",
+        help="Zero out channel embeddings so the detector scores timing sequences only.",
+    )
+    parser.add_argument(
+        "--grad-clip",
+        type=float,
+        default=1.0,
+        help="Global gradient norm clipping (0 disables clipping).",
     )
     args = parser.parse_args()
 
@@ -396,6 +493,10 @@ def main() -> int:
         print("ERROR: no human sessions found; cannot train.")
         return 2
     print(f"  Total human sessions: {len(human)}")
+    is_lsapp_proxy = bool(human) and all(
+        str(session.get("contributor_id", "")).startswith("lsapp-user-")
+        for session in human
+    )
 
     print("\n2. Synthesizing bot sessions...")
     # The split is over the *human* sessions, and each subset's bot
@@ -408,7 +509,18 @@ def main() -> int:
     # Every subset therefore carries both classes: the training subset
     # learns the task, the calibration subset sets the threshold, and the
     # holdout subset reports the generalization numbers.
-    train_h, cal_h, hold_h = split_human_sessions(len(human), rng)
+    split_seed = seed if args.split_seed is None else args.split_seed
+    train_h, cal_h, hold_h = split_human_sessions_with_seed(
+        human,
+        model_seed=seed,
+        split_seed=split_seed,
+        require_contributor_groups=args.require_contributor_groups,
+    )
+    split_unit = (
+        "contributor"
+        if human and all(s.get("contributor_id") is not None for s in human)
+        else "session (legacy corpus without contributor IDs)"
+    )
 
     def with_bots(indices: list[int], multiplier: int) -> tuple[list[dict], list[int]]:
         """Human sessions from `indices` plus bots derived from them."""
@@ -446,8 +558,15 @@ def main() -> int:
     hold_loader = loader_for(hold_sessions, hold_labels, shuffle=False)
 
     print("\n3. Training the detector...")
-    model = DeepPacketInspectionWarden(num_channels=NUM_CHANNELS).to(DEVICE)
+    model = DeepPacketInspectionWarden(
+        num_channels=NUM_CHANNELS,
+        scaled_features=args.scaled_features,
+        ignore_channels=args.ignore_channels,
+    ).to(DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.5, 0.999))
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=max(args.epochs, 1)
+    )
 
     history = []
     for epoch in range(args.epochs):
@@ -465,9 +584,12 @@ def main() -> int:
                 verdict, label.to(DEVICE), mask=mask.to(DEVICE)
             )
             loss.backward()
+            if args.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
             optimizer.step()
             total += float(loss.item())
             batches += 1
+        scheduler.step()
         mean_loss = total / max(batches, 1)
         history.append({"epoch": epoch, "loss": mean_loss})
         print(f"  epoch {epoch + 1}/{args.epochs}: loss={mean_loss:.4f}")
@@ -497,12 +619,17 @@ def main() -> int:
                 "threshold": calibration["threshold"],
                 "target_fpr": args.target_fpr,
                 "seed": seed,
+                "split_seed": split_seed,
+                "scaled_features": bool(args.scaled_features),
+                "ignore_channels": bool(args.ignore_channels),
             },
             # The held-out human session indices, so a downstream benchmark
             # can calibrate on data the detector never saw instead of
             # re-deriving the split.
-            "holdout_human_indices": hold_h,
+            "train_human_indices": train_h,
             "calibration_human_indices": cal_h,
+            "holdout_human_indices": hold_h,
+            "human_split_unit": split_unit,
         },
         model_path,
     )
@@ -521,15 +648,22 @@ def main() -> int:
             "bot_sessions": sum(labels for labels in train_labels),
             "source": f"{TRAFFIC_DIR}/{{human_traffic,real_human_traffic}}.json "
             "plus synthesized bot sessions",
+            "semantics": (
+                "permissioned LSApp app-activity timing proxy; event-type channels are not DCASS routes"
+                if is_lsapp_proxy
+                else "repository traffic corpus; verify whether this source is recorded or synthetic before human-generalization claims"
+            ),
         },
         "split": {
+            "unit": split_unit,
             "train": len(train_sessions),
             "calibration": len(cal_sessions),
             "holdout": len(hold_sessions),
             "human_train": len(train_h),
             "human_calibration": len(cal_h),
             "human_holdout": len(hold_h),
-            "note": "the split is over the human sessions; each subset's bot "
+            "split_seed": split_seed,
+            "note": f"the split unit is {split_unit}; each subset's bot "
             "sessions are synthesized only from the human sessions in that "
             "same subset, so no held-out human session has a perturbed twin "
             "in the training set",
@@ -538,12 +672,9 @@ def main() -> int:
         "holdout": holdout,
         "history": history,
         "note": (
-            "The human corpus is the project's own traffic data. Its time-of-day "
-            "distribution is uniform and its delay values are bounded, so it is "
-            "a synthetic surrogate rather than recorded human browsing. This "
-            "detector therefore measures how well a supervised detector "
-            "separates the two traffic families present in the repository, not "
-            "how detectable DCASS traffic is to a real network observer."
+            "This detector separates LSApp-derived app-activity proxy sessions from synthetic bot variants. Its AUC is not evidence of DCASS or Tor traffic detectability."
+            if is_lsapp_proxy
+            else "This detector separates the selected repository corpus from synthetic bot variants; inspect corpus provenance before making human-generalization claims."
         ),
     }
     results_path.parent.mkdir(parents=True, exist_ok=True)

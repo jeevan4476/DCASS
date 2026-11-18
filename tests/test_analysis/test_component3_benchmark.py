@@ -44,6 +44,19 @@ def _load_module():
 mod = _load_module()
 
 
+def test_scheduler_checkpoints_can_be_overridden_without_touching_defaults(tmp_path):
+    gan = tmp_path / "gan.pt"
+    rl = tmp_path / "rl.pt"
+
+    paths = mod.configured_scheduler_checkpoints({
+        "DCASS_C3_GAN_CHECKPOINT": str(gan),
+        "DCASS_C3_RL_CHECKPOINT": str(rl),
+    })
+
+    assert paths["gan"] == gan
+    assert paths["rl"] == rl
+
+
 class _StubVerdict:
     def __init__(self, value: float):
         self.anomaly_scores = torch.full((1, 4), value)

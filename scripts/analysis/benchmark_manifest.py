@@ -63,12 +63,30 @@ def package_versions() -> dict[str, str]:
     return versions
 
 
+def capture_git_state() -> dict[str, Any]:
+    """Capture repository state before a benchmark starts writing artifacts.
+
+    Benchmark outputs are often tracked files, so collecting Git status only
+    after writing them falsely marks an otherwise clean run as source-dirty.
+    Callers should capture this once at startup and pass it into
+    :func:`build_manifest`.
+    """
+    status = _git("status", "--porcelain")
+    return {
+        "commit": _git("rev-parse", "HEAD"),
+        "branch": _git("rev-parse", "--abbrev-ref", "HEAD"),
+        "dirty": bool(status),
+        "dirty_paths": status.splitlines() if status else [],
+    }
+
+
 def build_manifest(
     component: str,
     outputs: Iterable[Path],
     inputs: Iterable[Path] = (),
     seeds: dict[str, Any] | None = None,
     extra: dict[str, Any] | None = None,
+    git_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble a manifest dict for a benchmark run."""
     input_records = []
@@ -99,18 +117,13 @@ def build_manifest(
         else:
             output_records.append({"path": str(p), "missing": True})
 
-    status = _git("status", "--porcelain")
+    state = git_state if git_state is not None else capture_git_state()
     manifest = {
         "component": component,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "command": " ".join([Path(sys.argv[0]).name, *sys.argv[1:]]),
         "argv": list(sys.argv),
-        "git": {
-            "commit": _git("rev-parse", "HEAD"),
-            "branch": _git("rev-parse", "--abbrev-ref", "HEAD"),
-            "dirty": bool(status),
-            "dirty_paths": status.splitlines() if status else [],
-        },
+        "git": state,
         "python": {
             "version": platform.python_version(),
             "implementation": platform.python_implementation(),

@@ -39,6 +39,7 @@ from src.analysis.adversarial.warden import DeepPacketInspectionWarden
 from src.stealth.gan.trainer import apply_critic_config
 from src.stealth.rl.agent import PPOAgent, PPOConfig
 from src.stealth.rl.environment import StealthEnvironment
+from src.stealth.rl.warden_ensemble import WardenEnsemble
 
 
 def load_frozen_warden(
@@ -117,8 +118,9 @@ def main() -> None:
     parser.add_argument(
         "--warden-checkpoint",
         type=Path,
+        action="append",
         required=True,
-        help="Path to the Phase-A GAN checkpoint (must contain 'warden_state')",
+        help="Frozen detector checkpoint; repeat to train against an ensemble.",
     )
     parser.add_argument("--episodes", type=int, default=500)
     parser.add_argument("--num-channels", type=int, default=3)
@@ -145,20 +147,25 @@ def main() -> None:
     parser.add_argument("--log-interval", type=int, default=10)
     args = parser.parse_args()
 
-    if not args.warden_checkpoint.exists():
-        print(f"ERROR: --warden-checkpoint not found at {args.warden_checkpoint}")
-        print("Run scripts/stealth/train_gan.py first (Phase A).")
+    missing = [path for path in args.warden_checkpoint if not path.exists()]
+    if missing:
+        print(f"ERROR: --warden-checkpoint not found at {missing[0]}")
         sys.exit(1)
 
     print("=" * 60)
     print("  DCASS RL Training (Phase B)")
-    print(f"  Warden checkpoint: {args.warden_checkpoint}")
+    print(f"  Warden checkpoints: {', '.join(map(str, args.warden_checkpoint))}")
     print(f"  Episodes: {args.episodes}  lambda_stealth target: {args.lambda_stealth}")
     print("=" * 60)
 
-    warden = load_frozen_warden(args.warden_checkpoint, args.num_channels, args.device)
+    wardens = [
+        load_frozen_warden(path, args.num_channels, args.device)
+        for path in args.warden_checkpoint
+    ]
+    warden = wardens[0] if len(wardens) == 1 else WardenEnsemble(wardens)
     print(
-        f"✓ Loaded frozen Warden ({sum(p.numel() for p in warden.parameters()):,} params, "
+        f"✓ Loaded {len(wardens)} frozen Warden(s) "
+        f"({sum(p.numel() for p in warden.parameters()):,} params, "
         "requires_grad=False)"
     )
 

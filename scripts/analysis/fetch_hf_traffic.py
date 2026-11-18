@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""
-Stream and format authentic human conversation traffic from Hugging Face.
+"""Build an exploratory Reddit comment-timestamp proxy dataset.
 
-Streams comments across diverse technical, media, and knowledge subreddits,
-groups them into authentic temporal conversation sessions, and outputs a
-capture file ready for ingest_real_traffic.py.
+Reddit comment timestamps are not observations of an individual user's
+browsing or network traffic. The channel switching below is synthetic. The
+output must not be called a human capture, Tor trace, or DCASS baseline.
 """
 
 from __future__ import annotations
@@ -19,10 +18,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Subreddits mapped to DCASS channel abstractions
-# Channel 0: Code and Technical Platforms (GitHub equivalent)
-# Channel 1: Social and Media Platforms (Imgur equivalent)
-# Channel 2: Reference and Knowledge Platforms (Cloud Storage equivalent)
+# Exploratory subreddit-to-proxy-channel mapping. These are not observed
+# browser destinations, Tor routes, or DCASS channels.
 SUBREDDIT_CHANNEL_MAP = [
     ("programming", 0),
     ("technology", 0),
@@ -41,17 +38,17 @@ SUBREDDIT_CHANNEL_MAP = [
 ]
 
 
-def fetch_real_traffic(
+def fetch_reddit_activity_proxy(
     target_sessions: int = 1500,
     max_per_sub: int = 8000,
     min_session_len: int = 15,
     max_session_len: int = 80,
-    out_capture_path: Path = Path("storage/data/traffic_real/capture.json"),
+    out_capture_path: Path = Path("storage/data/traffic_proxy/reddit_comment_timestamp_proxy.json"),
 ) -> list[dict]:
-    """Stream real comment threads from Hugging Face and convert into sessions."""
+    """Stream public comment timestamps and make a synthetic-channel proxy."""
     from datasets import load_dataset
 
-    print(f"Streaming from Hugging Face to construct >= {target_sessions} human sessions...")
+    print(f"Streaming Reddit timestamps to construct >= {target_sessions} proxy sessions...")
     sessions: list[dict] = []
 
     for sub, channel_idx in SUBREDDIT_CHANNEL_MAP:
@@ -88,12 +85,6 @@ def fetch_real_traffic(
             thread_events[lid].append({"t": t, "channel": channel_idx})
 
         # Convert threads with enough comments into conversation sessions.
-        # Multi-tab human browsing: users typically maintain multiple platform tabs
-        # (tech, social, knowledge) open simultaneously, switching between them with
-        # typical run lengths of 3 to 10 actions before moving to an adjacent tab.
-        import random
-        rng = random.Random(42 + channel_idx * 1000)
-
         for lid, evs in thread_events.items():
             if len(evs) < min_session_len:
                 continue
@@ -116,7 +107,7 @@ def fetch_real_traffic(
 
         print(f"    Accumulated {len(sessions)} valid sessions so far.")
 
-    # Apply realistic multi-tab human channel switching across session events
+    # Apply an explicitly synthetic switching heuristic for exploratory tests.
     channel_rng = random.Random(1337)
     multi_channel_sessions: list[dict] = []
     for s in sessions:
@@ -132,25 +123,37 @@ def fetch_real_traffic(
         multi_channel_sessions.append({"events": new_evs})
     sessions = multi_channel_sessions
 
-    print(f"Total authentic human sessions collected: {len(sessions)}")
+    print(f"Total Reddit timestamp proxy sessions: {len(sessions)}")
     out_capture_path.parent.mkdir(parents=True, exist_ok=True)
     out_capture_path.write_text(json.dumps(sessions, indent=2))
+    provenance = {
+        "source": "HuggingFaceGECLM/REDDIT_comments",
+        "derived_from_comment_timestamps": True,
+        "contributor_ids_present": False,
+        "channel_switches_synthetic": True,
+        "is_human_browsing_capture": False,
+        "is_tor_packet_capture": False,
+        "is_dcass_traffic": False,
+    }
+    out_capture_path.with_suffix(".provenance.json").write_text(
+        json.dumps(provenance, indent=2) + "\n"
+    )
     print(f"Saved raw capture to: {out_capture_path} ({out_capture_path.stat().st_size / 1024:.1f} KB)")
     return sessions
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fetch real traffic from Hugging Face")
+    parser = argparse.ArgumentParser(description="Build an exploratory Reddit timestamp proxy")
     parser.add_argument("--target-sessions", type=int, default=1500)
     parser.add_argument("--max-per-sub", type=int, default=8000)
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("storage/data/traffic_real/capture.json"),
+        default=Path("storage/data/traffic_proxy/reddit_comment_timestamp_proxy.json"),
     )
     args = parser.parse_args()
 
-    fetch_real_traffic(
+    fetch_reddit_activity_proxy(
         target_sessions=args.target_sessions,
         max_per_sub=args.max_per_sub,
         out_capture_path=args.out,

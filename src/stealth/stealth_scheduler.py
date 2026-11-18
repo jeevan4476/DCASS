@@ -13,6 +13,7 @@ import threading
 import torch
 from src.utils.checkpoint_io import load_trained_checkpoint
 import numpy as np
+import hashlib
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -41,6 +42,9 @@ CHANNEL_COOLDOWNS = {0: 6.0, 1: 12.0, 2: 4.0}
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_GAN_CHECKPOINT = _PROJECT_ROOT / "storage" / "models" / "gan_generator.pt"
 DEFAULT_RL_CHECKPOINT = _PROJECT_ROOT / "storage" / "models" / "rl_agent.pt"
+DEFAULT_ACTIVITY_CHECKPOINT = _PROJECT_ROOT / "storage" / "models" / "lsapp_activity_timing_train.json"
+DEFAULT_TPP_CHECKPOINT = _PROJECT_ROOT / "storage" / "models" / "tpp_lsapp.pt"
+DEFAULT_TPP_PPO_CHECKPOINT = _PROJECT_ROOT / "storage" / "models" / "tpp_ppo_lsapp.pt"
 
 # Canonical WGAN delay mapping.
 #
@@ -103,6 +107,14 @@ class StealthScheduler:
         self._generator = None
         self._rl_agent = None
         self._warden = None
+        self._activity_model = None
+        self._activity_checkpoint_path: Optional[Path] = None
+        self._activity_rng = np.random.default_rng(seed)
+        self._tpp_model = None
+        self._tpp_checkpoint_path: Optional[Path] = None
+        self._tpp_ppo_agent = None
+        self._tpp_ppo_checkpoint_path: Optional[Path] = None
+        self._tpp_rng = np.random.default_rng(seed + 17)
 
     # ------------------------------------------------------------------
     # public API
@@ -111,11 +123,16 @@ class StealthScheduler:
     def schedule(
         self,
         media_ids: list[str],
-        mode: Literal["static", "gan", "rl", "hybrid", "auto"] = "static",
+        mode: Literal["static", "gan", "rl", "hybrid", "activity", "tpp", "tpp_ppo", "auto"] = "static",
         base_delay: float = 3.0,
         gan_checkpoint: Optional[Path] = None,
         rl_checkpoint: Optional[Path] = None,
         time_of_day: Optional[float] = None,
+        activity_checkpoint: Optional[Path] = None,
+        activity_pause_cap_s: float = 45.0,
+        tpp_checkpoint: Optional[Path] = None,
+        tpp_ppo_checkpoint: Optional[Path] = None,
+        tpp_pause_cap_s: Optional[float] = None,
     ) -> dict:
         """
         Produce a timed schedule for *media_ids*.
@@ -142,7 +159,17 @@ class StealthScheduler:
         # Thread-safe scheduling: serialize concurrent calls
         with self._schedule_lock:
             return self._schedule_unlocked(
-                media_ids, mode, base_delay, gan_checkpoint, rl_checkpoint, time_of_day
+                media_ids,
+                mode,
+                base_delay,
+                gan_checkpoint,
+                rl_checkpoint,
+                time_of_day,
+                activity_checkpoint,
+                activity_pause_cap_s,
+                tpp_checkpoint,
+                tpp_ppo_checkpoint,
+                tpp_pause_cap_s,
             )
 
     @staticmethod
@@ -174,11 +201,16 @@ class StealthScheduler:
     def _schedule_unlocked(
         self,
         media_ids: list[str],
-        mode: Literal["static", "gan", "rl", "hybrid", "auto"],
+        mode: Literal["static", "gan", "rl", "hybrid", "activity", "tpp", "tpp_ppo", "auto"],
         base_delay: float,
         gan_checkpoint: Optional[Path],
         rl_checkpoint: Optional[Path],
         time_of_day: Optional[float] = None,
+        activity_checkpoint: Optional[Path] = None,
+        activity_pause_cap_s: float = 45.0,
+        tpp_checkpoint: Optional[Path] = None,
+        tpp_ppo_checkpoint: Optional[Path] = None,
+        tpp_pause_cap_s: Optional[float] = None,
     ) -> dict:
         """Internal scheduling logic (called under lock)."""
         if mode == "auto":
@@ -215,6 +247,33 @@ class StealthScheduler:
         elif mode == "rl":
             checkpoint = self._resolve_checkpoint(rl_checkpoint, DEFAULT_RL_CHECKPOINT)
             schedule = self._schedule_rl(media_ids, base_delay, checkpoint)
+        elif mode == "activity":
+            checkpoint = self._resolve_checkpoint(
+                activity_checkpoint, DEFAULT_ACTIVITY_CHECKPOINT
+            )
+            schedule = self._schedule_activity(
+                media_ids, checkpoint, pause_cap_s=activity_pause_cap_s
+            )
+        elif mode == "tpp":
+            checkpoint = self._resolve_checkpoint(tpp_checkpoint, DEFAULT_TPP_CHECKPOINT)
+            schedule = self._schedule_tpp(
+                media_ids,
+                base_delay,
+                checkpoint,
+                time_of_day=time_of_day,
+                pause_cap_s=tpp_pause_cap_s,
+            )
+        elif mode == "tpp_ppo":
+            checkpoint = self._resolve_checkpoint(
+                tpp_ppo_checkpoint, DEFAULT_TPP_PPO_CHECKPOINT
+            )
+            schedule = self._schedule_tpp_ppo(
+                media_ids,
+                base_delay,
+                checkpoint,
+                time_of_day=time_of_day,
+                pause_cap_s=tpp_pause_cap_s,
+            )
         else:
             schedule = self._schedule_static(media_ids, base_delay)
 
@@ -226,6 +285,161 @@ class StealthScheduler:
         if explicit is not None:
             return Path(explicit)
         return default if default.exists() else None
+
+    def _load_activity_model(self, checkpoint: Optional[Path]):
+        if checkpoint is None or not Path(checkpoint).is_file():
+            raise FileNotFoundError(
+                "activity timing mode requires a fitted JSON checkpoint; "
+                "pass activity_checkpoint or create the default checkpoint"
+            )
+        checkpoint = Path(checkpoint).resolve()
+        if self._activity_model is not None and self._activity_checkpoint_path == checkpoint:
+            return self._activity_model
+        from src.stealth.activity_timing import ContiguousGapBlockModel
+
+        self._activity_model = ContiguousGapBlockModel.load(checkpoint)
+        self._activity_checkpoint_path = checkpoint
+        return self._activity_model
+
+    def _schedule_activity(
+        self,
+        media_ids: list[str],
+        checkpoint: Optional[Path],
+        *,
+        pause_cap_s: float,
+    ) -> dict:
+        """Generate a contributor-balanced full-gap timing schedule from a fitted model."""
+        if not np.isfinite(pause_cap_s) or pause_cap_s <= 0:
+            raise ValueError("activity_pause_cap_s must be finite and positive")
+        model = self._load_activity_model(checkpoint)
+        sampled = model.sample_delays(len(media_ids), self._activity_rng)
+        capped = np.minimum(
+            np.asarray(sampled["delays"], dtype=np.float64), float(pause_cap_s)
+        ).tolist()
+        from src.stealth.activity_timing import route_gaps_with_cooldowns
+
+        cooldowns = {
+            channel: CHANNEL_COOLDOWNS.get(channel, 6.0)
+            for channel in range(self.num_channels)
+        }
+        delays, channels = route_gaps_with_cooldowns(
+            capped, self._activity_rng, cooldowns
+        )
+        contributor_hash = hashlib.sha256(
+            str(sampled["contributor_id"]).encode("utf-8")
+        ).hexdigest()[:16]
+        return {
+            "items": media_ids,
+            "delays": delays,
+            "channels": channels,
+            "mode_used": "activity",
+            "activity_source_contributor_sha256": contributor_hash,
+            "activity_pause_cap_s": float(pause_cap_s),
+        }
+
+    # ------------------------------------------------------------------
+    # Autoregressive Log-Normal Mixture TPP & Prior-Guided PPO modes
+    # ------------------------------------------------------------------
+
+    def _load_tpp_model(self, checkpoint: Optional[Path]):
+        if checkpoint is None or not Path(checkpoint).is_file():
+            return None
+        resolved = Path(checkpoint).resolve()
+        if self._tpp_model is not None and self._tpp_checkpoint_path == resolved:
+            return self._tpp_model
+        from src.stealth.tpp.model import TemporalPointProcessGenerator
+
+        self._tpp_model = TemporalPointProcessGenerator.load_checkpoint(
+            resolved, device=self.device
+        )
+        self._tpp_checkpoint_path = resolved
+        return self._tpp_model
+
+    def _schedule_tpp(
+        self,
+        media_ids: list[str],
+        base_delay: float,
+        checkpoint: Optional[Path],
+        *,
+        time_of_day: Optional[float] = None,
+        pause_cap_s: Optional[float] = None,
+    ) -> dict:
+        model = self._load_tpp_model(checkpoint)
+        if model is None:
+            print("[StealthScheduler] TPP checkpoint not found — falling back to static")
+            return self._schedule_static(media_ids, base_delay)
+
+        hour = (
+            float(self._tpp_rng.integers(0, 24))
+            if time_of_day is None
+            else float(time_of_day)
+        )
+        cooldowns = {
+            c: CHANNEL_COOLDOWNS.get(c, 6.0) for c in range(self.num_channels)
+        }
+        delays, channels = model.generate_routed_schedule(
+            num_items=len(media_ids),
+            time_of_day=hour,
+            cooldowns=cooldowns,
+            pause_cap_s=pause_cap_s,
+            rng=self._tpp_rng,
+            device=self.device,
+        )
+        return {
+            "items": media_ids,
+            "delays": [float(d) for d in delays],
+            "channels": [int(c) for c in channels],
+            "mode_used": "tpp",
+        }
+
+    def _load_tpp_ppo_agent(self, checkpoint: Optional[Path]):
+        if checkpoint is None or not Path(checkpoint).is_file():
+            return None
+        resolved = Path(checkpoint).resolve()
+        if (
+            self._tpp_ppo_agent is not None
+            and self._tpp_ppo_checkpoint_path == resolved
+        ):
+            return self._tpp_ppo_agent
+        from src.stealth.rl.tpp_ppo import PriorGuidedPPOAgent
+
+        self._tpp_ppo_agent = PriorGuidedPPOAgent.load_checkpoint(
+            resolved, device=self.device
+        )
+        self._tpp_ppo_checkpoint_path = resolved
+        return self._tpp_ppo_agent
+
+    def _schedule_tpp_ppo(
+        self,
+        media_ids: list[str],
+        base_delay: float,
+        checkpoint: Optional[Path],
+        *,
+        time_of_day: Optional[float] = None,
+        pause_cap_s: Optional[float] = None,
+    ) -> dict:
+        agent = self._load_tpp_ppo_agent(checkpoint)
+        if agent is None:
+            print("[StealthScheduler] TPP-PPO checkpoint not found — falling back to static")
+            return self._schedule_static(media_ids, base_delay)
+
+        hour = (
+            float(self._tpp_rng.integers(0, 24))
+            if time_of_day is None
+            else float(time_of_day)
+        )
+        delays, channels = agent.generate_schedule(
+            num_items=len(media_ids),
+            time_of_day=hour,
+            pause_cap_s=pause_cap_s,
+            rng=self._tpp_rng,
+        )
+        return {
+            "items": media_ids,
+            "delays": [float(d) for d in delays],
+            "channels": [int(c) for c in channels],
+            "mode_used": "tpp_ppo",
+        }
 
     # ------------------------------------------------------------------
     # static (NoiseController) fallback
@@ -251,6 +465,55 @@ class StealthScheduler:
     # ------------------------------------------------------------------
     # GAN-based scheduling
     # ------------------------------------------------------------------
+
+    def _route_gan_with_cooldowns(
+        self,
+        delays: list[float],
+        channel_logits: np.ndarray,
+        *,
+        sample_channels: bool,
+    ) -> tuple[list[float], list[int]]:
+        """Route GAN timings onto legal channel landings, extending waits as needed."""
+        routed_delays = [float(delay) for delay in delays]
+        last_landing = {channel: -100.0 for channel in range(self.num_channels)}
+        current_landing = 0.0
+        routed_channels: list[int] = []
+
+        for index, logits in enumerate(channel_logits):
+            current_landing += routed_delays[index]
+            available = [
+                channel
+                for channel in range(self.num_channels)
+                if current_landing - last_landing[channel]
+                >= CHANNEL_COOLDOWNS.get(channel, 6.0)
+            ]
+            if available:
+                row = np.asarray(logits, dtype=np.float64)
+                available_logits = np.asarray([row[channel] for channel in available])
+                weights = np.exp(available_logits - np.max(available_logits))
+                available_probabilities = weights / weights.sum()
+                if sample_channels:
+                    chosen = int(np.random.choice(available, p=available_probabilities))
+                else:
+                    chosen = available[int(np.argmax(available_probabilities))]
+            else:
+                chosen = min(
+                    range(self.num_channels),
+                    key=lambda channel: last_landing[channel]
+                    + CHANNEL_COOLDOWNS.get(channel, 6.0),
+                )
+                wait = (
+                    last_landing[chosen]
+                    + CHANNEL_COOLDOWNS.get(chosen, 6.0)
+                    - current_landing
+                )
+                routed_delays[index] += wait
+                current_landing += wait
+
+            last_landing[chosen] = current_landing
+            routed_channels.append(chosen)
+
+        return routed_delays, routed_channels
 
     def _load_generator(self, checkpoint: Optional[Path]):
         if self._generator is not None:
@@ -319,8 +582,11 @@ class StealthScheduler:
         raw_delays = schedule.delays[0].cpu().numpy()
         # Use the same canonical mapping as the hybrid path and the C3
         # benchmark, so the measured GAN row is the deployed GAN row.
-        delays = canonical_delay_mapping(raw_delays).tolist()
-        channels = schedule.sample_channels()[0].cpu().tolist()
+        mapped_delays = canonical_delay_mapping(raw_delays).tolist()
+        channel_logits = schedule.channel_logits[0].cpu().numpy()
+        delays, channels = self._route_gan_with_cooldowns(
+            mapped_delays, channel_logits, sample_channels=True
+        )
 
         return {
             "items": media_ids,
@@ -367,31 +633,11 @@ class StealthScheduler:
             )
 
         raw_delays = schedule.delays[0].cpu().numpy()
-        delays = canonical_delay_mapping(raw_delays).tolist()
+        mapped_delays = canonical_delay_mapping(raw_delays).tolist()
         channel_logits = schedule.channel_logits[0].cpu().numpy()
-
-        # Closed-loop channel cooldown routing
-        cooldowns = CHANNEL_COOLDOWNS
-        t_last = {c: -100.0 for c in range(self.num_channels)}
-        t_current = 0.0
-        routed_channels = []
-
-        for i in range(seq_len):
-            t_current += delays[i]
-            avail = [c for c in range(self.num_channels) if (t_current - t_last[c]) >= cooldowns.get(c, 6.0)]
-            if avail:
-                probs = np.exp(channel_logits[i]) / np.sum(np.exp(channel_logits[i]))
-                avail_probs = [probs[c] for c in avail]
-                chosen_c = avail[int(np.argmax(avail_probs))]
-            else:
-                earliest_c = min(range(self.num_channels), key=lambda c: t_last[c] + cooldowns.get(c, 6.0))
-                wait = (t_last[earliest_c] + cooldowns.get(earliest_c, 6.0)) - t_current
-                delays[i] += wait
-                t_current += wait
-                chosen_c = earliest_c
-
-            t_last[chosen_c] = t_current
-            routed_channels.append(chosen_c)
+        delays, routed_channels = self._route_gan_with_cooldowns(
+            mapped_delays, channel_logits, sample_channels=False
+        )
 
         return {
             "items": media_ids,

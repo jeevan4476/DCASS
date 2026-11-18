@@ -16,15 +16,16 @@ Outputs:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
-
-from src.utils.checkpoint_io import load_trained_checkpoint
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.utils.checkpoint_io import load_trained_checkpoint  # noqa: E402
 from src.analysis.adversarial.warden import DeepPacketInspectionWarden
+from benchmark_manifest import build_manifest, capture_git_state, write_manifest  # noqa: E402
 from src.stealth.gan.trainer import apply_critic_config  # noqa: E402
 from src.stealth.rl.environment import StealthEnvironment  # noqa: E402
 
@@ -66,13 +67,20 @@ def probe(warden: DeepPacketInspectionWarden, delays: list[float], lambda_stealt
         total += reward
         if done:
             break
+    executed = env.transmission_history
     return {
         "mean_reward": float(total / len(delays)),
         "warden_score": float(env.get_warden_score()),
+        "requested_steps": len(delays),
+        "completed_steps": len(executed),
+        "effective_delays_seconds": [float(row.delay_from_previous) for row in executed],
+        "effective_channels": [int(row.channel_id) for row in executed],
+        "backoff_steps": int(env.rate_limit_backoffs),
     }
 
 
 def main() -> int:
+    git_state = capture_git_state()
     lambda_stealth = 50.0
     wardens = {
         "shipped_wgan_gp_critic": load_warden(
@@ -90,13 +98,23 @@ def main() -> int:
             for label, delays in TRAFFIC.items()
         }
 
-    out = PROJECT_ROOT / "storage" / "benchmarks" / "rl_stealth_reward_probe.json"
+    benchmark_dir = Path(
+        os.environ.get(
+            "DCASS_BENCHMARK_DIR", str(PROJECT_ROOT / "storage" / "benchmarks")
+        )
+    ).expanduser().resolve()
+    out = benchmark_dir / "rl_stealth_reward_probe.json"
+    manifest_path = benchmark_dir / "rl_stealth_reward_probe_manifest.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
         json.dumps(
             {
                 "schema": "rl-stealth-reward-probe-v1",
                 "lambda_stealth": lambda_stealth,
+                "provenance": {
+                    "git": git_state,
+                    "device": "cpu",
+                },
                 "note": (
                     "The mean per-step reward the RL environment assigns to "
                     "each fixed delay sequence, under the shipped WGAN-GP critic "
@@ -110,7 +128,31 @@ def main() -> int:
             indent=2,
         )
     )
+    manifest = build_manifest(
+        component="rl_stealth_reward_probe",
+        outputs=[out],
+        inputs=[
+            PROJECT_ROOT / "storage" / "models" / "gan_generator.pt",
+            PROJECT_ROOT / "storage" / "models" / "traffic_detector.pt",
+            PROJECT_ROOT / "scripts" / "analysis" / "measure_rl_stealth_reward.py",
+            PROJECT_ROOT / "scripts" / "analysis" / "benchmark_manifest.py",
+            PROJECT_ROOT / "src" / "stealth" / "rl" / "environment.py",
+            PROJECT_ROOT / "src" / "stealth" / "rl" / "pacing.py",
+            PROJECT_ROOT / "src" / "stealth" / "gan" / "trainer.py",
+            PROJECT_ROOT / "src" / "stealth" / "delay_contract.py",
+            PROJECT_ROOT / "src" / "analysis" / "adversarial" / "warden.py",
+        ],
+        seeds={"numpy_seed": None, "torch_seed": None},
+        extra={
+            "lambda_stealth": lambda_stealth,
+            "nominal_traffic_cases": list(TRAFFIC),
+            "effective_sequences_recorded": True,
+        },
+        git_state=git_state,
+    )
+    write_manifest(manifest, manifest_path)
     print(f"Saved {out}")
+    print(f"Saved provenance manifest {manifest_path}")
     for name, rows in results.items():
         for label, row in rows.items():
             print(f"  {name:24s} {label:26s} score {row['warden_score']:.4f}  reward {row['mean_reward']:+.2f}")

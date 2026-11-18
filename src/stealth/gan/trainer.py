@@ -209,6 +209,16 @@ def apply_critic_config(
         model.bounded_critic = bool(checkpoint["critic_bounded"])
     if "critic_score_bound" in checkpoint:
         model.critic_score_bound = float(checkpoint["critic_score_bound"])
+    cfg = checkpoint.get("config")
+    if isinstance(cfg, dict):
+        if "scaled_features" in cfg:
+            model.scaled_features = bool(cfg["scaled_features"])
+        if "ignore_channels" in cfg:
+            model.ignore_channels = bool(cfg["ignore_channels"])
+    if "scaled_features" in checkpoint:
+        model.scaled_features = bool(checkpoint["scaled_features"])
+    if "ignore_channels" in checkpoint:
+        model.ignore_channels = bool(checkpoint["ignore_channels"])
 
 
 class GANTrainer:

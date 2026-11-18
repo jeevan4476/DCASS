@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import sys
 import json
+import os
 import pathlib
 import numpy as np
 from pathlib import Path
@@ -30,7 +31,6 @@ from dataclasses import dataclass, asdict, field
 from scipy.stats import ks_2samp
 
 import torch
-from src.utils.checkpoint_io import load_trained_checkpoint
 
 # Compatibility shim for Python 3.12 + PyTorch unpickling
 sys.modules.setdefault("pathlib._local", pathlib)
@@ -38,6 +38,7 @@ sys.modules.setdefault("pathlib._local", pathlib)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.utils.checkpoint_io import load_trained_checkpoint  # noqa: E402
 from src.stealth.stealth_scheduler import (
     CHANNEL_COOLDOWNS,
     StealthScheduler,
@@ -52,23 +53,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from traffic_corpus import corpus_files, traffic_dir  # noqa: E402
 from benchmark_manifest import (  # noqa: E402
     build_manifest,
+    capture_git_state,
     caption_provenance,
     recorded_commit,
     scale_table_to_textwidth,
     write_manifest,
 )
-from detector_scoring import select_threshold  # noqa: E402
+from detector_scoring import select_threshold_by_group  # noqa: E402
 
 # Benchmark Configuration
 SEED = 42
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 NUM_CHANNELS = 3
-NUM_TRIALS = 50           # 50 independent message bursts per scheduler
+NUM_TRIALS = int(os.environ.get("DCASS_C3_TRIALS", "50"))
 CARRIERS_PER_MESSAGE = 50  # 50 carrier packets per message transmission
 BASE_DELAY = 3.0          # Baseline delay parameter
-BENCHMARK_DIR = PROJECT_ROOT / "storage" / "benchmarks"
+BENCHMARK_DIR = Path(
+    os.environ.get("DCASS_BENCHMARK_DIR", str(PROJECT_ROOT / "storage" / "benchmarks"))
+).expanduser().resolve()
 TABLES_DIR = BENCHMARK_DIR / "tables"
 PLOTS_DIR = BENCHMARK_DIR / "plots"
+if NUM_TRIALS < 1:
+    raise ValueError("DCASS_C3_TRIALS must be a positive integer")
+HAMMER_MIN_FAST_GAPS = 8
+HAMMER_MIN_FAST_FRACTION = 0.25
 
 # Enterprise DPI Channel Cooldown Timers (items/min -> min inter-arrival
 # seconds) — imported from the scheduler, the deployed source of truth, so
@@ -133,6 +141,8 @@ def count_cooldown_violations(
 # The KS distance and its p-value are still recorded per trial and still
 # appear in the results table. See docs/benchmarking/C3_WARDEN_DIAGNOSTIC.md.
 SOFT_FLAG_THRESHOLD = 0.30
+HARD_FLAG_THRESHOLD = 0.50
+BURST_FLAG_THRESHOLD = 0.50
 
 # The detector used for the neural term. The WGAN-GP critic in
 # `warden.pt` is not a detector: its transformer collapsed to a constant
@@ -146,8 +156,33 @@ SOFT_FLAG_THRESHOLD = 0.30
 # is an independently trained detector, on a different split and a
 # different initialization, that the agent has never seen. See
 # docs/benchmarking/C3_TRAFFIC_DETECTOR_EVALUATION.md.
-ADVERSARY_DETECTOR_PATH = PROJECT_ROOT / "storage" / "models" / "traffic_detector.pt"
-DETECTOR_PATH = PROJECT_ROOT / "storage" / "models" / "traffic_detector_eval.pt"
+ADVERSARY_DETECTOR_PATH = Path(
+    os.environ.get(
+        "DCASS_C3_ADVERSARY_DETECTOR",
+        str(PROJECT_ROOT / "storage" / "models" / "traffic_detector.pt"),
+    )
+).expanduser()
+DETECTOR_PATH = Path(
+    os.environ.get(
+        "DCASS_C3_EVAL_DETECTOR",
+        str(PROJECT_ROOT / "storage" / "models" / "traffic_detector_eval.pt"),
+    )
+).expanduser()
+
+
+def configured_scheduler_checkpoints(environ: Optional[Dict[str, str]] = None) -> Dict[str, Path]:
+    """Resolve optional C3 checkpoint paths while preserving shipped defaults."""
+    source = os.environ if environ is None else environ
+    return {
+        "gan": Path(source.get(
+            "DCASS_C3_GAN_CHECKPOINT",
+            str(PROJECT_ROOT / "storage" / "models" / "gan_generator.pt"),
+        )).expanduser(),
+        "rl": Path(source.get(
+            "DCASS_C3_RL_CHECKPOINT",
+            str(PROJECT_ROOT / "storage" / "models" / "rl_agent.pt"),
+        )).expanduser(),
+    }
 
 # The detector's input length. The detector was trained on sequences
 # padded to this length with a validity mask, and the transformer
@@ -167,6 +202,8 @@ class SchedulerResult:
     scheduler: str
     interception_rate: float
     evasion_rate: float
+    interception_ci95: List[float]
+    evasion_ci95: List[float]
     delay_entropy: float
     ks_statistic: float
     ks_pvalue: float
@@ -203,19 +240,21 @@ class HumanSelfTest:
     traffic. A calibrated warden should not flag its own ground truth,
     except through the burst rule's small false-positive floor.
 
-    Two populations are recorded. The surrogate is the benchmark's KS
-    reference, a synthetic burst-level mixture that is not the population
-    the detector was trained on, so it is a second, independent reading.
+    Two populations are recorded. The delay reference is the benchmark's KS
+    reference and can be synthetic or corpus-derived, as recorded in the run.
     The corpus rows are the detector's own held-out sessions, so their rate
     is the operating point's false-positive rate."""
 
     n_trials: int
     interception_rate: float
     evasion_rate: float
+    interception_ci95: List[float]
     scores: List[float]
     rules: List[str]
+    reference_label: str = "surrogate reference"
     corpus_n: int = 0
     corpus_interception_rate: float = float("nan")
+    corpus_interception_ci95: List[float] = field(default_factory=list)
     corpus_scores: List[float] = field(default_factory=list)
     corpus_rules: List[str] = field(default_factory=list)
 
@@ -228,8 +267,9 @@ class Component3Result:
     human_ks_distances: Dict[str, float]
     diurnal_breakdown: List[DiurnalResult]
     human_self_test: HumanSelfTest
-    soft_branch_calibration: Dict[str, float]
+    soft_branch_calibration: Dict[str, object]
     detector: Dict[str, object]
+    benchmark_gates: Dict[str, object]
     provenance: Dict[str, object]
 
 
@@ -265,6 +305,34 @@ def generate_human_baseline_delays(n: int = 5000) -> np.ndarray:
     delays = np.clip(delays, 0.05, 10000.0)
     np.random.shuffle(delays)
     return delays[:n]
+
+
+def sample_contributor_balanced_corpus_delays(
+    sessions: List[dict], n: int = 5000, seed: int = SEED + 19
+) -> np.ndarray:
+    """Sample within-session gaps equally by contributor for C3's KS reference."""
+    grouped: Dict[str, List[float]] = {}
+    for session in sessions:
+        contributor = session.get("contributor_id")
+        if contributor is None:
+            raise ValueError(
+                "empirical LSApp reference requires contributor_id on every session"
+            )
+        grouped.setdefault(str(contributor), []).extend(
+            float(delay) for delay in session["delays"] if float(delay) > 0
+        )
+    grouped = {key: values for key, values in grouped.items() if values}
+    if len(grouped) < 2:
+        raise ValueError("empirical reference requires at least two contributors")
+
+    rng = np.random.default_rng(seed)
+    contributors = sorted(grouped)
+    base, extra = divmod(n, len(contributors))
+    samples = [
+        rng.choice(grouped[contributor], size=base + (index < extra), replace=True)
+        for index, contributor in enumerate(contributors)
+    ]
+    return np.concatenate(samples).astype(np.float64, copy=False)
 
 
 def compute_delay_entropy(delays: np.ndarray, bins: int = 50) -> float:
@@ -303,6 +371,24 @@ def compute_log_bin_entropy(delays: np.ndarray, bins: int = 50) -> float:
     return float(-np.sum(probs * np.log2(probs)))
 
 
+def wilson_interval(successes: int, trials: int, z: float = 1.959963984540054) -> List[float]:
+    """Return a two-sided Wilson score interval for a binomial proportion."""
+    if trials <= 0:
+        return [float("nan"), float("nan")]
+    p = successes / trials
+    z2 = z * z
+    denom = 1.0 + z2 / trials
+    center = (p + z2 / (2.0 * trials)) / denom
+    half = z * np.sqrt((p * (1.0 - p) / trials) + z2 / (4.0 * trials * trials)) / denom
+    low = max(0.0, center - half)
+    high = min(1.0, center + half)
+    if low < 1e-12:
+        low = 0.0
+    if 1.0 - high < 1e-12:
+        high = 1.0
+    return [100.0 * low, 100.0 * high]
+
+
 def evaluate_dpi_warden(
     delays: np.ndarray,
     channels: np.ndarray,
@@ -314,7 +400,7 @@ def evaluate_dpi_warden(
     Combines:
     1. Periodic Rhythm Anomaly: Low CV (< 0.20) or low log-bin Shannon entropy (< 1.0 bits)
     2. Sliding Window Burst Density: >= 6 packets within sliding 5.0s window
-    3. Single-channel hammering detection
+    3. Sustained single-channel hammering detection
     4. Neural Anomaly Score: trained traffic detector, per-timestep head
     5. Two-Sample Kolmogorov-Smirnov Test against the human traffic baseline
 
@@ -372,7 +458,11 @@ def evaluate_dpi_warden(
     elif is_burst:
         score = min(0.95, 0.65 + 0.06 * (max_burst - 5))  # Packet flush anomaly
         rule = "burst"
-    elif len(set(channels)) == 1 and np.any(delays < 4.0):
+    elif (
+        len(set(channels)) == 1
+        and np.count_nonzero(delays < 4.0)
+        >= max(HAMMER_MIN_FAST_GAPS, int(np.ceil(HAMMER_MIN_FAST_FRACTION * len(delays))))
+    ):
         score = 1.0  # Single-channel metronome hammering
         rule = "hammer"
     else:
@@ -383,7 +473,14 @@ def evaluate_dpi_warden(
         score = bot_probability
         rule = "soft"
 
-    flagged = (score >= SOFT_FLAG_THRESHOLD) if rule == "soft" else (score >= 0.50)
+    if rule == "soft":
+        flagged = score >= SOFT_FLAG_THRESHOLD
+    elif rule == "burst":
+        flagged = score >= BURST_FLAG_THRESHOLD
+    else:
+        # Periodicity and single-channel hammer controls remain hard rules;
+        # the calibrated burst threshold must not disable these controls.
+        flagged = score >= HARD_FLAG_THRESHOLD
     return {
         "score": score,
         "flagged": flagged,
@@ -464,6 +561,12 @@ def run_scheduler_benchmark_multi(
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
+        if len(delays) != len(media_ids) or len(channels) != len(media_ids):
+            raise RuntimeError(
+                f"{scheduler_name} produced {len(delays)} delays and {len(channels)} "
+                f"channels for {len(media_ids)} requested carriers"
+            )
+
         all_delays_collected.extend(delays)
 
         eval_res = evaluate_dpi_warden(delays, channels, warden, human_delays)
@@ -489,6 +592,8 @@ def run_scheduler_benchmark_multi(
         scheduler=scheduler_name,
         interception_rate=interception_rate,
         evasion_rate=evasion_rate,
+        interception_ci95=wilson_interval(flagged_count, n_trials),
+        evasion_ci95=wilson_interval(n_trials - flagged_count, n_trials),
         delay_entropy=float(np.mean(entropies)),
         ks_statistic=float(np.mean(ks_stats)),
         ks_pvalue=float(np.mean(ks_pvals)),
@@ -612,7 +717,7 @@ def evaluate_diurnal_circadian_split(
     return diurnal_results, diurnal_delays_map
 
 
-def collect_provenance() -> Dict[str, object]:
+def collect_provenance(git_state: Optional[Dict[str, object]] = None) -> Dict[str, object]:
     """Record the code state that produced this measurement.
 
     The table caption reads the commit back out of the artifact, so a table
@@ -630,12 +735,12 @@ def collect_provenance() -> Dict[str, object]:
         except OSError:
             return ""
 
-    status = git("status", "--porcelain")
+    state = git_state or capture_git_state()
     return {
         "retrospective": False,
-        "git_commit": git("rev-parse", "HEAD"),
-        "git_branch": git("rev-parse", "--abbrev-ref", "HEAD"),
-        "git_dirty": bool(status),
+        "git_commit": state.get("commit") or git("rev-parse", "HEAD"),
+        "git_branch": state.get("branch") or git("rev-parse", "--abbrev-ref", "HEAD"),
+        "git_dirty": bool(state.get("dirty")),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(),
         "platform": platform.platform(),
@@ -687,10 +792,58 @@ def load_corpus_human_sessions(limit: int = 300) -> List[dict]:
 
     if holdout_indices:
         selected = [sessions[i] for i in holdout_indices if 0 <= i < len(sessions)]
+        if selected and all(s.get("contributor_id") is not None for s in selected):
+            grouped: dict[str, List[dict]] = {}
+            for session in selected:
+                grouped.setdefault(str(session["contributor_id"]), []).append(session)
+            balanced: List[dict] = []
+            max_group_sessions = max(map(len, grouped.values()))
+            for index in range(max_group_sessions):
+                for group in grouped.values():
+                    if index < len(group):
+                        balanced.append(group[index])
+                        if len(balanced) >= limit:
+                            return balanced
+            return balanced
         return selected[:limit]
 
     # No recorded split: fall back to the tail of the corpus.
     return sessions[-limit:]
+
+
+def split_calibration_validation_sessions(
+    sessions: List[dict], seed: int = SEED + 1
+) -> tuple[List[dict], List[dict], str]:
+    """Keep contributor groups disjoint between calibration and validation."""
+    has_group_ids = any(session.get("contributor_id") is not None for session in sessions)
+    if not has_group_ids:
+        split_at = len(sessions) // 2
+        return (
+            sessions[:split_at],
+            sessions[split_at:],
+            "ordered half split of held-out sessions (legacy data without contributor IDs)",
+        )
+    if any(session.get("contributor_id") is None for session in sessions):
+        raise RuntimeError(
+            "contributor-aware calibration split requires contributor_id on "
+            "every held-out corpus session"
+        )
+
+    groups: dict[str, List[dict]] = {}
+    for session in sessions:
+        groups.setdefault(str(session["contributor_id"]), []).append(session)
+    group_ids = list(groups)
+    if len(group_ids) < 2:
+        raise RuntimeError(
+            "need at least two held-out contributors to separate threshold "
+            "calibration from final validation"
+        )
+    order = np.random.default_rng(seed).permutation(len(group_ids))
+    split_at = max(1, len(group_ids) // 2)
+    calibration_groups = {group_ids[i] for i in order[:split_at]}
+    calibration = [s for s in sessions if str(s["contributor_id"]) in calibration_groups]
+    validation = [s for s in sessions if str(s["contributor_id"]) not in calibration_groups]
+    return calibration, validation, "contributor-disjoint split of detector-held-out sessions"
 
 
 def calibrate_soft_threshold(
@@ -699,8 +852,9 @@ def calibrate_soft_threshold(
     corpus_sessions: Optional[List[dict]] = None,
     n_trials: int = 200,
     target_fpr: float = 0.05,
-) -> Dict[str, float]:
-    """Calibrate the soft-branch flag threshold on human traffic.
+    reference_label: str = "burst-level surrogate reference",
+) -> Dict[str, object]:
+    """Calibrate soft and rule-based thresholds on human traffic.
 
     The soft branch's score is the trained detector's bot probability.
     Its threshold has to be set somewhere, and setting it by hand would
@@ -731,10 +885,11 @@ def calibrate_soft_threshold(
 
     Returns a dict with the threshold and the measured rates.
     """
+    global SOFT_FLAG_THRESHOLD, HARD_FLAG_THRESHOLD, BURST_FLAG_THRESHOLD
     rng = np.random.default_rng(SEED + 7)
 
-    def burst_scores() -> List[float]:
-        out = []
+    def burst_scores() -> Tuple[List[float], List[float]]:
+        soft, hard = [], []
         for _ in range(n_trials):
             delays = human_delays[
                 rng.choice(len(human_delays), CARRIERS_PER_MESSAGE, replace=False)
@@ -742,12 +897,15 @@ def calibrate_soft_threshold(
             channels = rng.integers(0, NUM_CHANNELS, size=CARRIERS_PER_MESSAGE)
             res = evaluate_dpi_warden(delays, channels, warden, human_delays)
             if res["rule"] == "soft":
-                out.append(float(res["score"]))
-        return out
+                soft.append(float(res["score"]))
+            elif res["rule"] == "burst":
+                hard.append(float(res["score"]))
+        return soft, hard
 
-    surrogate_scores = burst_scores()
+    surrogate_scores, surrogate_hard = burst_scores()
 
     corpus_scores: List[float] = []
+    corpus_hard: List[float] = []
     if corpus_sessions:
         for session in corpus_sessions:
             delays = np.asarray(session["delays"], dtype=np.float64)[:CARRIERS_PER_MESSAGE]
@@ -755,6 +913,8 @@ def calibrate_soft_threshold(
             res = evaluate_dpi_warden(delays, channels, warden, human_delays)
             if res["rule"] == "soft":
                 corpus_scores.append(float(res["score"]))
+            elif res["rule"] == "burst":
+                corpus_hard.append(float(res["score"]))
 
     calibration_scores = np.asarray(surrogate_scores + corpus_scores)
     if calibration_scores.size == 0:
@@ -769,36 +929,60 @@ def calibrate_soft_threshold(
             "the default threshold was kept",
         }
 
-    # The smallest threshold whose false-positive rate on human traffic is
-    # at or below the target. See detector_scoring.py for why this is not
-    # simply a quantile.
-    threshold, measured = select_threshold(calibration_scores, target_fpr)
-
-    def rate(values: List[float]) -> float:
-        if not values:
-            return float("nan")
-        arr = np.asarray(values)
-        return float((arr >= threshold).mean())
+    # Enforce the FPR budget separately for the surrogate and corpus
+    # populations, so the pooled rate cannot conceal a failing subgroup.
+    # Split the requested false-positive budget across the calibrated burst
+    # and soft branches. Periodicity and hammer are fixed positive controls
+    # and are reported separately in the independent validation sample.
+    branch_target = target_fpr / 2.0
+    threshold, group_rates = select_threshold_by_group(
+        {"surrogate": np.asarray(surrogate_scores), "corpus": np.asarray(corpus_scores)},
+        branch_target,
+    )
+    burst_threshold = BURST_FLAG_THRESHOLD
+    burst_groups = {"surrogate": np.asarray(surrogate_hard), "corpus": np.asarray(corpus_hard)}
+    if any(values.size for values in burst_groups.values()):
+        burst_threshold, burst_group_rates = select_threshold_by_group(
+            burst_groups, branch_target
+        )
+    else:
+        burst_group_rates = {"surrogate": float("nan"), "corpus": float("nan")}
+    SOFT_FLAG_THRESHOLD = threshold
+    BURST_FLAG_THRESHOLD = burst_threshold
+    measured = float((calibration_scores >= threshold).mean())
 
     print(
-        f"  Soft-branch threshold calibrated on {len(calibration_scores)} human bursts "
-        f"({len(surrogate_scores)} surrogate, {len(corpus_scores)} corpus): "
-        f"{threshold:.4f} (target FPR {target_fpr:.0%}, measured {measured:.2%})"
+        f"  Calibrated burst/soft thresholds on human traffic: "
+        f"{burst_threshold:.4f}/{threshold:.4f}; branch FPR "
+        f"surrogate {group_rates.get('surrogate', float('nan')):.2%}, "
+        f"corpus {group_rates.get('corpus', float('nan')):.2%} "
+        f"(target {branch_target:.2%} per branch and population)"
     )
     return {
         "threshold": threshold,
+        "burst_threshold": burst_threshold,
         "n_calibration": int(calibration_scores.size),
         "n_surrogate": len(surrogate_scores),
         "n_corpus": len(corpus_scores),
+        "n_burst_surrogate": len(surrogate_hard),
+        "n_burst_corpus": len(corpus_hard),
+        "n_total_surrogate": n_trials,
+        "n_total_corpus": len(corpus_sessions or []),
         "target_fpr": target_fpr,
         "measured_fpr": measured,
-        "measured_fpr_surrogate": rate(surrogate_scores),
-        "measured_fpr_corpus": rate(corpus_scores),
+        "measured_fpr_surrogate": group_rates.get("surrogate", float("nan")),
+        "measured_fpr_delay_reference": group_rates.get("surrogate", float("nan")),
+        "measured_fpr_corpus": group_rates.get("corpus", float("nan")),
+        "burst_branch_fpr_surrogate": burst_group_rates.get("surrogate", float("nan")),
+        "burst_branch_fpr_delay_reference": burst_group_rates.get("surrogate", float("nan")),
+        "burst_branch_fpr_corpus": burst_group_rates.get("corpus", float("nan")),
         "human_score_mean": float(calibration_scores.mean()),
         "human_score_p95": float(np.percentile(calibration_scores, 95)),
         "human_score_max": float(calibration_scores.max()),
-        "calibration_populations": "burst-level surrogate reference and the "
-        "detector's held-out corpus sessions",
+        "delay_reference": reference_label,
+        "calibration_populations": f"{reference_label} and the detector's "
+        "held-out corpus sessions",
+        "fpr_scope": "half of the target is allocated separately to soft and burst branches; periodic and hammer positive controls remain fixed and end-to-end false positives are reported in human_self_test",
     }
 
 
@@ -807,6 +991,7 @@ def run_human_reference_self_test(
     human_delays: np.ndarray,
     n_trials: int = 50,
     corpus_sessions: Optional[List[dict]] = None,
+    reference_label: str = "surrogate reference",
 ) -> HumanSelfTest:
     """Positive control for the warden decision function.
 
@@ -818,10 +1003,8 @@ def run_human_reference_self_test(
     trained on. It is the number the interception rates should be read
     against.
 
-    The *surrogate* self-test draws trial-sized samples from the synthetic
-    burst-level reference used as the KS term. It is a second, independent
-    population, since the reference is not the corpus the detector was
-    trained on. A warden that flags its own ground truth at a high rate
+    The reference self-test draws trial-sized samples from the burst-level
+    reference used as the KS term. A warden that flags its own ground truth at a high rate
     cannot be used to claim that a scheduler's smooth traffic is
     'undetectable', so the rate is recorded either way. Uses a dedicated
     RNG stream so the deterministic scheduler runs above are not perturbed.
@@ -840,7 +1023,7 @@ def run_human_reference_self_test(
         if eval_res["flagged"]:
             flagged_count += 1
     int_rate = (flagged_count / n_trials) * 100.0
-    print(f"    Surrogate reference flagged: {flagged_count}/{n_trials} ({int_rate:.1f}%) | rules: "
+    print(f"    Delay reference ({reference_label}) flagged: {flagged_count}/{n_trials} ({int_rate:.1f}%) | rules: "
           f"periodic_cv={rules.count('periodic_cv')}, periodic_entropy={rules.count('periodic_entropy')}, "
           f"burst={rules.count('burst')}, soft={rules.count('soft')}")
 
@@ -848,7 +1031,7 @@ def run_human_reference_self_test(
     corpus_rules: List[str] = []
     corpus_flagged = 0
     if corpus_sessions:
-        for session in corpus_sessions[:n_trials]:
+        for session in corpus_sessions:
             delays = np.asarray(session["delays"], dtype=np.float64)[:CARRIERS_PER_MESSAGE]
             channels = np.asarray(session["channels"], dtype=np.int64)[:CARRIERS_PER_MESSAGE]
             eval_res = evaluate_dpi_warden(delays, channels, warden, human_delays)
@@ -869,10 +1052,13 @@ def run_human_reference_self_test(
         n_trials=n_trials,
         interception_rate=int_rate,
         evasion_rate=100.0 - int_rate,
+        interception_ci95=wilson_interval(flagged_count, n_trials),
         scores=scores,
         rules=rules,
+        reference_label=reference_label,
         corpus_n=n_corpus,
         corpus_interception_rate=corpus_rate,
+        corpus_interception_ci95=wilson_interval(corpus_flagged, n_corpus),
         corpus_scores=corpus_scores,
         corpus_rules=corpus_rules,
     )
@@ -898,13 +1084,13 @@ def create_cdf_plot(
         "DCASS PPO RL Agent": "#27AE60",
     }
 
-    # 1. Human Baseline empirical CDF (synthetic surrogate, see docstring of
-    #    generate_human_baseline_delays: 80% Exp(5s), 20% log-normal; the
+    # 1. Human Baseline empirical CDF (synthetic or corpus-derived according
+    #    to the run's reference selection; the
     #    x-range must cover the log-normal tail or the curve plateaus below
     #    1.0 for purely visual reasons)
     x_human = np.sort(human_delays)
     y_human = np.arange(1, len(x_human) + 1) / len(x_human)
-    ax.plot(x_human, y_human, "k--", linewidth=2.2, label="Human Surrogate Baseline", alpha=0.85)
+    ax.plot(x_human, y_human, "k--", linewidth=2.2, label="Human Delay Reference", alpha=0.85)
 
     # 2. Schedulers CDF from actual recorded delay arrays
     for name, delays in results_map.items():
@@ -941,7 +1127,7 @@ def create_circadian_plot(
     # Human Baseline
     x_human = np.sort(human_delays)
     y_human = np.arange(1, len(x_human) + 1) / len(x_human)
-    ax.plot(x_human, y_human, "k--", linewidth=2.0, label="Human Surrogate Baseline", alpha=0.8)
+    ax.plot(x_human, y_human, "k--", linewidth=2.0, label="Human Delay Reference", alpha=0.8)
 
     colors = {
         "Daytime Hour (14:00)": "#E67E22",
@@ -1028,12 +1214,12 @@ def generate_latex_table(
 ):
     """Generate LaTeX table matching paper requirements with raw strings."""
     provenance = caption_provenance(
-        n=f"{len(results)} schedulers x 50 trials x 50 carriers",
+        n=f"{len(results)} schedulers x {NUM_TRIALS} trials x {CARRIERS_PER_MESSAGE} carriers",
         scope=(
             "recorded composite warden; the soft branch is a trained traffic "
             "detector with a threshold calibrated on held-out human traffic, "
-            "with the human side being the repository's own synthetic traffic "
-            "corpus rather than recorded human browsing, "
+            "calibrated separately on surrogate and held-out repository "
+            "traffic-corpus populations, "
             "so a not-flagged rate is a measurement and not an artifact"
         ),
         commit=commit
@@ -1052,7 +1238,7 @@ def generate_latex_table(
         f.write(r"\begin{tabular}{lccccccccc}" + "\n")
         f.write(r"\toprule" + "\n")
         f.write(r"Scheduler & Interception Rate (\%) & Not Flagged Rate (\%) & "
-                r"Delay Entropy (bits) & KS Distance & KS $p$-value & Mean Latency (s) & "
+                r"Delay Entropy (bits) & KS Distance & Mean trial KS $p$ (descriptive) & Mean Latency (s) & "
                 r"Cooldown Violations & Triggering Rule (trials) \\" + "\n")
         f.write(r"\midrule" + "\n")
 
@@ -1078,6 +1264,8 @@ def generate_latex_table(
 
 
 def run_component3():
+    # Capture source state before this run rewrites tracked benchmark outputs.
+    git_state = capture_git_state()
     print("=" * 80)
     print(" COMPONENT 3: TRAFFIC TIMING & TRAFFIC ANALYSIS EVASION BENCHMARK (ENHANCED)")
     print("=" * 80)
@@ -1111,9 +1299,22 @@ def run_component3():
         return None
     warden.eval()
 
-    # 2. Generate Human Baseline
+    # Load the evaluator-held-out human rows once. They support the optional
+    # corpus-derived KS reference as well as the calibration/validation split.
+    corpus_sessions_all = load_corpus_human_sessions()
+
+    # 2. Generate the burst-level human delay reference. Research runs can
+    # explicitly select the held-out corpus rather than the generic mixture.
     print("\n2. Generating human baseline delays...")
-    human_delays = generate_human_baseline_delays(5000)
+    empirical_reference = os.environ.get("DCASS_C3_EMPIRICAL_REFERENCE", "0") == "1"
+    if empirical_reference:
+        human_delays = sample_contributor_balanced_corpus_delays(corpus_sessions_all)
+        human_delay_reference = (
+            "contributor-balanced within-session gaps from evaluator-held-out corpus"
+        )
+    else:
+        human_delays = generate_human_baseline_delays(5000)
+        human_delay_reference = "generic synthetic burst mixture"
     human_entropy = compute_delay_entropy(human_delays)
     human_entropy_log = compute_log_bin_entropy(human_delays)
     print(f"   Human delay baseline entropy: {human_entropy:.4f} bits (linear bins), "
@@ -1127,9 +1328,10 @@ def run_component3():
         profile="casual",
         seed=SEED
     )
+    scheduler_checkpoints = configured_scheduler_checkpoints()
     # Eagerly load generator and RL agent
-    scheduler._load_generator(PROJECT_ROOT / "storage" / "models" / "gan_generator.pt")
-    scheduler._load_rl_agent(PROJECT_ROOT / "storage" / "models" / "rl_agent.pt")
+    scheduler._load_generator(scheduler_checkpoints["gan"])
+    scheduler._load_rl_agent(scheduler_checkpoints["rl"])
     print("   Models loaded successfully.")
 
     media_ids = [f"carrier_{i:04d}" for i in range(CARRIERS_PER_MESSAGE)]
@@ -1138,13 +1340,29 @@ def run_component3():
     #    schedulers are evaluated, so the recorded interception rates use the
     #    calibrated threshold rather than a placeholder.
     print("\n4. Calibrating the soft-branch threshold on human traffic...")
-    corpus_sessions = load_corpus_human_sessions()
+    (
+        calibration_sessions,
+        validation_sessions,
+        corpus_split_method,
+    ) = split_calibration_validation_sessions(corpus_sessions_all)
+    if not calibration_sessions or not validation_sessions:
+        raise RuntimeError(
+            "need at least two held-out corpus sessions to keep threshold "
+            "calibration separate from the positive-control evaluation"
+        )
     soft_calibration = calibrate_soft_threshold(
-        warden, human_delays, corpus_sessions=corpus_sessions, n_trials=200
+        warden,
+        human_delays,
+        corpus_sessions=calibration_sessions,
+        n_trials=200,
+        reference_label=human_delay_reference,
     )
     global SOFT_FLAG_THRESHOLD
     SOFT_FLAG_THRESHOLD = float(soft_calibration["threshold"])
-    print(f"   Soft-branch flag threshold: {SOFT_FLAG_THRESHOLD:.4f}")
+    print(
+        f"   Calibrated thresholds: soft={SOFT_FLAG_THRESHOLD:.4f}, "
+        f"burst={BURST_FLAG_THRESHOLD:.4f}; periodic/hammer remain fixed"
+    )
 
     # 5. Evaluate Schedulers
     print(f"\n5. Running multi-trial evaluations ({NUM_TRIALS} trials each)...")
@@ -1195,8 +1413,30 @@ def run_component3():
     # 6b. Warden positive control on the human reference itself
     print("\n6b. Warden positive control (human reference self-test)...")
     human_self_test = run_human_reference_self_test(
-        warden, human_delays, n_trials=50, corpus_sessions=corpus_sessions
+        warden,
+        human_delays,
+        n_trials=max(200, NUM_TRIALS),
+        corpus_sessions=validation_sessions,
+        reference_label=human_delay_reference,
     )
+
+    static_result = next(result for result in results if result.scheduler == "Static Cadence")
+    hybrid_result = next(result for result in results if result.scheduler == "DCASS Hybrid Engine")
+    rl_result = next(result for result in results if result.scheduler == "DCASS PPO RL Agent")
+    gan_result = next(result for result in results if result.scheduler == "DCASS Temporal WGAN")
+    benchmark_gates = {
+        "surrogate_fpr_within_target": human_self_test.interception_rate <= 5.0,
+        "delay_reference_fpr_within_target": human_self_test.interception_rate <= 5.0,
+        "corpus_fpr_within_target": human_self_test.corpus_interception_rate <= 5.0,
+        "static_positive_control_detected": static_result.interception_rate >= 95.0,
+        "hybrid_cooldown_safe": hybrid_result.cooldown_violations == 0,
+        "ppo_cooldown_safe": rl_result.cooldown_violations == 0,
+        "wgan_cooldown_safe": gan_result.cooldown_violations == 0,
+    }
+    benchmark_gates["all_passed"] = all(benchmark_gates.values())
+    print("\nBenchmark gates:")
+    for name, passed in benchmark_gates.items():
+        print(f"  {name}: {'PASS' if passed else 'FAIL'}")
 
     # 6. Summary metrics
     human_ks = {
@@ -1235,11 +1475,16 @@ def run_component3():
         human_self_test=human_self_test,
         soft_branch_calibration=soft_calibration,
         detector={
-            "path": "storage/models/traffic_detector_eval.pt",
+            "path": str(DETECTOR_PATH.resolve()),
+            "ks_reference": human_delay_reference,
+            "gan_checkpoint": str(scheduler_checkpoints["gan"].resolve()),
+            "rl_checkpoint": str(scheduler_checkpoints["rl"].resolve()),
             "kind": "supervised binary traffic detector, held out from RL training",
             "score": "bot_probability",
             "flag_threshold": SOFT_FLAG_THRESHOLD,
-            "adversary_path": "storage/models/traffic_detector.pt",
+            "hard_flag_threshold": HARD_FLAG_THRESHOLD,
+            "burst_flag_threshold": BURST_FLAG_THRESHOLD,
+            "adversary_path": str(ADVERSARY_DETECTOR_PATH.resolve()),
             "note": (
                 "The soft branch is the trained detector's bot probability. "
                 "It is not the WGAN-GP critic: that critic's transformer "
@@ -1256,7 +1501,8 @@ def run_component3():
                 "See docs/benchmarking/C3_TRAFFIC_DETECTOR_EVALUATION.md."
             ),
         },
-        provenance=collect_provenance(),
+        benchmark_gates=benchmark_gates,
+        provenance=collect_provenance(git_state),
     )
     with open(json_path, "w") as f:
         json.dump(asdict(output_result), f, indent=2)
@@ -1273,9 +1519,26 @@ def run_component3():
         component="component_3_traffic_evasion",
         outputs=[json_path, tex_path, cdf_path, circadian_path, bar_path],
         inputs=[
-            PROJECT_ROOT / "storage" / "models" / "gan_generator.pt",
-            PROJECT_ROOT / "storage" / "models" / "rl_agent.pt",
+            scheduler_checkpoints["gan"],
+            scheduler_checkpoints["rl"],
+            ADVERSARY_DETECTOR_PATH,
+            DETECTOR_PATH,
             PROJECT_ROOT / "storage" / "models" / "warden.pt",
+            *corpus_files(),
+            PROJECT_ROOT / "scripts" / "analysis" / "benchmark_3_traffic_evasion.py",
+            PROJECT_ROOT / "scripts" / "analysis" / "benchmark_manifest.py",
+            PROJECT_ROOT / "scripts" / "analysis" / "traffic_corpus.py",
+            PROJECT_ROOT / "scripts" / "analysis" / "detector_scoring.py",
+            PROJECT_ROOT / "src" / "stealth" / "stealth_scheduler.py",
+            PROJECT_ROOT / "src" / "stealth" / "rl" / "environment.py",
+            PROJECT_ROOT / "src" / "stealth" / "rl" / "pacing.py",
+            PROJECT_ROOT / "src" / "stealth" / "gan" / "generator.py",
+            PROJECT_ROOT / "src" / "stealth" / "gan" / "trainer.py",
+            PROJECT_ROOT / "src" / "stealth" / "delay_contract.py",
+            PROJECT_ROOT / "src" / "analysis" / "adversarial" / "warden.py",
+            PROJECT_ROOT / "src" / "utils" / "checkpoint_io.py",
+            PROJECT_ROOT / "pyproject.toml",
+            PROJECT_ROOT / "requirements.txt",
         ],
         seeds={
             "global_seed": SEED,
@@ -1288,7 +1551,26 @@ def run_component3():
             "carriers_per_message": CARRIERS_PER_MESSAGE,
             "base_delay_seconds": BASE_DELAY,
             "num_channels": NUM_CHANNELS,
+            "hammer_min_fast_gaps": HAMMER_MIN_FAST_GAPS,
+            "hammer_min_fast_fraction": HAMMER_MIN_FAST_FRACTION,
             "device": DEVICE,
+            "source_git_state_captured_before_outputs": True,
+            "corpus_files": [str(path.relative_to(PROJECT_ROOT)) for path in corpus_files()],
+            "detector_threshold": SOFT_FLAG_THRESHOLD,
+            "hard_detector_threshold": HARD_FLAG_THRESHOLD,
+            "burst_detector_threshold": BURST_FLAG_THRESHOLD,
+            "interception_interval": "95% Wilson score interval, reported per scheduler",
+            "ks_pvalue_semantics": "arithmetic mean of per-trial p-values; descriptive only, not a pooled significance test",
+            "gate_thresholds": {
+                "target_end_to_end_human_fpr_pct": 5.0,
+                "static_positive_control_min_interception_pct": 95.0,
+                "dcass_schedule_cooldown_violations": 0,
+            },
+            "calibration_validation_split": {
+                "method": corpus_split_method,
+                "calibration_sessions": len(calibration_sessions),
+                "validation_sessions": len(validation_sessions),
+            },
             "delay_mapping": "(raw - 0.5) * 1500 + 1.5, clipped to [0.5, 30.0] s, "
             "defined in src/stealth/delay_contract.py and shared by the "
             "deployed GAN path, the deployed hybrid path, and this benchmark",
@@ -1310,4 +1592,7 @@ def run_component3():
 
 
 if __name__ == "__main__":
-    run_component3()
+    result = run_component3()
+    if result is None:
+        raise SystemExit(2)
+    raise SystemExit(0 if result.benchmark_gates["all_passed"] else 1)

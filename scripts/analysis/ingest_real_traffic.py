@@ -82,24 +82,53 @@ def parse_capture(payload: object) -> list[dict]:
         if not events:
             continue
         events = sorted(events, key=lambda e: float(e["t"]))
-        sessions.append({"events": events})
+        session = {"events": events}
+        contributor_id = raw.get("contributor_id")
+        event_contributors = {
+            str(event["contributor_id"])
+            for event in events
+            if event.get("contributor_id") is not None
+        }
+        if contributor_id is None and len(event_contributors) == 1:
+            contributor_id = next(iter(event_contributors))
+        if len(event_contributors) > 1 or (
+            contributor_id is not None
+            and event_contributors
+            and str(contributor_id) not in event_contributors
+        ):
+            raise ValueError("a session must contain events from one contributor only")
+        if contributor_id is not None:
+            session["contributor_id"] = str(contributor_id)
+        sessions.append(session)
     return sessions
 
 
 def split_flat_events(events: list[dict], session_gap: float) -> list[dict]:
-    """Split a flat event list into sessions on a gap of `session_gap` seconds."""
+    """Split events on gaps, without mixing contributors into one session."""
+    contributors: dict[str, list[dict]] = {}
+    for event in events:
+        contributor = str(event.get("contributor_id", "__unspecified__"))
+        contributors.setdefault(contributor, []).append(event)
+
     sessions: list[dict] = []
-    current: list[dict] = []
-    previous: float | None = None
-    for event in sorted(events, key=lambda e: float(e["t"])):
-        t = float(event["t"])
-        if previous is not None and (t - previous) > session_gap:
-            sessions.append({"events": current})
-            current = []
-        current.append(event)
-        previous = t
-    if current:
-        sessions.append({"events": current})
+    for contributor, contributor_events in sorted(contributors.items()):
+        current: list[dict] = []
+        previous: float | None = None
+        for event in sorted(contributor_events, key=lambda e: float(e["t"])):
+            t = float(event["t"])
+            if previous is not None and (t - previous) > session_gap:
+                session = {"events": current}
+                if contributor != "__unspecified__":
+                    session["contributor_id"] = contributor
+                sessions.append(session)
+                current = []
+            current.append(event)
+            previous = t
+        if current:
+            session = {"events": current}
+            if contributor != "__unspecified__":
+                session["contributor_id"] = contributor
+            sessions.append(session)
     return sessions
 
 
@@ -114,19 +143,24 @@ def to_corpus_sessions(sessions: list[dict], min_len: int, max_len: int) -> list
             continue
         delays = np.diff(times)
         # A session's delays are the gaps between consecutive sends.
-        delays = delays[(delays > 0) & (delays < 86400)]
+        valid = (delays > 0) & (delays < 86400)
+        delays = delays[valid]
+        # Keep the channel for the event after which each delay occurs.
+        channels = channels[:-1][valid]
         if len(delays) < min_len:
             continue
         if len(delays) > max_len:
             delays = delays[:max_len]
+            channels = channels[:max_len]
         hour = int(((times[0] % 86400) / 3600.0) % 24)
-        out.append(
-            {
-                "delays": [round(float(d), 3) for d in delays],
-                "channels": [int(c) for c in channels[: len(delays)]],
-                "time_of_day": hour,
-            }
-        )
+        record = {
+            "delays": [round(float(d), 3) for d in delays],
+            "channels": [int(c) for c in channels],
+            "time_of_day": hour,
+        }
+        if session.get("contributor_id") is not None:
+            record["contributor_id"] = str(session["contributor_id"])
+        out.append(record)
     return out
 
 

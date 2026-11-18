@@ -126,6 +126,8 @@ class DeepPacketInspectionWarden(nn.Module):
         dropout: float = 0.3,
         bounded_critic: bool = False,
         critic_score_bound: float = CRITIC_SCORE_BOUND,
+        scaled_features: bool = False,
+        ignore_channels: bool = False,
     ):
         super().__init__()
 
@@ -137,6 +139,8 @@ class DeepPacketInspectionWarden(nn.Module):
         self.bounded_critic = bounded_critic
         self.critic_score_bound = float(critic_score_bound)
         self.feature_dim = feature_dim
+        self.scaled_features = bool(scaled_features)
+        self.ignore_channels = bool(ignore_channels)
 
         # Channel embedding (learn channel-specific patterns)
         self.channel_embedding = nn.Embedding(num_channels, 32)
@@ -321,30 +325,89 @@ class DeepPacketInspectionWarden(nn.Module):
         else:
             autocorr = torch.zeros(batch_size, 1, device=delays.device)
 
-        # Median absolute deviation (robust measure of variability). Medians
-        # don't have a clean masked closed form, so fall back to the
-        # unmasked median when a mask is present but mostly-full (this
-        # feature is a minor robustness signal, not load-bearing).
-        median_delay = delays.median(dim=1, keepdim=True)[0]
-        mad = (delays - median_delay).abs().median(dim=1, keepdim=True)[0]
+        if self.scaled_features:
+            # Numerically stable, log/asinh-scaled moments + masked quantiles.
+            # Prevents heavy-tailed pauses (100-300s) from blowing up kurtosis
+            # and collapsing transformer attention during detector training.
+            safe_delays = delays.clamp(min=0.0)
+            medians = []
+            mads = []
+            q10s, q25s, q75s, q90s = [], [], [], []
+            q_levels = torch.tensor(
+                [0.10, 0.25, 0.50, 0.75, 0.90],
+                device=delays.device,
+                dtype=delays.dtype,
+            )
+            for row_idx in range(batch_size):
+                valid_vals = safe_delays[row_idx][mask[row_idx] > 0.5]
+                if valid_vals.numel() == 0:
+                    valid_vals = safe_delays[row_idx, :1]
+                qs = torch.quantile(valid_vals, q_levels)
+                med = qs[2]
+                mad_val = torch.median((valid_vals - med).abs())
+                q10s.append(qs[0])
+                q25s.append(qs[1])
+                medians.append(med)
+                q75s.append(qs[3])
+                q90s.append(qs[4])
+                mads.append(mad_val)
 
-        # Combine all features
-        features = torch.cat(
-            [
-                mean_delay,
-                std_delay,
-                min_delay,
-                max_delay,
-                cv,
-                skewness,
-                kurtosis,
-                delay_range,
-                autocorr,
-                median_delay,
-                mad,
-            ],
-            dim=1,
-        )
+            median_delay = torch.stack(medians).unsqueeze(1)
+            mad = torch.stack(mads).unsqueeze(1)
+            q10 = torch.stack(q10s).unsqueeze(1)
+            q25 = torch.stack(q25s).unsqueeze(1)
+            q75 = torch.stack(q75s).unsqueeze(1)
+            q90 = torch.stack(q90s).unsqueeze(1)
+            frac_long = ((safe_delays > 30.0).float() * mask).sum(
+                dim=1, keepdim=True
+            ) / valid_count
+
+            features = torch.cat(
+                [
+                    torch.log1p(mean_delay.clamp(min=0.0)),
+                    torch.log1p(std_delay.clamp(min=0.0)),
+                    torch.log1p(min_delay.clamp(min=0.0)),
+                    torch.log1p(max_delay.clamp(min=0.0)),
+                    cv.clamp(min=0.0, max=10.0),
+                    torch.asinh(skewness.clamp(min=-1e4, max=1e4)),
+                    torch.asinh(kurtosis.clamp(min=-1e4, max=1e4)),
+                    torch.log1p(delay_range.clamp(min=0.0)),
+                    autocorr.clamp(min=-1.0, max=1.0),
+                    torch.log1p(median_delay.clamp(min=0.0)),
+                    torch.log1p(mad.clamp(min=0.0)),
+                    torch.log1p(q10.clamp(min=0.0)),
+                    torch.log1p(q25.clamp(min=0.0)),
+                    torch.log1p(q75.clamp(min=0.0)),
+                    torch.log1p(q90.clamp(min=0.0)),
+                    frac_long,
+                ],
+                dim=1,
+            )
+        else:
+            # Median absolute deviation (robust measure of variability). Medians
+            # don't have a clean masked closed form, so fall back to the
+            # unmasked median when a mask is present but mostly-full (this
+            # feature is a minor robustness signal, not load-bearing).
+            median_delay = delays.median(dim=1, keepdim=True)[0]
+            mad = (delays - median_delay).abs().median(dim=1, keepdim=True)[0]
+
+            # Combine all features
+            features = torch.cat(
+                [
+                    mean_delay,
+                    std_delay,
+                    min_delay,
+                    max_delay,
+                    cv,
+                    skewness,
+                    kurtosis,
+                    delay_range,
+                    autocorr,
+                    median_delay,
+                    mad,
+                ],
+                dim=1,
+            )
 
         # Pad or truncate to feature_dim
         if features.size(1) < self.feature_dim:
@@ -419,8 +482,17 @@ class DeepPacketInspectionWarden(nn.Module):
 
         # Embed channels: hard indices via lookup, soft probabilities as a
         # weighted sum of embeddings (differentiable back to the generator's
-        # channel head).
-        if channel_ids.dtype in (torch.long, torch.int):
+        # channel head). When ignore_channels is set, emit zeros so timing-only
+        # detectors cannot exploit proxy channel labels.
+        if self.ignore_channels:
+            channel_embed = torch.zeros(
+                batch_size,
+                seq_len,
+                self.channel_embedding.embedding_dim,
+                device=delays.device,
+                dtype=delay_embed.dtype,
+            )
+        elif channel_ids.dtype in (torch.long, torch.int):
             channel_embed = self.channel_embedding(
                 channel_ids
             )  # (batch_size, seq_len, 32)

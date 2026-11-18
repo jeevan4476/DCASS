@@ -73,6 +73,49 @@ def select_threshold(
     return threshold, measured
 
 
+def select_threshold_by_group(
+    score_groups: dict[str, np.ndarray], target_fpr: float | dict[str, float] = 0.05
+) -> tuple[float, dict[str, float]]:
+    """Choose the lowest threshold meeting the FPR target in every group.
+
+    A pooled threshold can hide a high false-positive rate in a smaller
+    population. Candidate thresholds are drawn from observed scores and
+    checked against each group independently; a value just above the
+    selected score preserves the benchmark's inclusive ``score >=
+    threshold`` flag rule.
+    """
+    groups = {
+        name: np.asarray(values, dtype=np.float64)
+        for name, values in score_groups.items()
+        if np.asarray(values).size
+    }
+    if not groups:
+        raise ValueError("cannot calibrate a threshold without group scores")
+    targets = {
+        name: float(target_fpr.get(name, 0.0) if isinstance(target_fpr, dict) else target_fpr)
+        for name in groups
+    }
+    if any(not 0.0 <= value <= 1.0 for value in targets.values()):
+        raise ValueError("target_fpr values must be between 0 and 1")
+
+    all_scores = np.concatenate(list(groups.values()))
+    step = max(float(np.ptp(all_scores)), 1.0) * 1e-6
+    candidates = sorted(set(float(value) + step for value in all_scores))
+    candidates.append(float(all_scores.max()) + 2.0 * step)
+
+    for threshold in candidates:
+        rates = {
+            name: float(np.mean(scores >= threshold))
+            for name, scores in groups.items()
+        }
+        if all(rate <= targets[name] for name, rate in rates.items()):
+            return threshold, rates
+
+    # The max-plus-step candidate must produce zero false positives. Keep a
+    # defensive error if malformed numeric input ever violates that premise.
+    raise RuntimeError("failed to find a threshold satisfying all group FPR limits")
+
+
 def describe_threshold(human_scores: np.ndarray, target_fpr: float = 0.05) -> dict:
     """Select a threshold and report the distribution it was chosen from."""
     scores = np.asarray(human_scores, dtype=np.float64)
