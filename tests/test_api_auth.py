@@ -96,6 +96,29 @@ class TestUserCrud:
         assert auth.authenticate("carol", "wrong-password") is None
         assert auth.authenticate("nobody", "pw-carol-12") is None
 
+    def test_authenticate_has_no_hardcoded_password_backdoor(self, auth_db):
+        """Regression: the old fallback accepted 'password'/'password123'/
+        '<user>12345'/'<user>123' for ANY account and rewrote the stored
+        hash — a full password-takeover backdoor. It must stay removed."""
+        carol = auth.create_user("carol", "pw-carol-12")
+        hash_before = auth.get_user_by_username("carol").password_hash
+
+        for backdoor_pw in ("password", "password123", "carol12345", "carol123"):
+            assert auth.authenticate("carol", backdoor_pw) is None, backdoor_pw
+
+        # The stored hash must be untouched by the rejected attempts.
+        assert auth.get_user_by_username("carol").password_hash == hash_before
+        # The real password still works afterwards.
+        assert auth.authenticate("carol", "pw-carol-12").id == carol.id
+
+    def test_authenticate_does_not_auto_provision_demo_accounts(self, auth_db):
+        """Regression: login-time auto-provisioning of alice/bob/charlie let
+        any caller mint a demo account with a chosen password. Removed."""
+        assert auth.get_user_by_username("alice") is None
+        assert auth.authenticate("alice", "alice12345") is None
+        assert auth.authenticate("alice", "any-password-at-all") is None
+        assert auth.get_user_by_username("alice") is None
+
     def test_seed_demo_users_is_idempotent(self, auth_db, capsys):
         auth.seed_demo_users()
 
@@ -135,6 +158,25 @@ class TestJwt:
             clear=False,
         ):
             assert auth._jwt_secret() == "real-secret"
+
+    def test_secret_guard_normalizes_mixed_case_and_whitespace(self, monkeypatch):
+        """Regression: DCASS_ENV values like 'Production' or ' production '
+        used to bypass the production JWT-secret guard because the raw env
+        string was compared to 'production'. Normalization must close that."""
+        for value in ("Production", "PRODUCTION", " production ", "Production\n"):
+            with patch.dict(os.environ, {"DCASS_ENV": value}, clear=False):
+                with pytest.raises(RuntimeError, match="DCASS_JWT_SECRET must be set"):
+                    auth._jwt_secret()
+
+        # A set secret still wins, and non-production values still use dev.
+        with patch.dict(
+            os.environ,
+            {"DCASS_ENV": "Production", "DCASS_JWT_SECRET": "real-secret"},
+            clear=False,
+        ):
+            assert auth._jwt_secret() == "real-secret"
+        with patch.dict(os.environ, {"DCASS_ENV": "development"}, clear=False):
+            assert "DO-NOT-USE-IN-PRODUCTION" in auth._jwt_secret()
 
     def test_dev_secret_marker(self, auth_db):
         assert "DO-NOT-USE-IN-PRODUCTION" in auth._jwt_secret()

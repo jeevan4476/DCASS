@@ -244,5 +244,118 @@ class TestContextualCodecRoundtrip:
         ]
 
 
+class TestExternalSourceDeterminism:
+    """Epoch hints carrying external (non-"time") source material must resolve
+    deterministically WITHOUT re-fetching the external source."""
+
+    def _mgr(self, fetcher):
+        return ContextKeyManager(
+            bucket_seconds=3600,
+            sources=("time", "coingecko"),
+            _source_fetchers={"coingecko": fetcher},
+        )
+
+    def test_epoch_id_carries_inline_materials_and_resolves_without_refetch(self):
+        calls = []
+
+        def fetcher(timeout):
+            calls.append(timeout)
+            # Value changes on EVERY call (crosses $100 buckets): a re-fetch
+            # during resolve would return a different bucket than encode-time.
+            return f"btc_usd_{100 * len(calls)}"
+
+        mgr = self._mgr(fetcher)
+        epoch = mgr.epoch_at(1_750_000_000.0)
+        assert len(calls) == 1
+        assert epoch.source_materials["coingecko"] == "btc_usd_100"
+        # A non-"time" source contributed material -> 4th "|" field present.
+        assert epoch.epoch_id.count("|") == 3
+        assert "coingecko=btc_usd_100" in epoch.epoch_id
+
+        resolved = mgr.resolve_epoch_hint(epoch.epoch_id)
+        assert len(calls) == 1, "resolve_epoch_hint must NOT re-fetch external sources"
+        assert resolved.source_materials["coingecko"] == "btc_usd_100"
+        assert resolved.epoch_id == epoch.epoch_id
+        np.testing.assert_array_equal(
+            mgr.derive_permutation(resolved), mgr.derive_permutation(epoch)
+        )
+
+    def test_legacy_three_part_hint_still_refetches_external_source(self):
+        calls = []
+
+        def fetcher(timeout):
+            calls.append(timeout)
+            return "btc_usd_650"
+
+        mgr = self._mgr(fetcher)
+        resolved = mgr.resolve_epoch_hint("1750000000|3600|time,coingecko")
+        assert len(calls) == 1, "legacy 3-part hints re-fetch the named source"
+        assert resolved.source_materials["coingecko"] == "btc_usd_650"
+        # And the resolved epoch re-serializes with inline materials.
+        again = mgr.resolve_epoch_hint(resolved.epoch_id)
+        assert len(calls) == 1
+        assert again.source_materials["coingecko"] == "btc_usd_650"
+
+    def test_time_only_epoch_id_unchanged_three_parts(self):
+        mgr = ContextKeyManager(bucket_seconds=3600)
+        epoch = mgr.epoch_at(1_750_000_000.0)
+        base = int(1_750_000_000 // 3600) * 3600
+        assert epoch.epoch_id == f"{base}|3600|time"
+
+    def test_candidate_epochs_fetches_external_source_once(self):
+        calls = []
+
+        def fetcher(timeout):
+            calls.append(timeout)
+            return "btc_usd_650"
+
+        mgr = self._mgr(fetcher)
+        base = int(1_750_000_000 // 3600) * 3600
+        epochs = mgr.candidate_epochs(1_750_000_000.0, tolerance_buckets=1)
+        assert len(calls) == 1, "fetcher must run once per call, not once per offset epoch"
+        assert len(epochs) == 3
+        assert {e.bucket_start for e in epochs} == {base - 3600, base, base + 3600}
+        # Every offset epoch reuses the SAME fetched material.
+        assert len({e.source_materials.get("coingecko") for e in epochs}) == 1
+
+    def test_resolve_hint_rejects_inline_material_for_unlisted_source(self):
+        mgr = self._mgr(lambda timeout: "btc_usd_650")
+        with pytest.raises(ValueError):
+            mgr.resolve_epoch_hint("1750000000|3600|time|coingecko=btc_usd_650")
+
+
+class TestDomainSeparatedKeys:
+    """Fix: permutation and frame-HMAC keys must be domain-separated subkeys."""
+
+    def test_derived_subkeys_are_distinct_and_not_raw_secret(self):
+        import hashlib
+        import hmac
+
+        mgr = ContextKeyManager(bucket_seconds=3600, secret=b"hunter2")
+        perm_key = mgr.derive_permutation_key()
+        frame_secret = mgr.derive_frame_secret()
+        assert isinstance(perm_key, bytes) and isinstance(frame_secret, bytes)
+        assert perm_key == hmac.new(
+            b"hunter2", b"dcass:v1:context-permutation", hashlib.sha256
+        ).digest()
+        assert frame_secret == hmac.new(
+            b"hunter2", b"dcass:v1:frame-hmac", hashlib.sha256
+        ).digest()
+        assert perm_key != frame_secret
+        assert perm_key != mgr.secret
+        assert frame_secret != mgr.secret
+        # Raw secret is untouched (tests read .secret).
+        assert mgr.secret == b"hunter2"
+        # Deterministic across instances.
+        mgr2 = ContextKeyManager(bucket_seconds=3600, secret=b"hunter2")
+        assert mgr2.derive_permutation_key() == perm_key
+        assert mgr2.derive_frame_secret() == frame_secret
+
+    def test_no_secret_returns_none(self):
+        mgr = ContextKeyManager(bucket_seconds=3600)
+        assert mgr.derive_permutation_key() is None
+        assert mgr.derive_frame_secret() is None
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -15,17 +15,19 @@ import hashlib
 import hmac
 import math
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Literal
 
 from src.corpus.index.unified_index import UnifiedSemanticIndex, Modality
 from src.engine.dssc_state_space import (
     DSSCStateSpace,
+    MODALITY_FAMILY_MAP,
     SemanticFamilyManager,
+    adaptive_ecc_parity,
     derive_session_permutation,
 )
 from src.engine.vcp_payload import VCPPayloadMapper
 from src.engine.ecc import RSErrorCorrection
-from src.engine.payload_framing import unframe_payload, FrameError
+from src.engine.payload_framing import HEADER_LEN, unframe_payload, FrameError
 
 
 @dataclass
@@ -80,10 +82,12 @@ class DSSCDecoder:
 
     def decode(
         self,
-        carrier_ids: list[str],
+        carrier_ids: list[Optional[str]],
         session_key: bytes,
-        ecc_parity_bytes: int = 8,
+        ecc_parity_bytes: Optional[int] = 8,
         modalities: list[Modality] = None,
+        diversity_mode: Literal["best", "round_robin", "balanced"] = "round_robin",
+        erasure_positions: Optional[list[int]] = None,
     ) -> DSSCDecodingResult:
         if not carrier_ids:
             return DSSCDecodingResult(
@@ -92,6 +96,16 @@ class DSSCDecoder:
                 success=False,
                 verification_rate=0.0,
             )
+
+        erased_carriers: set[int] = set()
+        if erasure_positions:
+            for pos in erasure_positions:
+                idx = int(pos)
+                if 0 <= idx < len(carrier_ids):
+                    erased_carriers.add(idx)
+        for idx, cid in enumerate(carrier_ids):
+            if cid is None or cid == "":
+                erased_carriers.add(idx)
 
         # 1. Collect identical canonical candidate pool from index
         all_ids_by_modality: dict[Modality, list[str]] = {}
@@ -119,25 +133,31 @@ class DSSCDecoder:
         if not available_modalities:
             available_modalities = ["image"]
 
-        # Modality-conditioned family mapping (2 families per modality)
-        # This ensures each modality only picks from its native semantic families
-        MODALITY_FAMILY_MAP: dict[Modality, list[str]] = {
-            "image": ["nature_outdoor", "urban_architecture"],
-            "text":  ["people_interaction", "objects_indoor"],
-            "audio": ["technology_science", "sound_atmosphere"],
-        }
+        # MODALITY_FAMILY_MAP is imported from dssc_state_space (single source
+        # of truth shared with the encoder) so the mapping can never diverge.
 
         bit_writer = BitStreamWriter()
+        erased_byte_positions: set[int] = set()
+        # Total bits appended BEFORE the final carrier (0 when M <= 1). Used
+        # below to bound the true codeword byte length L against phantom
+        # trailing zero-padding bytes (see the phantom-byte guard).
+        prev_bit_count = 0
 
         verified_count = 0
 
         candidate_pool_cache: dict[tuple[str, str], list[str]] = {}
+        modality_usage: dict[str, int] = {m: 0 for m in available_modalities}
+        normalized_carrier_ids: list[str] = []
 
         for chunk_idx, carrier_id in enumerate(carrier_ids):
-            # Check if item exists in corpus
-            item = self.index.get_by_id(carrier_id)
-            if item is not None:
-                verified_count += 1
+            is_erased = chunk_idx in erased_carriers
+            normalized_carrier_ids.append(carrier_id if carrier_id else "[DROPPED]")
+
+            # Check if item exists in corpus (dropped slots do not count as verified)
+            if not is_erased and carrier_id:
+                item = self.index.get_by_id(carrier_id)
+                if item is not None:
+                    verified_count += 1
 
             # Deterministic, HMAC-keyed family selection (identically matches encoder logic)
             family_digest = hmac.new(
@@ -146,8 +166,20 @@ class DSSCDecoder:
                 hashlib.sha256,
             ).digest()
 
-            # Modality balancing: deterministic round-robin across available modalities
-            modality_for_chunk = available_modalities[chunk_idx % len(available_modalities)]
+            # Modality selection governed by diversity_mode (matches encoder)
+            if diversity_mode == "round_robin":
+                modality_for_chunk = available_modalities[chunk_idx % len(available_modalities)]
+            elif diversity_mode == "balanced":
+                modality_for_chunk = min(
+                    available_modalities,
+                    key=lambda m: (modality_usage.get(m, 0), available_modalities.index(m)),
+                )
+            elif diversity_mode == "best":
+                modality_for_chunk = available_modalities[0]
+            else:
+                modality_for_chunk = available_modalities[chunk_idx % len(available_modalities)]
+
+            modality_usage[modality_for_chunk] = modality_usage.get(modality_for_chunk, 0) + 1
             modality_ids = all_ids_by_modality.get(modality_for_chunk, [])
 
             # Modality-conditioned family selection: pick from families native to this modality
@@ -181,71 +213,159 @@ class DSSCDecoder:
             candidates = candidate_pool_cache[cache_key]
 
             bits_per_carrier = max(2, min(16, int(math.floor(math.log2(len(candidates))))))
-            perm = derive_session_permutation(
-                len(candidates),
-                session_key,
-                context_salt=f"dssc:{chunk_idx}:{primary_family.name}",
-            )
+            bit_start = len(bit_writer.bits)
+            prev_bit_count = bit_start
 
-            state_space = DSSCStateSpace(
-                chunk_index=chunk_idx,
-                family_name=primary_family.name,
-                candidate_media_ids=candidates,
-                permuted_indices=perm,
-                bits_per_carrier=bits_per_carrier,
-            )
-
-            symbol = state_space.media_id_to_symbol(carrier_id)
-            if symbol is None:
-                # Symbol error / missing carrier
+            if is_erased:
                 symbol = 0
+                bit_end = bit_start + bits_per_carrier - 1
+                for byte_idx in range(bit_start // 8, (bit_end // 8) + 1):
+                    erased_byte_positions.add(byte_idx)
+            else:
+                perm = derive_session_permutation(
+                    len(candidates),
+                    session_key,
+                    context_salt=f"dssc:{chunk_idx}:{primary_family.name}",
+                )
+
+                state_space = DSSCStateSpace(
+                    chunk_index=chunk_idx,
+                    family_name=primary_family.name,
+                    candidate_media_ids=candidates,
+                    permuted_indices=perm,
+                    bits_per_carrier=bits_per_carrier,
+                )
+
+                symbol = state_space.media_id_to_symbol(carrier_id)
+                if symbol is None:
+                    # Symbol error / missing carrier
+                    symbol = 0
 
             bit_writer.append_bits(symbol, bits_per_carrier)
 
-        codeword = bit_writer.to_bytes()
-        if ecc_parity_bytes > 0:
-            rs = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
-            fixed_errors = []
-            data, ok, fixed = rs.decode_bytes(codeword)
-            if ok:
-                fixed_errors = fixed
-        else:
-            data = codeword
-            ok = True
-            fixed_errors = []
-
-        reconstructed_text = None
-        success = False
-        if ok:
-            try:
-                # unframe_payload validates the CRC-16 integrity frame. DSSC
-                # frames are NOT HMAC-authenticated: the encoder calls
-                # frame_payload(message) without a secret deliberately, to
-                # avoid the 32-byte HMAC tag. The session key protects the
-                # carrier state-space permutation, not these frame bytes, so
-                # no secret belongs here.
-                #
-                # When ECC is enabled, the encoder always emits a framed
-                # payload. A missing frame marker after RS decode therefore
-                # means the codeword is corrupt, not that it is a legacy raw
-                # message. Requiring the frame prevents deletion or symbol
-                # corruption from being accepted as a successful decode.
-                reconstructed_text, was_framed = unframe_payload(
-                    data,
-                    require_framed=ecc_parity_bytes > 0,
-                )
-                success = was_framed or ecc_parity_bytes == 0
-            except FrameError:
-                # Corruption beyond RS capacity
-                success = False
-
+        total_bits = len(bit_writer.bits)
+        raw_bytes = bit_writer.to_bytes()
+        max_len = len(raw_bytes)
         ver_rate = verified_count / len(carrier_ids) if carrier_ids else 0.0
+        fallback_parity = ecc_parity_bytes if ecc_parity_bytes is not None else 0
+
+        if max_len == 0:
+            # Fail closed: no codeword bytes at all.
+            return DSSCDecodingResult(
+                media_ids=normalized_carrier_ids,
+                reconstructed_message=None,
+                success=False,
+                ecc_fixed_errors=[],
+                raw_payload_bytes=[],
+                total_bits_recovered=total_bits,
+                parity_bytes=fallback_parity,
+                verification_rate=ver_rate,
+            )
+
+        # Phantom-byte guard (bits_per_carrier > 8): BitStreamReader-style
+        # zero-padding means the final carrier can append >= 8 padding bits,
+        # which makes BitStreamWriter.to_bytes() emit an extra trailing 0x00
+        # byte at index L beyond the encoded RS codeword length L. The encoder
+        # stops at `while bitstream.has_bits`, so the true codeword byte length
+        # L must satisfy prev_bit_count < 8 * L <= total_bits, i.e.
+        # L in [min_len, max_len] with min_len = min(max_len, prev_bit_count//8 + 1)
+        # (at most 2 candidate lengths for bpc <= 16). Candidates are tried
+        # shortest first, so the true L is preferred over the phantom L + 1.
+        min_len = min(max_len, (prev_bit_count // 8) + 1)
+        candidate_lengths = list(range(min_len, max_len + 1))
+
+        reconstructed_text: Optional[str] = None
+        success = False
+        fixed_errors: list[int] = []
+        accepted_codeword = raw_bytes[:min_len]
+        accepted_parity = fallback_parity
+
+        for cand_len in candidate_lengths:
+            cw_cand = raw_bytes[:cand_len]
+            sorted_byte_erasures = sorted(
+                b for b in erased_byte_positions if 0 <= b < cand_len
+            )
+            if ecc_parity_bytes is not None:
+                cand_parities = [ecc_parity_bytes]
+            else:
+                # Adaptive parity (encoder called with ecc_parity_bytes=None):
+                # infer every R for which some framed length L_framed >= HEADER_LEN
+                # satisfies L_framed + adaptive_ecc_parity(L_framed) == cand_len.
+                cand_parities = sorted(
+                    {
+                        cand_len - l_framed
+                        for l_framed in range(HEADER_LEN, cand_len)
+                        if l_framed + adaptive_ecc_parity(l_framed) == cand_len
+                    }
+                )
+            for cand_parity in cand_parities:
+                if cand_parity > 0:
+                    rs = RSErrorCorrection(parity_bytes=cand_parity)
+                    if sorted_byte_erasures:
+                        data, ok, fixed = rs.decode_bytes(
+                            cw_cand, erase_pos=sorted_byte_erasures
+                        )
+                    else:
+                        data, ok, fixed = rs.decode_bytes(cw_cand)
+                    if not ok:
+                        continue
+                else:
+                    data = cw_cand
+                    fixed = []
+                try:
+                    # unframe_payload validates the CRC-16 integrity frame. DSSC
+                    # frames are NOT HMAC-authenticated: the encoder calls
+                    # frame_payload(message) without a secret deliberately, to
+                    # avoid the 32-byte HMAC tag. The session key protects the
+                    # carrier state-space permutation, not these frame bytes, so
+                    # no secret belongs here.
+                    #
+                    # The encoder ALWAYS emits a CRC-16 frame regardless of
+                    # ecc_parity_bytes, so framing is always required here: a
+                    # missing/bad frame means a wrong session key or corruption
+                    # beyond repair, and the decode must fail closed (never fall
+                    # back to accepting raw garbage as the message).
+                    text, was_framed = unframe_payload(data, require_framed=True)
+                except FrameError:
+                    # Wrong key / corruption beyond RS capacity
+                    continue
+                # The DSSC encoder never appends trailing padding after
+                # frame_payload(message), so the framed length must match the
+                # decoded text length EXACTLY. This uniquely rejects the phantom
+                # L + 1 candidate (whose extra 0x00 byte would leave
+                # len(data) == HEADER_LEN + len(text) + 1).
+                if not was_framed or len(data) != HEADER_LEN + len(text.encode("utf-8")):
+                    continue
+                reconstructed_text = text
+                success = True
+                fixed_errors = fixed
+                accepted_codeword = cw_cand
+                accepted_parity = cand_parity
+                break
+            if success:
+                break
+
+        if not success:
+            # No candidate length/parity produced a valid CRC frame: fail
+            # closed, reporting only the minimal (true-length) raw bytes.
+            return DSSCDecodingResult(
+                media_ids=normalized_carrier_ids,
+                reconstructed_message=None,
+                success=False,
+                ecc_fixed_errors=[],
+                raw_payload_bytes=list(raw_bytes[:min_len]),
+                total_bits_recovered=total_bits,
+                parity_bytes=fallback_parity,
+                verification_rate=ver_rate,
+            )
 
         return DSSCDecodingResult(
-            media_ids=carrier_ids,
+            media_ids=normalized_carrier_ids,
             reconstructed_message=reconstructed_text,
             success=success,
             ecc_fixed_errors=fixed_errors,
-            total_bits_recovered=len(bit_writer.bits),
+            raw_payload_bytes=list(accepted_codeword),
+            total_bits_recovered=total_bits,
+            parity_bytes=accepted_parity,
             verification_rate=ver_rate,
         )

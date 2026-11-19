@@ -15,13 +15,15 @@ import hashlib
 import hmac
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Literal
 
 from src.corpus.index.unified_index import UnifiedSemanticIndex, MediaItem, Modality
 from src.engine.chunker import SemanticChunker, SemanticChunk
 from src.engine.dssc_state_space import (
     DSSCStateSpace,
+    MODALITY_FAMILY_MAP,
     SemanticFamilyManager,
+    adaptive_ecc_parity,
     derive_session_permutation,
 )
 from src.engine.vcp_payload import VCPPayloadMapper
@@ -115,8 +117,9 @@ class DSSCEncoder:
         self,
         message: str,
         session_key: bytes,
-        ecc_parity_bytes: int | None = None,
+        ecc_parity_bytes: Optional[int] = 8,
         modalities: list[Modality] = None,
+        diversity_mode: Literal["best", "round_robin", "balanced"] = "round_robin",
     ) -> DSSCEncodingResult:
         if not message:
             raise ValueError("Message cannot be empty")
@@ -127,12 +130,15 @@ class DSSCEncoder:
         # Use standard CRC-16 framing (version 0x01, 5-byte header) to avoid redundant 32-byte HMAC tag
         framed = frame_payload(message)
 
-        # Adaptive ECC: scale parity bytes to ~12% of framed payload length
-        # t = ceil(0.06 * L), parity = 2t, clamped to even [4, 254]
+        # Default parity is 8 on both the encoder and the decoder, so direct
+        # default calls match for messages of any length. Passing
+        # ecc_parity_bytes=None explicitly opts into adaptive parity scaled to
+        # ~12% of the framed payload length (t = ceil(0.06 * L), parity = 2t,
+        # clamped to even [4, 254]); the decoder infers the same R.
         framed_len = len(framed)
-        adaptive_parity = 2 * max(2, min(127, math.ceil(0.06 * framed_len)))
-        # Use provided ecc_parity_bytes if explicitly set, else adaptive
-        effective_parity = ecc_parity_bytes if ecc_parity_bytes is not None else adaptive_parity
+        effective_parity = (
+            ecc_parity_bytes if ecc_parity_bytes is not None else adaptive_ecc_parity(framed_len)
+        )
 
         if effective_parity > 0:
             rs = RSErrorCorrection(parity_bytes=effective_parity)
@@ -176,18 +182,14 @@ class DSSCEncoder:
         if not available_modalities:
             available_modalities = ["image"]
 
-        # Modality-conditioned family mapping (2 families per modality)
-        # This ensures each modality only picks from its native semantic families
-        MODALITY_FAMILY_MAP: dict[Modality, list[str]] = {
-            "image": ["nature_outdoor", "urban_architecture"],
-            "text":  ["people_interaction", "objects_indoor"],
-            "audio": ["technology_science", "sound_atmosphere"],
-        }
+        # MODALITY_FAMILY_MAP is imported from dssc_state_space (single source
+        # of truth shared with the decoder) so the mapping can never diverge.
 
         encoded_carriers: list[DSSCEncodedCarrier] = []
         chunk_idx = 0
 
         candidate_pool_cache: dict[tuple[str, str], list[str]] = {}
+        modality_usage: dict[str, int] = {m: 0 for m in available_modalities}
 
         while bitstream.has_bits:
             # Deterministic, HMAC-keyed family selection (topic-safe: never derives from message text)
@@ -197,8 +199,20 @@ class DSSCEncoder:
                 hashlib.sha256,
             ).digest()
 
-            # Modality balancing: deterministic round-robin across available modalities
-            modality_for_chunk = available_modalities[chunk_idx % len(available_modalities)]
+            # Modality selection governed by diversity_mode
+            if diversity_mode == "round_robin":
+                modality_for_chunk = available_modalities[chunk_idx % len(available_modalities)]
+            elif diversity_mode == "balanced":
+                modality_for_chunk = min(
+                    available_modalities,
+                    key=lambda m: (modality_usage.get(m, 0), available_modalities.index(m)),
+                )
+            elif diversity_mode == "best":
+                modality_for_chunk = available_modalities[0]
+            else:
+                modality_for_chunk = available_modalities[chunk_idx % len(available_modalities)]
+
+            modality_usage[modality_for_chunk] = modality_usage.get(modality_for_chunk, 0) + 1
             modality_ids = all_ids_by_modality.get(modality_for_chunk, [])
 
             # Modality-conditioned family selection: pick from families native to this modality

@@ -51,8 +51,26 @@ class ContextEpoch:
 
     @property
     def epoch_id(self) -> str:
-        """Canonical, shareable identifier for this epoch."""
-        return f"{self.bucket_start}|{self.bucket_seconds}|{','.join(self.sources)}"
+        """Canonical, shareable identifier for this epoch.
+
+        The first three fields are always
+        ``bucket_start|bucket_seconds|sources`` (unchanged for backward
+        compatibility). When any non-"time" source actually contributed
+        material, a 4th ``|``-field carries the sorted ``name=value`` pairs
+        (e.g. ``...|coingecko=btc_usd_650``), so a receiver can resolve this
+        exact epoch deterministically WITHOUT re-fetching the external source
+        (whose live value may have moved to another bucket since encode time).
+        """
+        base = f"{self.bucket_start}|{self.bucket_seconds}|{','.join(self.sources)}"
+        external = {
+            name: value
+            for name, value in self.source_materials.items()
+            if name != "time" and value not in (None, "")
+        }
+        if not external:
+            return base
+        materials_field = ",".join(f"{k}={v}" for k, v in sorted(external.items()))
+        return f"{base}|{materials_field}"
 
     def canonical_material(self, secret: Optional[bytes]) -> bytes:
         """Canonical bytes fed into the KDF."""
@@ -134,10 +152,13 @@ class ContextKeyManager:
     # Epoch handling
     # ------------------------------------------------------------------
 
-    def epoch_at(self, timestamp: float) -> ContextEpoch:
-        """Derive the epoch containing *timestamp*."""
-        bucket_start = int(timestamp // self.bucket_seconds) * self.bucket_seconds
-        materials: dict[str, str] = {"time": str(bucket_start)}
+    def _fetch_external_materials(self) -> dict[str, str]:
+        """Fetch all non-"time" source materials once.
+
+        Any fetch failure degrades gracefully (the source is simply absent)
+        rather than failing the channel.
+        """
+        materials: dict[str, str] = {}
         for name in self.sources:
             if name == "time":
                 continue
@@ -152,6 +173,13 @@ class ContextKeyManager:
                     f"[ContextKeyManager] source '{name}' unavailable ({e}); "
                     "deriving from remaining sources"
                 )
+        return materials
+
+    def epoch_at(self, timestamp: float) -> ContextEpoch:
+        """Derive the epoch containing *timestamp*."""
+        bucket_start = int(timestamp // self.bucket_seconds) * self.bucket_seconds
+        materials: dict[str, str] = {"time": str(bucket_start)}
+        materials.update(self._fetch_external_materials())
         return ContextEpoch(
             bucket_start=bucket_start,
             bucket_seconds=self.bucket_seconds,
@@ -168,10 +196,26 @@ class ContextKeyManager:
         Epochs to attempt when decoding, ordered most-likely first.
 
         Covers clock skew and packets sent just before a bucket boundary.
+        External (non-"time") source materials are fetched ONCE and reused
+        for every offset epoch, so a slowly-varying public signal cannot
+        change mid-search and the fetcher is invoked exactly once per call.
         """
-        base = self.epoch_at(timestamp).bucket_start
+        base = int(timestamp // self.bucket_seconds) * self.bucket_seconds
+        external_materials = self._fetch_external_materials()
         offsets = [0] + [d for k in range(1, tolerance_buckets + 1) for d in (k, -k)]
-        epochs = [self.epoch_at(base + d * self.bucket_seconds) for d in offsets]
+        epochs = []
+        for d in offsets:
+            bucket_start = base + d * self.bucket_seconds
+            materials: dict[str, str] = {"time": str(bucket_start)}
+            materials.update(external_materials)
+            epochs.append(
+                ContextEpoch(
+                    bucket_start=bucket_start,
+                    bucket_seconds=self.bucket_seconds,
+                    sources=self.sources,
+                    source_materials=materials,
+                )
+            )
         # Deduplicate preserving order
         seen = set()
         unique = []
@@ -185,13 +229,22 @@ class ContextKeyManager:
         """
         Parse an encode-side epoch_id and rebuild a ContextEpoch.
 
-        External sources listed in the hint are re-fetched (not left empty),
-        so keyed material matches a live encode for the same wall-clock window.
+        When the hint carries a 4th field with inline ``name=value`` source
+        materials (produced by :attr:`ContextEpoch.epoch_id` when external
+        sources contributed), those materials are parsed directly and the
+        external sources are NOT re-fetched — the encode-time material is
+        recovered deterministically even if the live value has since moved to
+        another bucket. Legacy 3-part hints name external sources without
+        inline materials; those are re-fetched so keyed material matches a
+        live encode for the same wall-clock window.
         Raises ValueError on malformed hints or unknown sources.
         """
         if not hint or not isinstance(hint, str):
             raise ValueError("context_epoch_hint must be a non-empty string")
-        parts = hint.split("|")
+        # maxsplit=3: a 4th field may carry the inline materials; source
+        # values themselves must not contain "|" (they are URL/filename-safe
+        # tokens like "btc_usd_650").
+        parts = hint.split("|", 3)
         if len(parts) < 2:
             raise ValueError(
                 "context_epoch_hint must be 'bucket_start|bucket_seconds' "
@@ -216,9 +269,31 @@ class ContextKeyManager:
         if unknown:
             raise ValueError(f"Unknown context sources in hint: {unknown}")
 
+        # Parse inline "name=value" materials from a 4th field, if present.
+        inline_materials: dict[str, str] = {}
+        if len(parts) == 4 and parts[3].strip():
+            for entry in parts[3].split(","):
+                entry = entry.strip()
+                if not entry:
+                    continue
+                name, sep, value = entry.partition("=")
+                if not sep or not name:
+                    raise ValueError(
+                        f"malformed inline source material {entry!r} in epoch hint"
+                    )
+                if name == "time" or name not in sources:
+                    raise ValueError(
+                        f"inline material for unknown/not-listed source '{name}' in epoch hint"
+                    )
+                inline_materials[name] = value
+
         materials: dict[str, str] = {"time": str(bucket_start)}
         for name in sources:
             if name == "time":
+                continue
+            if name in inline_materials:
+                # Deterministic: use the encode-time material, do NOT re-fetch.
+                materials[name] = inline_materials[name]
                 continue
             fetcher = self._source_fetchers.get(name)
             if fetcher is None:
@@ -238,6 +313,34 @@ class ContextKeyManager:
         )
 
     # ------------------------------------------------------------------
+    # Domain-separated key derivation
+    # ------------------------------------------------------------------
+
+    def derive_permutation_key(self) -> Optional[bytes]:
+        """Domain-separated subkey for the cluster-permutation KDF.
+
+        HMAC-SHA256(secret, "dcass:v1:context-permutation"). Returns None when
+        no secret is configured (time-bucket obfuscation only). Distinct from
+        the frame-HMAC subkey so the two uses can never be cross-protocol
+        confused.
+        """
+        if self.secret is None:
+            return None
+        return hmac.new(self.secret, b"dcass:v1:context-permutation", hashlib.sha256).digest()
+
+    def derive_frame_secret(self) -> Optional[bytes]:
+        """Domain-separated subkey for payload frame authentication.
+
+        HMAC-SHA256(secret, "dcass:v1:frame-hmac"). Used as the HMAC secret in
+        the version-0x02 frame (see payload_framing) instead of the raw shared
+        secret, so the frame tag and the permutation seed are cryptographically
+        independent. Returns None when no secret is configured.
+        """
+        if self.secret is None:
+            return None
+        return hmac.new(self.secret, b"dcass:v1:frame-hmac", hashlib.sha256).digest()
+
+    # ------------------------------------------------------------------
     # Permutation derivation
     # ------------------------------------------------------------------
 
@@ -247,9 +350,11 @@ class ContextKeyManager:
         cluster P[b].
 
         Uses the full SHA-256 digest as a NumPy SeedSequence (256 bits of
-        entropy), not a truncated 64-bit integer seed.
+        entropy), not a truncated 64-bit integer seed. When a secret is set,
+        the KDF is keyed with the domain-separated permutation subkey
+        (:meth:`derive_permutation_key`), never the raw secret.
         """
-        seed_bytes = epoch.canonical_material(self.secret)
+        seed_bytes = epoch.canonical_material(self.derive_permutation_key())
         digest = hashlib.sha256(seed_bytes).digest()
         # SeedSequence consumes a sequence of uint32; use all 32 digest bytes.
         seed_seq = np.random.SeedSequence(

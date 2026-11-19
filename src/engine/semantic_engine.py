@@ -197,6 +197,7 @@ class SemanticEngine:
                 session_key=session_key,
                 ecc_parity_bytes=effective_parity,
                 modalities=modalities,
+                diversity_mode=diversity_mode,
             )
             avg_bits = result.bits_per_carrier_avg
             return UnifiedEncodingResult(
@@ -218,7 +219,7 @@ class SemanticEngine:
     # ------------------------------------------------------------------
     def decode(
         self,
-        media_ids: list[str],
+        media_ids: list[Optional[str]],
         mode: EngineMode = "exact_vcp",
         session_key: bytes = None,
         modalities: list[Modality] = None,
@@ -226,6 +227,8 @@ class SemanticEngine:
         ecc_parity_bytes: int = 8,
         context_manager=None,
         context_epoch_hint: str = None,
+        diversity_mode: DiversityMode = "best",
+        erasure_positions: Optional[list[int]] = None,
     ) -> UnifiedDecodingResult:
         if not self._loaded:
             raise RuntimeError("Engine not loaded. Call load() first.")
@@ -239,6 +242,7 @@ class SemanticEngine:
                 ecc_parity_bytes=ecc_parity_bytes,
                 context_manager=context_manager,
                 context_epoch_hint=context_epoch_hint,
+                erasure_positions=erasure_positions,
             )
             return UnifiedDecodingResult(
                 mode="exact_vcp",
@@ -271,6 +275,8 @@ class SemanticEngine:
                 session_key=session_key,
                 ecc_parity_bytes=effective_parity,
                 modalities=modalities,
+                diversity_mode=diversity_mode,
+                erasure_positions=erasure_positions,
             )
             return UnifiedDecodingResult(
                 mode="dssc",

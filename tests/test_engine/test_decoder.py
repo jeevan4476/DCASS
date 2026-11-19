@@ -319,6 +319,10 @@ class TestExactVCPDecoding:
         secret_text = "Keyed secret"
         mock_ctx = Mock()
         mock_ctx.secret = b"ctx_secret_32b_length_exactly_32"
+        # Real ContextKeyManager derives a domain-separated frame subkey
+        # (dcass:v1:frame-hmac); this mock pins it to the raw secret so the
+        # hand-built HMAC frame below matches what the decoder verifies.
+        mock_ctx.derive_frame_secret.return_value = mock_ctx.secret
 
         epoch = Mock()
         epoch.epoch_id = "2026-09-02T08:00:00Z"

@@ -11,9 +11,33 @@ Implements the Dynamic Semantic State-Space Coding (DSSC) state space:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Optional
 import numpy as np
+
+
+def adaptive_ecc_parity(framed_len: int) -> int:
+    """Adaptive RS parity for a framed payload of *framed_len* bytes.
+
+    Scales parity to ~12% of the framed length: t = ceil(0.06 * L),
+    parity = 2t, clamped to an even value in [4, 254]. Shared by the DSSC
+    encoder (opt-in via ``ecc_parity_bytes=None``) and the decoder (which
+    infers candidate parity values for ``ecc_parity_bytes=None``), so both
+    sides derive exactly the same R for any message length.
+    """
+    return 2 * max(2, min(127, math.ceil(0.06 * framed_len)))
+
+
+# Modality-conditioned family mapping (2 families per modality). This is the
+# SINGLE SOURCE OF TRUTH: DSSCEncoder and DSSCDecoder both import this map so
+# their modality -> native semantic family resolution can never diverge.
+# Each modality only picks from its native semantic families.
+MODALITY_FAMILY_MAP: dict[str, list[str]] = {
+    "image": ["nature_outdoor", "urban_architecture"],
+    "text": ["people_interaction", "objects_indoor"],
+    "audio": ["technology_science", "sound_atmosphere"],
+}
 
 
 @dataclass
@@ -104,9 +128,12 @@ def derive_session_permutation(num_candidates: int, session_key: bytes, context_
         hashlib.sha256,
     ).digest()
 
-    # Use NumPy's PCG64 DRBG for fast, deterministic permutation
-    seed = int.from_bytes(seed_material[:8], "big")
-    rng = np.random.default_rng(seed)
+    # Use NumPy's PCG64 DRBG for fast, deterministic permutation, seeded
+    # with the FULL 256-bit digest via SeedSequence (all 32 bytes as eight
+    # uint32 words — matching ContextKeyManager.derive_permutation). The old
+    # 64-bit truncated seed threw away 192 bits of key entropy.
+    seed_words = [int.from_bytes(seed_material[i : i + 4], "big") for i in range(0, 32, 4)]
+    rng = np.random.default_rng(np.random.SeedSequence(seed_words))
     return rng.permutation(num_candidates)
 
 

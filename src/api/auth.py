@@ -35,6 +35,16 @@ JWT_ALGORITHM = "HS256"
 DEFAULT_TOKEN_TTL_SECONDS = 86400  # 24h
 
 
+def _is_production() -> bool:
+    """True only when DCASS_ENV normalizes to exactly ``production``.
+
+    The value is stripped and lowercased first so mixed-case or
+    whitespace-padded values (e.g. ``"Production"``, ``" production "``)
+    cannot bypass the production-only guards.
+    """
+    return os.environ.get("DCASS_ENV", "development").strip().lower() == "production"
+
+
 def _jwt_secret() -> str:
     """
     Resolve the JWT signing secret.
@@ -47,7 +57,7 @@ def _jwt_secret() -> str:
     secret = os.environ.get("DCASS_JWT_SECRET")
     if secret:
         return secret
-    if os.environ.get("DCASS_ENV", "development") == "production":
+    if _is_production():
         raise RuntimeError(
             "DCASS_JWT_SECRET must be set when DCASS_ENV=production. "
             "Refusing to sign tokens with the dev default."
@@ -191,10 +201,22 @@ def list_users_excluding(exclude_user_id: int) -> list[User]:
 
 
 def authenticate(username: str, password: str) -> Optional[User]:
-    user = get_user_by_username(username)
-    if user is None or not verify_password(password, user.password_hash):
+    """Verify credentials against the stored hash only.
+
+    The sole accepted check is ``verify_password`` against the user's
+    stored ``password_hash``. There is deliberately no fallback branch:
+    a hardcoded/derived password list used to let any caller take over
+    an account (and silently rewrite its password hash) at login time.
+    """
+    clean_user = username.strip().lower()
+    user = get_user_by_username(clean_user)
+    if user is None:
         return None
-    return user
+
+    if verify_password(password, user.password_hash):
+        return user
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -252,8 +274,7 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Unknown user in token")
 
     # 2. In production (or when API-token auth is enabled), require valid auth
-    is_production = os.environ.get("DCASS_ENV", "development").lower() == "production"
-    if is_production or os.environ.get("DCASS_API_TOKEN"):
+    if _is_production() or os.environ.get("DCASS_API_TOKEN"):
         raise HTTPException(status_code=401, detail="Missing bearer token")
 
     # 3. In dev mode without a token provided, return default test user

@@ -208,17 +208,18 @@ class SemanticDecoder:
 
     def decode(
         self,
-        media_ids: list[str],
+        media_ids: list[Optional[str]],
         use_ecc: bool = False,
         ecc_parity_bytes: int = 8,
         context_manager=None,
         context_epoch_hint: Optional[str] = None,
+        erasure_positions: Optional[list[int]] = None,
     ) -> DecodingResult:
         """
         Decode a sequence of media IDs into semantic meaning.
 
         Args:
-            media_ids: List of media IDs to decode
+            media_ids: List of media IDs to decode (None or "" marks a dropped packet slot)
             use_ecc: If True, decodes codeword using Reed-Solomon Error Correction
             ecc_parity_bytes: Number of RS parity bytes (default 8)
             context_manager: Optional ContextKeyManager. When the sender used
@@ -226,6 +227,8 @@ class SemanticDecoder:
                 per-epoch permutation.
             context_epoch_hint: Epoch id from the encode result, if available.
                 Skips candidate search and derives exactly that epoch.
+            erasure_positions: Optional list of 0-based carrier indices known to
+                have been dropped in transit (recovered via RS erasure decoding).
 
         Returns:
             DecodingResult with decoded items and reconstructed meaning
@@ -243,9 +246,41 @@ class SemanticDecoder:
                 "or drop the hint."
             )
 
+        erased_indices: set[int] = set()
+        if erasure_positions:
+            for pos in erasure_positions:
+                idx = int(pos)
+                if 0 <= idx < len(media_ids):
+                    erased_indices.add(idx)
+        for idx, media_id in enumerate(media_ids):
+            if media_id is None or media_id == "":
+                erased_indices.add(idx)
+        sorted_erasures = sorted(erased_indices)
+
         id_symbols: dict[str, Optional[int]] = {}
-        for media_id in media_ids:
-            id_symbols[media_id] = self.payload_mapper.symbol_for_media_id(media_id)
+        codeword_buf = bytearray()
+        missing_ids: list[str] = []
+        if not erased_indices:
+            for media_id in media_ids:
+                assert media_id is not None
+                id_symbols[media_id] = self.payload_mapper.symbol_for_media_id(media_id)
+            codeword, missing_ids = self.payload_mapper.decode_symbols(
+                [m for m in media_ids if m is not None]
+            )
+        else:
+            for idx, media_id in enumerate(media_ids):
+                if idx in erased_indices:
+                    codeword_buf.append(0)
+                    continue
+                assert media_id is not None
+                sym = self.payload_mapper.symbol_for_media_id(media_id)
+                id_symbols[media_id] = sym
+                if sym is None:
+                    missing_ids.append(media_id)
+                    codeword_buf.append(0)
+                else:
+                    codeword_buf.append(int(sym))
+            codeword = bytes(codeword_buf)
 
         # Dynamic context keying: try candidate epochs until RS verifies
         # (or, without ECC, until a hint-confirmed epoch is used).
@@ -257,15 +292,24 @@ class SemanticDecoder:
                 candidates = [context_manager.resolve_epoch_hint(context_epoch_hint)]
             else:
                 candidates = context_manager.candidate_epochs(time.time())
-            frame_secret = context_manager.secret
-            codeword, missing_ids = self.payload_mapper.decode_symbols(media_ids)
+            # Domain-separated frame-HMAC subkey (matches the encoder's
+            # frame_payload secret); None when no secret is configured.
+            frame_secret = context_manager.derive_frame_secret()
             if not missing_ids:
                 rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes) if use_ecc else None
                 for epoch in candidates:
                     inv = context_manager.derive_inverse_permutation(epoch)
-                    recovered = bytes(int(inv[int(s)]) for s in codeword)
+                    recovered = bytes(
+                        0 if i in erased_indices else int(inv[int(s)])
+                        for i, s in enumerate(codeword)
+                    )
                     if rs_ecc is not None:
-                        data, ok, fixed = rs_ecc.decode_bytes(recovered)
+                        if sorted_erasures:
+                            data, ok, fixed = rs_ecc.decode_bytes(
+                                recovered, erase_pos=sorted_erasures
+                            )
+                        else:
+                            data, ok, fixed = rs_ecc.decode_bytes(recovered)
                         if not ok:
                             continue
                     else:
@@ -295,6 +339,7 @@ class SemanticDecoder:
                         ecc_errors_fixed=fixed,
                         parity_bytes=ecc_parity_bytes,
                         context_epoch=context_used_epoch,
+                        erased_indices=erased_indices,
                     )
             # Keyed decode failed all candidates - fall through so the caller
             # sees a normal failure instead of garbage success.
@@ -309,35 +354,55 @@ class SemanticDecoder:
                 parity_bytes=ecc_parity_bytes,
                 context_epoch=None,
                 missing_ids=missing_ids,
+                erased_indices=erased_indices,
             )
 
-        codeword, missing_ids = self.payload_mapper.decode_symbols(media_ids)
         rs_ecc = RSErrorCorrection(parity_bytes=ecc_parity_bytes)
         ecc_success = True
         ecc_errors_fixed = []
         ecc_payload = None
 
         if missing_ids:
+            # Fail closed: unknown carrier IDs mean the codeword is
+            # incomplete — never UTF-8-decode and leak the raw (possibly
+            # partial plaintext) bytes as the reconstructed payload.
             ecc_success = False
-            ecc_payload = codeword.decode("utf-8", errors="replace")
+            ecc_payload = ""
         elif use_ecc:
-            data, ecc_success, ecc_errors_fixed = rs_ecc.decode_bytes(codeword)
-            try:
-                # Framed transport (current encoder default). Integrity
-                # failure here means corruption beyond RS capacity. Requiring
-                # the frame prevents a damaged header from falling back to
-                # the legacy raw-payload path and reporting success.
-                ecc_payload, _framed = unframe_payload(data, require_framed=True)
-            except FrameError:
-                ecc_success = False
-                ecc_payload = data.decode("utf-8", errors="replace")
+            if sorted_erasures:
+                data, ecc_success, ecc_errors_fixed = rs_ecc.decode_bytes(
+                    codeword, erase_pos=sorted_erasures
+                )
+            else:
+                data, ecc_success, ecc_errors_fixed = rs_ecc.decode_bytes(codeword)
+            if ecc_success:
+                try:
+                    # Framed transport (current encoder default). Integrity
+                    # failure here means corruption beyond RS capacity. Requiring
+                    # the frame prevents a damaged header from falling back to
+                    # the legacy raw-payload path and reporting success.
+                    ecc_payload, _framed = unframe_payload(data, require_framed=True)
+                except FrameError:
+                    ecc_success = False
+                    ecc_payload = ""
+            else:
+                # Fail closed: RS could not verify/correct the codeword (e.g.
+                # corruption confined to the parity bytes leaves the returned
+                # data slice intact). Never unframe or UTF-8-decode unverified
+                # bytes — that would leak plaintext or raw garbage.
+                ecc_payload = ""
         else:
-            # Legacy raw or framed-without-ECC: sniff the version byte.
+            # Legacy raw or framed-without-ECC: sniff the version byte. A
+            # payload that CLAIMS to be framed (0x01/0x02) but fails
+            # validation raises FrameError — fail closed instead of leaking
+            # the raw codeword bytes as the reconstructed payload. Genuine
+            # legacy unframed payloads (first byte not a frame marker) do not
+            # raise and keep working as before.
             try:
                 ecc_payload, _framed = unframe_payload(bytes(codeword))
             except FrameError:
                 ecc_success = False
-                ecc_payload = codeword.decode("utf-8", errors="replace")
+                ecc_payload = ""
 
         return self._build_result(
             media_ids=media_ids,
@@ -350,11 +415,12 @@ class SemanticDecoder:
             parity_bytes=ecc_parity_bytes,
             context_epoch=None,
             missing_ids=missing_ids,
+            erased_indices=erased_indices,
         )
 
     def _build_result(
         self,
-        media_ids: list[str],
+        media_ids: list[Optional[str]],
         id_symbols: dict,
         codeword: bytes,
         inverse_permutation,
@@ -364,10 +430,33 @@ class SemanticDecoder:
         parity_bytes: int,
         context_epoch: Optional[str],
         missing_ids=None,
+        erased_indices: Optional[set[int]] = None,
     ) -> DecodingResult:
         """Assemble a DecodingResult for an exact_vcp decode."""
+        erased_set = erased_indices or set()
         decoded_items = []
-        for media_id in media_ids:
+        normalized_ids: list[str] = []
+        for idx, media_id in enumerate(media_ids):
+            if idx in erased_set or not media_id:
+                label = media_id or "[DROPPED]"
+                normalized_ids.append(label)
+                decoded_items.append(
+                    DecodedItem(
+                        media_id=label,
+                        modality="text",
+                        content=(
+                            "[DROPPED PACKET — RECOVERED BY RS-ECC]"
+                            if ecc_success
+                            else "[DROPPED PACKET]"
+                        ),
+                        verified=False,
+                        metadata={"dropped": True},
+                        payload_byte=None,
+                        cluster_id=None,
+                    )
+                )
+                continue
+            normalized_ids.append(media_id)
             item = self.index.get_by_id(media_id)
             raw_symbol = id_symbols.get(media_id)
             payload_byte = (
@@ -402,9 +491,17 @@ class SemanticDecoder:
                     )
                 )
 
-        reconstructed = text if text is not None else " | ".join(d.content for d in decoded_items)
+        if text is not None:
+            reconstructed = text
+        elif not ecc_success:
+            # Fail closed: a failed keyed/context decode (text is None)
+            # must not leak unverified carrier captions into
+            # reconstructed_meaning by joining the decoded items.
+            reconstructed = ""
+        else:
+            reconstructed = " | ".join(d.content for d in decoded_items)
         return DecodingResult(
-            media_ids=media_ids,
+            media_ids=normalized_ids,
             decoded=decoded_items,
             ecc_success=ecc_success and not missing_ids,
             ecc_errors_fixed=ecc_errors_fixed,

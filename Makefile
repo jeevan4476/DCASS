@@ -14,6 +14,8 @@
 .PHONY: help install install-clip test lint format clean download-data build-index run
 .PHONY: check-venv venv server server-dev frontend frontend-install frontend-build frontend-check
 .PHONY: frontend-dev stack stop logs
+.PHONY: lan-setup lan-setup-full lan-stop full
+.PHONY: tunnel tunnel-ngrok tunnel-stop clean-users clean-logs backup-logs
 .PHONY: docker-build docker-send docker-train docker-pipeline docker-clean docker-gen-data
 
 # Load local overrides from .env (gitignored; template in .env.example) and
@@ -35,6 +37,47 @@ FRONTEND_PORT  ?= 3001
 PUBLIC_API_URL ?= $(or $(NEXT_PUBLIC_API_URL),http://localhost:$(API_PORT))
 
 RUN_DIR        ?= storage/run
+
+# Setup helper for dual-laptop & mobile live presentation
+ifeq (full,$(filter full,$(MAKECMDGOALS)))
+LAN_SETUP_FLAG := --full
+full:
+	@:
+else
+LAN_SETUP_FLAG :=
+endif
+
+lan-setup: check-venv
+	@$(PY) scripts/demo/lan_demo_setup.py --role host $(LAN_SETUP_FLAG)
+
+lan-setup-full: check-venv
+	@$(PY) scripts/demo/lan_demo_setup.py --role host --full
+
+lan-dev: check-venv
+	@$(PY) scripts/demo/lan_demo_setup.py --role host --dev
+
+lan-stop: check-venv
+	@$(PY) scripts/demo/lan_demo_setup.py --stop
+
+# Public internet tunnel for evaluation panels & external devices
+tunnel: check-venv
+	@$(PY) scripts/demo/tunnel_setup.py $(if $(AUTHTOKEN),--authtoken $(AUTHTOKEN),)
+
+tunnel-ngrok: check-venv
+	@$(PY) scripts/demo/tunnel_setup.py --provider ngrok $(if $(AUTHTOKEN),--authtoken $(AUTHTOKEN),)
+
+tunnel-stop: check-venv
+	@$(PY) scripts/demo/tunnel_setup.py --stop
+
+# Database & log maintenance
+clean-users: check-venv
+	@$(PY) scripts/utils/clean_demo_users.py
+
+clean-logs: check-venv
+	@$(PY) scripts/utils/clean_logs.py
+
+backup-logs: check-venv
+	@$(PY) scripts/utils/clean_logs.py --backup-only
 
 # Default target
 help:
@@ -58,6 +101,14 @@ help:
 	@echo "  make frontend-dev    - Frontend dev server on :3000"
 	@echo "  make frontend-build  - Force a production frontend rebuild"
 	@echo "  make stack           - Backend + frontend in background (make stop / make logs)"
+	@echo "  make lan-setup full  - Dual-laptop/mobile auto-setup (0.0.0.0, open port check, QR code)"
+	@echo "  make lan-stop        - Stop background LAN demo servers"
+	@echo "  make tunnel          - Public tunnel (localtunnel / ngrok) with shareable QR code"
+	@echo "  make tunnel-ngrok    - Public ngrok tunnel (optional: AUTHTOKEN=<token>)"
+	@echo "  make tunnel-stop     - Stop public tunnel"
+	@echo "  make clean-users     - Remove ephemeral test users, keep alice/bob/charlie"
+	@echo "  make clean-logs      - Archive logs to storage/logs_backup/ and reset active logs"
+	@echo "  make backup-logs     - Archive logs to storage/logs_backup/ without resetting"
 	@echo "  make venv            - Create .venv and install backend dependencies"
 	@echo ""
 	@echo "Docker commands:"
