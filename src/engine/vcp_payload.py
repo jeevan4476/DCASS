@@ -9,6 +9,7 @@ cluster matching each payload byte, and to recover bytes from received IDs.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -28,6 +29,11 @@ from src.corpus.index.unified_index import (
 
 
 CANONICAL_MODALITIES: tuple[Modality, ...] = ("image", "text", "audio")
+
+# Upper bound on cached per-query embeddings. The cache is an LRU
+# (OrderedDict): once full, the oldest entry is evicted so unbounded
+# distinct queries cannot grow memory without limit.
+_MAX_QUERY_EMBEDDING_CACHE = 1024
 
 
 @dataclass(frozen=True)
@@ -63,7 +69,7 @@ class VCPPayloadMapper:
         self._global_to_entry: dict[int, tuple[Modality, int, dict]] = {}
         self._id_to_symbol: dict[str, int] = {}
         self._id_to_entry: dict[str, tuple[Modality, int, dict]] = {}
-        self._query_embeddings: dict[str, np.ndarray] = {}
+        self._query_embeddings: OrderedDict[str, np.ndarray] = OrderedDict()
 
     def load(self) -> None:
         """Load codebook metadata and build lookup tables."""
@@ -342,6 +348,10 @@ class VCPPayloadMapper:
             if query_embedding is None:
                 query_embedding = self.index._encode_query(query, modality)[0]
                 self._query_embeddings[cache_key] = query_embedding
+                self._query_embeddings.move_to_end(cache_key)
+                # Bound the cache (LRU): evict oldest entries past the cap.
+                while len(self._query_embeddings) > _MAX_QUERY_EMBEDDING_CACHE:
+                    self._query_embeddings.popitem(last=False)
 
             vector = self.index.indices[modality].reconstruct(local_index)
             vector = np.asarray(vector, dtype=np.float32)

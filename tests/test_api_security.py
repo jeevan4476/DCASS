@@ -407,3 +407,325 @@ class TestOwnershipScoping:
         finally:
             with _transmission_sessions_lock:
                 _transmission_sessions.pop(sid, None)
+
+
+class TestMediaFileCorpusRootLock:
+    """/api/media/file must serve ONLY files under storage/data with corpus extensions."""
+
+    def test_media_file_rejects_auth_db_with_403(self, client):
+        # storage/auth.db exists (created at conftest import) but is not a
+        # corpus asset — it must be refused, never served as octet-stream.
+        res = client.get("/api/media/file", params={"path": "storage/auth.db"})
+        assert res.status_code == 403
+
+    def test_media_file_rejects_traversal_and_non_corpus_suffix(self, client, tmp_path):
+        # Path traversal out of the project root -> 403.
+        res = client.get("/api/media/file", params={"path": "../../../../etc/passwd"})
+        assert res.status_code == 403
+
+        # A file INSIDE storage/data with a non-allowlisted suffix -> 403.
+        from pathlib import Path as _P
+
+        evil = _P("storage") / "data" / "tmp_security_probe.db"
+        evil.parent.mkdir(parents=True, exist_ok=True)
+        evil.write_bytes(b"sqlite-probe")
+        try:
+            res = client.get("/api/media/file", params={"path": "storage/data/tmp_security_probe.db"})
+            assert res.status_code == 403
+        finally:
+            evil.unlink(missing_ok=True)
+
+        # An allowlisted corpus asset still resolves (404 if absent on disk,
+        # never 403) — proves the allowlist itself is not blocking legit paths.
+        res = client.get(
+            "/api/media/file", params={"path": "storage/data/indices/text_metadata.json"}
+        )
+        assert res.status_code in (200, 404)
+
+    def test_media_info_rejects_outside_corpus_root(self, client):
+        res = client.get(
+            "/api/media/info", params={"media_id": "x", "path": "storage/auth.db"}
+        )
+        assert res.status_code == 403
+
+
+class TestMediaPacketAuthAndControlFiles:
+    """/api/media/packet is authenticated and never serves internal files."""
+
+    def _stage(self, name: str):
+        from pathlib import Path as _P
+
+        base = _P("storage") / "shared_channel" / "999999"
+        base.mkdir(parents=True, exist_ok=True)
+        f = base / name
+        f.write_text('{"session_id": "deadbeef", "sender_username": "someone"}')
+        return f
+
+    def test_media_packet_rejects_manifest_and_decoded_sidecars(self, client):
+        staged = [
+            self._stage("_manifest_deadbeef.json"),
+            self._stage("_decoded_deadbeef.json"),
+            self._stage("_sent_deadbeef.json"),
+        ]
+        try:
+            for f in staged:
+                rel = f"storage/shared_channel/999999/{f.name}"
+                res = client.get("/api/media/packet", params={"path": rel})
+                assert res.status_code == 403, f.name
+        finally:
+            for f in staged:
+                f.unlink(missing_ok=True)
+
+    def test_media_packet_rejects_dropped_archive(self, client):
+        from pathlib import Path as _P
+
+        arch = _P("storage") / "shared_channel" / ".dropped_archive" / "999999" / "deadbeef"
+        arch.mkdir(parents=True, exist_ok=True)
+        f = arch / "deadbeef__0001.json"
+        f.write_text('{"session_id": "deadbeef"}')
+        try:
+            rel = "storage/shared_channel/.dropped_archive/999999/deadbeef/deadbeef__0001.json"
+            res = client.get("/api/media/packet", params={"path": rel})
+            assert res.status_code == 403
+        finally:
+            f.unlink(missing_ok=True)
+            for d in (arch, arch.parent, arch.parent.parent):
+                try:
+                    d.rmdir()
+                except OSError:
+                    pass
+
+    def test_media_packet_rejects_outside_shared_channel(self, client):
+        res = client.get("/api/media/packet", params={"path": "storage/auth.db"})
+        assert res.status_code == 403
+
+
+class TestTransmitSchemaAndSenderVisibility:
+    """/api/transmit records caller parity and tags packets so senders can inspect them."""
+
+    def _register(self, client, username):
+        from src.api import auth as _auth
+
+        res = client.post(
+            "/api/auth/register",
+            json={"username": username, "password": "pw-transmit-1"},
+        )
+        assert res.status_code == 201
+        user = _auth.get_user_by_username(username)
+        token = _auth.create_access_token(user.id, user.username)
+        return user, {"Authorization": f"Bearer {token}"}
+
+    def test_transmit_records_parity_and_allows_sender_monitoring_and_packet_read(self, client):
+        import json
+        import time
+        import uuid
+        from pathlib import Path as _P
+
+        from src.api.server import _transmission_sessions, _transmission_sessions_lock
+
+        suffix = uuid.uuid4().hex[:8]
+        alice, headers_alice = self._register(client, f"tx_alice_{suffix}")
+        bob, _headers_bob = self._register(client, f"tx_bob_{suffix}")
+        _charlie, headers_charlie = self._register(client, f"tx_charlie_{suffix}")
+
+        bob_dir = _P("storage") / "shared_channel" / str(bob.id)
+        session_id = None
+        try:
+            res = client.post(
+                "/api/transmit",
+                headers=headers_alice,
+                json={
+                    "media_ids": ["pkt_a", "pkt_b"],
+                    "recipient_username": bob.username,
+                    "mode": "static",
+                    "base_delay": 0.01,
+                    "speed_multiplier": 1000.0,
+                    "ecc_parity_bytes": 12,
+                },
+            )
+            assert res.status_code == 200
+            session_id = res.json()["session_id"]
+
+            manifest_path = bob_dir / f"_manifest_{session_id}.json"
+            pkt_a_path = bob_dir / f"{session_id}__pkt_a.json"
+            pkt_b_path = bob_dir / f"{session_id}__pkt_b.json"
+
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                with _transmission_sessions_lock:
+                    active = _transmission_sessions.get(session_id, {}).get("active", False)
+                if manifest_path.exists() and pkt_a_path.exists() and pkt_b_path.exists() and not active:
+                    break
+                time.sleep(0.05)
+
+            assert manifest_path.exists()
+            assert pkt_a_path.exists()
+            assert pkt_b_path.exists()
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            assert manifest["ecc_parity_bytes"] == 12
+
+            # Sender monitoring recipient's channel sees all packets they sent.
+            wire_alice = client.get(
+                "/api/wire/packets",
+                params={"recipient_username": bob.username, "session_id": session_id},
+                headers=headers_alice,
+            )
+            assert wire_alice.status_code == 200
+            body = wire_alice.json()
+            assert body["count"] == 2
+            assert all(p.get("sender_username") == alice.username for p in body["packets"])
+
+            # Sender can inspect their own transmitted packet JSON via /api/media/packet.
+            rel_pkt = f"storage/shared_channel/{bob.id}/{pkt_a_path.name}"
+            pkt_alice = client.get("/api/media/packet", params={"path": rel_pkt}, headers=headers_alice)
+            assert pkt_alice.status_code == 200
+            assert pkt_alice.json()["sender_username"] == alice.username
+
+            # Third party Charlie gets 0 packets on listing and 403 on direct packet read.
+            wire_charlie = client.get(
+                "/api/wire/packets",
+                params={"recipient_username": bob.username, "session_id": session_id},
+                headers=headers_charlie,
+            )
+            assert wire_charlie.status_code == 200
+            assert wire_charlie.json()["count"] == 0
+
+            pkt_charlie = client.get("/api/media/packet", params={"path": rel_pkt}, headers=headers_charlie)
+            assert pkt_charlie.status_code == 403
+        finally:
+            if session_id:
+                for path in (
+                    bob_dir / f"_manifest_{session_id}.json",
+                    bob_dir / f"{session_id}__pkt_a.json",
+                    bob_dir / f"{session_id}__pkt_b.json",
+                ):
+                    path.unlink(missing_ok=True)
+                with _transmission_sessions_lock:
+                    _transmission_sessions.pop(session_id, None)
+            try:
+                bob_dir.rmdir()
+            except OSError:
+                pass
+
+
+class TestMediaAudioAndSymlinkHardening:
+    """/api/media/file supports .ogg/.flac/.m4a and /api/media/packet rejects symlinks."""
+
+    def test_media_file_serves_ogg_flac_m4a_inside_corpus_root(self, client):
+        import uuid
+        from pathlib import Path as _P
+        from unittest.mock import MagicMock
+
+        data_dir = _P("storage") / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        suffix = uuid.uuid4().hex[:8]
+        staged = {
+            "audio/ogg": data_dir / f"_test_audio_{suffix}.ogg",
+            "audio/flac": data_dir / f"_test_audio_{suffix}.flac",
+            "audio/mp4": data_dir / f"_test_audio_{suffix}.m4a",
+        }
+        try:
+            for p in staged.values():
+                p.write_bytes(b"test-audio-bytes")
+
+            with patch("src.api.server._get_engine", return_value=MagicMock()):
+                for expected_mime, path in staged.items():
+                    rel = f"storage/data/{path.name}"
+                    res = client.get("/api/media/file", params={"path": rel})
+                    assert res.status_code == 200
+                    assert expected_mime in res.headers.get("content-type", "")
+        finally:
+            for p in staged.values():
+                p.unlink(missing_ok=True)
+
+    def test_media_packet_rejects_symlink_with_403(self, client):
+        import uuid
+        from pathlib import Path as _P
+
+        ch_dir = _P("storage") / "shared_channel" / "999999"
+        ch_dir.mkdir(parents=True, exist_ok=True)
+        suffix = uuid.uuid4().hex[:8]
+        target = ch_dir / f"target_{suffix}__0001.json"
+        link = ch_dir / f"sym_{suffix}__0001.json"
+        target.write_text('{"session_id": "ok"}', encoding="utf-8")
+        try:
+            link.symlink_to(target.resolve())
+            rel = f"storage/shared_channel/999999/{link.name}"
+            res = client.get("/api/media/packet", params={"path": rel})
+            assert res.status_code == 403
+            assert "symlink" in res.json()["detail"].lower()
+        finally:
+            link.unlink(missing_ok=True)
+            target.unlink(missing_ok=True)
+
+
+class TestSessionMapBounds:
+    """In-memory session tracking maps and lock dicts are bounded and cleaned up."""
+
+    def test_prune_transmission_sessions_evicts_old_inactive_and_keeps_active(self):
+        import time
+        import uuid
+
+        from src.api.server import (
+            _prune_transmission_sessions,
+            _transmission_sessions,
+            _transmission_sessions_lock,
+        )
+
+        suffix = uuid.uuid4().hex[:8]
+        active_sid = f"prune_active_{suffix}"
+        stale_sid = f"prune_stale_{suffix}"
+        with _transmission_sessions_lock:
+            _transmission_sessions[active_sid] = {
+                "active": True,
+                "stop_requested": False,
+                "progress": {"current": 1, "total": 2, "status": "transmitting"},
+                "owner": 1,
+            }
+            _transmission_sessions[stale_sid] = {
+                "active": False,
+                "stop_requested": False,
+                "progress": {"current": 2, "total": 2, "status": "complete"},
+                "owner": 1,
+                "finished_at": time.time() - 600.0,
+            }
+        try:
+            with _transmission_sessions_lock:
+                _prune_transmission_sessions(max_age_seconds=300.0, max_entries=256)
+                assert stale_sid not in _transmission_sessions
+                assert active_sid in _transmission_sessions
+        finally:
+            with _transmission_sessions_lock:
+                _transmission_sessions.pop(active_sid, None)
+                _transmission_sessions.pop(stale_sid, None)
+
+    def test_wire_session_lock_release_and_bound(self):
+        import uuid
+
+        from src.api.server import (
+            _get_session_lock,
+            _release_session_lock_entry,
+            _wire_session_locks,
+            _wire_session_locks_guard,
+        )
+
+        suffix = uuid.uuid4().hex[:8]
+        created = []
+        try:
+            sid = f"lock_rel_{suffix}"
+            created.append(sid)
+            _get_session_lock(sid)
+            assert sid in _wire_session_locks
+            _release_session_lock_entry(sid)
+            assert sid not in _wire_session_locks
+
+            for i in range(520):
+                s = f"lock_bound_{suffix}_{i}"
+                created.append(s)
+                _get_session_lock(s)
+            assert len(_wire_session_locks) <= 512
+        finally:
+            with _wire_session_locks_guard:
+                for s in created:
+                    _wire_session_locks.pop(s, None)

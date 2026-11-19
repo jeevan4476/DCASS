@@ -218,6 +218,88 @@ def test_beyond_capacity_reports_failure(setup):
     )
 
 
+def test_rs_erasure_recovery_through_dropped_carriers(setup):
+    """Dropping up to R=8 carriers (known positions) recovers 100%; R+1 fails closed."""
+    encoder, decoder, _ = setup
+    msg = "Packet drop resilience test through exact_vcp carriers."
+    result = encoder.encode(msg, use_ecc=True, ecc_parity_bytes=8)
+    ids = list(result.media_ids)
+
+    for drop_count in (1, 2, 3, 5, 8):
+        drop_positions = [i * 3 for i in range(drop_count)]
+        received = [None if i in drop_positions else m for i, m in enumerate(ids)]
+        decoded = decoder.decode(
+            received,
+            use_ecc=True,
+            ecc_parity_bytes=8,
+            erasure_positions=drop_positions,
+        )
+        assert decoded.ecc_success is True, f"Should recover {drop_count} dropped packets"
+        assert decoded.reconstructed_meaning == msg
+        assert len(decoded.ecc_errors_fixed) >= drop_count
+
+    # Dropping 9 packets (> parity=8) must fail closed
+    over_positions = [i * 3 for i in range(9)]
+    received_over = [None if i in over_positions else m for i, m in enumerate(ids)]
+    decoded_over = decoder.decode(
+        received_over,
+        use_ecc=True,
+        ecc_parity_bytes=8,
+        erasure_positions=over_positions,
+    )
+    assert decoded_over.ecc_success is False
+
+
+def test_parity_only_corruption_fails_closed_without_leaking_plaintext(setup):
+    """Regression test (H7): corrupting ONLY parity bytes must fail closed.
+
+    With R=8, corrupting 5 of the 8 parity slots (data bytes left untouched)
+    exceeds RS error capacity (t = R/2 = 4), so decode_bytes reports failure
+    while returning the intact data slice. The decoder must NOT unframe that
+    unverified slice: it must report ecc_success=False and must not expose
+    the original plaintext via ecc_payload / reconstructed_meaning.
+    """
+    encoder, decoder, mapper = setup
+    msg = "Parity-only corruption must not leak this plaintext."
+    result = encoder.encode(msg, use_ecc=True, ecc_parity_bytes=8)
+    ids = list(result.media_ids)
+
+    n_parity = 8
+    data_len = len(ids) - n_parity
+    assert data_len > 0, "codeword must have data bytes before parity bytes"
+
+    by_symbol = {}
+    for mid, sym in mapper._id_to_symbol.items():
+        by_symbol.setdefault(sym, []).append(mid)
+    used = set(ids)
+
+    # Corrupt 5 of the last 8 carrier slots (the parity bytes) with carriers
+    # from different clusters; the data-byte carriers stay untouched.
+    corrupted = list(ids)
+    parity_positions = list(range(data_len, len(ids)))[:5]
+    assert len(parity_positions) == 5
+    for pos in parity_positions:
+        orig_sym = mapper.symbol_for_media_id(ids[pos])
+        replacement = next(
+            m
+            for s, candidates in by_symbol.items()
+            if s != orig_sym
+            for m in candidates
+            if m not in used
+        )
+        used.discard(ids[pos])
+        used.add(replacement)
+        corrupted[pos] = replacement
+
+    decoded = decoder.decode(corrupted, use_ecc=True, ecc_parity_bytes=8)
+    assert decoded.ecc_success is False
+    # Fail-closed: empty payload, never the raw/unframed plaintext.
+    assert decoded.ecc_payload == ""
+    assert msg not in (decoded.ecc_payload or "")
+    assert decoded.reconstructed_meaning != msg
+    assert msg not in decoded.reconstructed_meaning
+
+
 if __name__ == "__main__":
     import sys
 

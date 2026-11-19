@@ -312,9 +312,11 @@ class SemanticEncoder:
             raise ValueError("Message produced no valid chunks")
 
         # Frame first (Decision 4): CRC integrity frame, or HMAC when a
-        # context secret is present (keyed authenticity).
+        # context secret is present (keyed authenticity). The HMAC key is the
+        # domain-separated frame subkey (dcass:v1:frame-hmac), never the raw
+        # shared secret, so frame tags and permutation seeds stay independent.
         frame_secret = (
-            context_manager.secret if context_manager is not None else None
+            context_manager.derive_frame_secret() if context_manager is not None else None
         )
         try:
             framed = frame_payload(message, secret=frame_secret)
