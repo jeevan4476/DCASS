@@ -45,7 +45,7 @@ The architecture comprises four coordinated components:
 
 ## Empirical Benchmark Summary
 
-These are recorded results, not targets. Each row states its scope and the reason it should or should not be read as a security claim. The full ledger is in [`docs/benchmarking/CLAIM_LEDGER.md`](docs/benchmarking/CLAIM_LEDGER.md).
+These are recorded results, not targets. Each row states its scope and the reason it should or should not be read as a security claim.
 
 | Evaluation Component | Recorded Result | Scope and Caveat |
 |---|---|---|
@@ -55,8 +55,6 @@ These are recorded results, not targets. Each row states its scope and the reaso
 | **Codec Capacity** | DSSC coded **13.50–13.66 bpc** (mean 13.60) versus exact_vcp 8.00 coded bpc | "Coded" includes framing and Reed-Solomon parity. User-payload capacity is **7.00 bpc at 14 B** and **12.90 bpc at 500 B**. Carrier reduction is 40.7–41.4% multi-modal and 48.1–49.9% text-only. |
 | **Concurrency** | Direct engine: 50 worker threads, 100 sessions, **100% decode success**, **0% observed swaps**, p50 **24,367 ms** | Direct `SemanticEngine.encode/decode` only. `/api/transmit` now admits concurrent sessions up to a bounded limit and answers HTTP 429 beyond it, so this is still not an API concurrency result. |
 | **Reliability** | 100% clean-channel round trip; zero false accepts after decoder hardening; **0% exact recovery under ≥2% carrier dropout** | Dropout is unrecoverable in the current wire format. The pre-hardening false-accept artifact is archived. |
-
-Full benchmark methodologies, LaTeX tables, and empirical figures are detailed in the [Benchmarking Report](docs/benchmarking/BENCHMARKING_REPORT.md).
 
 ---
 
@@ -78,14 +76,11 @@ DCASS/
 │   ├── testing/             # System benchmark and validation suites
 │   ├── data/                # Dataset download and FAISS index construction
 │   └── demo/                # Standalone demonstration scripts
-├── docs/                    # System documentation and academic papers
-│   ├── benchmarking/        # Empirical results, methodologies, and paper drafts
+├── docs/                    # System documentation
 │   ├── architecture/        # Mathematical specifications (DSSC, VCP, HMAC)
-│   ├── research/            # Threat models and theoretical foundations
 │   └── guides/              # Setup, operations, and development manuals
 ├── storage/                 # Data, models, and shared channel directory (gitignored)
-│   ├── models/              # Checkpoints for WGAN-GP, RL agent, and Warden
-│   └── benchmarks/          # Raw evaluation logs, generated plots, and LaTeX tables
+│   └── models/              # Checkpoints for WGAN-GP, RL agent, and Warden
 ├── tests/                   # Pytest test suites (unit, integration, pipeline)
 ├── demo_dcass.py            # Command-line demonstration entry point
 ├── Dockerfile               # Production container definition
@@ -193,20 +188,15 @@ Full documentation is available in the [`docs/`](docs/) directory:
 ### User and Operational Guides
 - [System Quickstart](docs/QUICKSTART.md): Step-by-step setup for local and containerized deployments.
 - [Getting Started Guide](docs/guides/GETTING_STARTED.md): Initial configuration and index verification.
+- [Running Frontend and Backend](docs/guides/RUNNING_FRONTEND_BACKEND.md): Local web UI and API server startup.
 - [Script Execution Reference](docs/guides/SCRIPT_EXECUTION_GUIDE.md): Running training, evaluation, and operational scripts.
 - [Docker Deployment Guide](docs/guides/DOCKER_SETUP.md): Multi-container orchestration instructions.
 
-### Research and Benchmarks
-- [Full Benchmarking Report](docs/benchmarking/BENCHMARKING_REPORT.md): Complete empirical findings across all 5 benchmark components.
-- [Academic Conference Paper Writeup](docs/benchmarking/BENCHMARK_PAPER_WRITEUP.md): Formal research paper structure and methodology.
-- [Core Theoretical Concept](docs/research/IDEA.md): Mathematical principles of zero-modification curation.
-- [Semantic Steganography Literature Review](docs/research/RESEARCH_PAPER_SEMANTIC_STEGANOGRAPHY.md): Prior work and theoretical positioning.
-
-### Architecture and Specifications
+### Architecture and Security
 - [DSSC Mathematical Specification](docs/architecture/DSSC_THEORY_AND_MATHEMATICAL_SPECIFICATION.md): Modality-conditioned coding theory.
 - [VCP Mathematical Specification](docs/architecture/VCP_THEORY_AND_MATHEMATICAL_SPECIFICATION.md): Voronoi partitioning fundamentals.
 - [Cryptographic Session Key Derivation](docs/architecture/HMAC_SHA256_SESSION_KEY_DERIVATION.md): Forward secrecy and keyed permutation proofs.
-- [Complete Implementation Architecture](docs/guides/COMPLETE_IMPLEMENTATION_GUIDE.md): Internal data flows and module boundaries.
+- [Security Advisories](docs/SECURITY_ADVISORIES.md): Dependency security advisories and dispositions.
 
 ---
 

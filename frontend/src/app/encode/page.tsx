@@ -1,24 +1,35 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
-import { Shield, Zap, Brain, Eye, Loader2, CheckCircle, AlertCircle, Copy, ExternalLink, Key, Layers, Radio } from 'lucide-react';
+import {
+  Lock,
+  Brain,
+  Shield,
+  Copy,
+  ExternalLink,
+  Key,
+  Image as ImageIcon,
+  FileText,
+  Volume2,
+  AlertCircle,
+  Eye,
+} from 'lucide-react';
 
 import { encodeMessage, EncodeResponse, checkReady, getErrorMessage } from '@/lib/api';
-import { PageWrapper, Card, Badge, LoadingSpinner, StatCard, useToastHelpers, Tooltip } from '@/components';
+import {
+  PageWrapper,
+  Card,
+  Badge,
+  Button,
+  LoadingSpinner,
+  StatGrid,
+  CarrierPreviewModal,
+  CarrierPreviewTarget,
+  useToastHelpers,
+} from '@/components';
 
-const modalityColors = {
-  image: 'text-blue-400',
-  text: 'text-green-400',
-  audio: 'text-purple-400',
-};
-
-const modalityIcons = {
-  image: '🖼',
-  text: '📝',
-  audio: '🔊',
-};
+const PARITY_OPTIONS = [4, 8, 12, 16];
 
 export default function EncodePage() {
   const router = useRouter();
@@ -26,19 +37,22 @@ export default function EncodePage() {
 
   const [message, setMessage] = useState('');
   const [mode, setMode] = useState<'exact_vcp' | 'dssc'>('exact_vcp');
+  const [parityBytes, setParityBytes] = useState<number>(8);
   const [sessionKeyHex, setSessionKeyHex] = useState('');
-  const [diversityMode, setDiversityMode] = useState<'best' | 'round_robin' | 'balanced'>('best');
-  const [modalities, setModalities] = useState(['image', 'text', 'audio']);
+  const [diversityMode, setDiversityMode] = useState<'best' | 'round_robin' | 'balanced'>('round_robin');
+  const [modalities, setModalities] = useState<string[]>(['image', 'text', 'audio']);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<EncodeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [serverReady, setServerReady] = useState<boolean | null>(null);
-  const [serverInitializing, setServerInitializing] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState<CarrierPreviewTarget | null>(null);
 
   const generateSessionKey = () => {
     const bytes = new Uint8Array(32);
     crypto.getRandomValues(bytes);
-    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    return Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
   };
 
   const handleModeChange = (newMode: 'exact_vcp' | 'dssc') => {
@@ -49,35 +63,40 @@ export default function EncodePage() {
   };
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    const checkServerStatus = async () => {
+    let active = true;
+    const poll = async () => {
       try {
         const status = await checkReady();
-        setServerReady(status.ready);
-        setServerInitializing(status.initializing);
-        if (status.ready) {
-          clearInterval(interval);
-        }
-      } catch (err) {
-        setServerReady(null);
+        if (active) setServerReady(status.ready);
+      } catch {
+        if (active) setServerReady(null);
       }
     };
-    checkServerStatus();
-    interval = setInterval(checkServerStatus, 2000);
-    return () => clearInterval(interval);
+    poll();
+    const timer = setInterval(poll, 3000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
+
+  const toggleModality = (mod: string) => {
+    if (modalities.includes(mod)) {
+      if (modalities.length > 1) setModalities(modalities.filter((m) => m !== mod));
+    } else {
+      setModalities([...modalities, mod]);
+    }
+  };
 
   const handleEncode = async () => {
     if (!message.trim()) {
-      setError('Please enter a message');
+      setError('Enter a message to encode.');
       return;
     }
-
+    setLoading(true);
+    setError(null);
+    setResult(null);
     try {
-      setLoading(true);
-      setError(null);
-      setResult(null);
-
       const response = await encodeMessage({
         message: message.trim(),
         mode,
@@ -85,405 +104,321 @@ export default function EncodePage() {
         diversity_mode: diversityMode,
         modalities,
         use_ecc: true,
+        ecc_parity_bytes: parityBytes,
       });
-
       setResult(response);
-      success('Encoded!', `Generated ${response.media_ids.length} carriers in ${response.elapsed_ms.toFixed(1)}ms`);
-    } catch (err: any) {
-      console.error('Encoding error:', err);
-      const errMsg = getErrorMessage(err, 'Encoding failed');
-      setError(errMsg);
-      showError('Encoding failed', errMsg);
+      success(
+        'Encoded',
+        `Selected ${response.media_ids.length} unmodified carriers in ${response.elapsed_ms.toFixed(1)} ms`,
+      );
+    } catch (err) {
+      const msg = getErrorMessage(err, 'Encoding failed');
+      setError(msg);
+      showError('Encoding failed', msg);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const toggleModality = (mod: string) => {
-    if (modalities.includes(mod)) {
-      if (modalities.length > 1) {
-        setModalities(modalities.filter(m => m !== mod));
-      }
-    } else {
-      setModalities([...modalities, mod]);
     }
   };
 
   const handleOpenDecode = () => {
     if (!result) return;
     const ids = encodeURIComponent(result.media_ids.join(','));
-    let url = `/decode?ids=${ids}&mode=${mode}`;
+    const url = `/decode?ids=${ids}&mode=${mode}&parity=${result.ecc_parity_bytes || parityBytes}&diversity=${diversityMode}&modalities=${encodeURIComponent(modalities.join(','))}`;
     if (mode === 'dssc' && sessionKeyHex) {
-      url += `&key=${encodeURIComponent(sessionKeyHex)}`;
+      // Hand the DSSC session key to the decode page via sessionStorage
+      // (per-tab, removed on read) instead of the URL, where it would leak
+      // into browser history, server logs, and Referer headers.
+      try {
+        window.sessionStorage.setItem('dcass_pending_dssc_key', sessionKeyHex);
+      } catch {}
     }
     router.push(url);
-  };
-
-  const copyToClipboard = async (text: string) => {
-    await navigator.clipboard.writeText(text);
-    success('Copied', 'Media IDs copied to clipboard');
-  };
-
-  if (serverInitializing) {
-    return (
-      <PageWrapper title="Encode" description="Transform messages into semantic media sequences" fullWidth>
-        <div className="max-w-4xl mx-auto text-center py-16">
-          <LoadingSpinner size="lg" />
-          <p className="text-muted mt-4">Initializing engine...</p>
-        </div>
-      </PageWrapper>
-    );
-  }
-
-  if (serverReady === false) {
-    return (
-      <PageWrapper title="Encode" description="Transform messages into semantic media sequences" fullWidth>
-        <Card className="max-w-2xl mx-auto text-center py-12">
-          <AlertCircle className="w-12 h-12 text-error mx-auto mb-4" />
-          <h3 className="text-heading-md font-semibold text-error mb-2">Server Not Ready</h3>
-          <p className="text-muted mb-6">The backend engine is not available. Please start the server:</p>
-          <code className="bg-surface px-4 py-2 rounded font-mono text-body-sm text-primary block max-w-xs mx-auto">
-            python scripts/start_server.py --reload
-          </code>
-        </Card>
-      </PageWrapper>
-    );
-  }
-
-  const modeOptions = {
-    exact_vcp: {
-      label: 'Byte-Exact (VCP)',
-      description: '1 byte per carrier, Voronoi Codebook Partitioning',
-      icon: Shield,
-      color: 'primary',
-    },
-    dssc: {
-      label: 'Compact Semantic (DSSC)',
-      description: '~15 bits per carrier, Dynamic State Space Compression',
-      icon: Brain,
-      color: 'purple',
-    },
   };
 
   return (
     <PageWrapper
       title="Encode"
-      description="Transform messages into semantic media sequences without transmitting"
+      description="Transform plaintext into clickable unmodified corpus carriers protected by CRC-16 and RS-ECC"
       action={
-        <div className="flex items-center gap-2">
-          {serverReady === true && (
-            <Badge variant="success" dot size="sm">Engine Ready</Badge>
-          )}
-          {serverReady === null && (
-            <Badge variant="warning" dot size="sm">Unknown</Badge>
-          )}
-        </div>
+        <Badge variant={serverReady ? 'success' : 'warning'} dot size="md">
+          {serverReady ? 'Engine Ready' : 'Warming Engine'}
+        </Badge>
       }
     >
-      <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Input Panel */}
-          <div className="space-y-6">
-            <Card>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-heading-sm font-semibold">Message Input</h3>
-                <span className="text-body-sm text-muted font-mono tabular-nums">{message.length} chars</span>
-              </div>
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Enter your secret message here..."
-                className="input h-32 font-mono text-body-sm resize-none"
-                disabled={loading}
-              />
-              <p className="text-body-xs text-muted mt-2">
-                Maximum ~1000 characters for VCP mode. DSSC supports longer messages with higher density.
-              </p>
-            </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
+        {/* Left: Controls */}
+        <div className="lg:col-span-5 space-y-5">
+          <Card title="Payload" subtitle={`${message.length} characters`}>
+            <textarea
+              rows={4}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Enter secret plaintext..."
+              className="input font-mono text-body-sm resize-none"
+              disabled={loading}
+            />
+          </Card>
 
-            <Card>
-              <h3 className="text-heading-sm font-semibold mb-4">Encoding Settings</h3>
-              <div className="space-y-6">
-                {/* Mode Selector */}
-                <div>
-                  <label className="label">Steganography Mode</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {(['exact_vcp', 'dssc'] as const).map((m) => {
-                      const opt = modeOptions[m];
-                      const Icon = opt.icon;
-                      return (
-                        <Tooltip key={m} content={opt.description} className="w-full">
-                          <button
-                            type="button"
-                            onClick={() => handleModeChange(m)}
-                            className={`w-full relative p-4 rounded-xl border-2 transition-all duration-fast flex flex-col items-center justify-center gap-2 ${
-                              mode === m
-                                ? m === 'dssc'
-                                  ? 'border-purple-500 bg-purple-500/10'
-                                  : 'border-primary bg-primary/10'
-                                : 'border-border hover:border-primary/50 hover:bg-surface'
-                            }`}
-                          >
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                              m === 'dssc'
-                                ? 'bg-purple-500/20 text-purple-400'
-                                : 'bg-primary/20 text-primary'
-                            }`}>
-                              <Icon className="w-5 h-5" />
-                            </div>
-                            <span className="font-medium text-body-sm text-center">{opt.label}</span>
-                          </button>
-                        </Tooltip>
-                      );
-                    })}
-                  </div>
-                  {mode === 'dssc' && (
-                    <p className="mt-2 text-body-xs text-purple-300 flex items-center gap-1">
-                      <Brain className="w-3.5 h-3.5" />
-                      DSSC maps multi-bit symbols per carrier using dynamic state spaces (~15 bits/carrier), significantly reducing the required carrier count.
-                    </p>
-                  )}
-                </div>
-
-                {/* DSSC Session Key */}
-                {mode === 'dssc' && (
-                  <div>
-                    <label className="label">Session Key (Hex)</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={sessionKeyHex}
-                        onChange={(e) => setSessionKeyHex(e.target.value)}
-                        placeholder="64-character hex key (auto-generated if empty)"
-                        className="input font-mono text-body-xs flex-1"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setSessionKeyHex(generateSessionKey())}
-                        className="btn-secondary gap-2"
-                      >
-                        <Key className="w-4 h-4" />
-                        New Key
-                      </button>
-                    </div>
-                    <p className="text-body-xs text-muted mt-2">Share this key with the recipient for decoding. Must be 64 hex characters.</p>
-                  </div>
-                )}
-
-                {/* Diversity Mode (exact_vcp only) */}
-                {mode === 'exact_vcp' && (
-                  <div>
-                    <label className="label">Carrier Diversity Mode</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {(['best', 'round_robin', 'balanced'] as const).map((m) => (
-                        <Tooltip key={m} content={
-                          m === 'best' ? 'Always pick highest scoring carrier' :
-                          m === 'round_robin' ? 'Cycle through modalities evenly' :
-                          'Mix of best match and round robin'
-                        } className="w-full">
-                          <button
-                            type="button"
-                            onClick={() => setDiversityMode(m)}
-                            className={`w-full p-3.5 rounded-xl border-2 transition-all duration-fast text-left ${
-                              diversityMode === m
-                                ? 'border-primary bg-primary/5'
-                                : 'border-border hover:border-primary/50 hover:bg-surface'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 whitespace-nowrap">
-                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                                diversityMode === m
-                                  ? 'border-primary bg-primary'
-                                  : 'border-border'
-                              }`}>
-                                {diversityMode === m && <div className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />}
-                              </div>
-                              <span className="font-medium text-body-sm capitalize">{m.replace('_', ' ')}</span>
-                            </div>
-                          </button>
-                        </Tooltip>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Modalities */}
-                <div>
-                  <label className="label">Allowed Modalities</label>
-                  <div className="flex flex-wrap gap-3">
-                    {['image', 'text', 'audio'].map((mod) => (
-                      <Tooltip key={mod} content={`${mod.charAt(0).toUpperCase() + mod.slice(1)} media carriers`}>
-                        <button
-                          type="button"
-                          onClick={() => toggleModality(mod)}
-                          className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-lg border transition-all duration-fast whitespace-nowrap ${
-                            modalities.includes(mod)
-                              ? 'border-primary bg-primary/10 text-primary'
-                              : 'border-border bg-surface hover:border-primary/50 text-muted'
-                          }`}
-                        >
-                          <span className="text-lg leading-none shrink-0">{modalityIcons[mod as keyof typeof modalityIcons]}</span>
-                          <span className="font-medium text-body-sm capitalize leading-none">{mod}</span>
-                        </button>
-                      </Tooltip>
-                    ))}
-                  </div>
+          <Card title="Codec Configuration">
+            <div className="space-y-4">
+              <div>
+                <label className="label">Encoding Mode</label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => handleModeChange('exact_vcp')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      mode === 'exact_vcp'
+                        ? 'border-primary bg-primary-muted/60 text-foreground'
+                        : 'border-border bg-surface-muted/40 text-muted hover:text-foreground'
+                    }`}
+                  >
+                    <Shield className="w-4 h-4 text-primary mb-1" />
+                    <div className="text-body-xs font-semibold">Exact VCP</div>
+                    <div className="text-[11px] text-muted">8 bits / carrier</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleModeChange('dssc')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      mode === 'dssc'
+                        ? 'border-purple bg-purple-muted/60 text-foreground'
+                        : 'border-border bg-surface-muted/40 text-muted hover:text-foreground'
+                    }`}
+                  >
+                    <Brain className="w-4 h-4 text-purple mb-1" />
+                    <div className="text-body-xs font-semibold">DSSC Compact</div>
+                    <div className="text-[11px] text-muted">~13.5 bits / carrier</div>
+                  </button>
                 </div>
               </div>
-            </Card>
 
-            <div className="space-y-3">
-              <button
-                onClick={handleEncode}
-                disabled={loading || !message.trim()}
-                className="btn-primary btn-lg w-full justify-center gap-2"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Encoding...
-                  </>
-                ) : (
-                  <>
-                    <Shield className="w-5 h-5" />
-                    Encode & Generate Sequence
-                  </>
-                )}
-              </button>
-
-              {result && !loading && (
-                <button
-                  onClick={handleOpenDecode}
-                  className="btn-success btn-lg w-full justify-center gap-2"
-                >
-                  <ExternalLink className="w-5 h-5" />
-                  Open in Decode Dashboard
-                </button>
+              {mode === 'dssc' && (
+                <div>
+                  <label className="label">Session Key (64-char hex)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={sessionKeyHex}
+                      onChange={(e) => setSessionKeyHex(e.target.value)}
+                      className="input font-mono text-body-xs flex-1"
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      onClick={() => setSessionKeyHex(generateSessionKey())}
+                      leftIcon={<Key className="w-3.5 h-3.5" />}
+                    >
+                      New
+                    </Button>
+                  </div>
+                </div>
               )}
 
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-4 bg-error/10 border border-error/20 rounded-xl text-error flex items-start gap-3"
-                  role="alert"
+              <div>
+                <label className="label">RS-ECC Parity Bytes (R)</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {PARITY_OPTIONS.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setParityBytes(r)}
+                      className={`py-2 rounded-xl border font-mono text-xs font-semibold transition-all ${
+                        parityBytes === r
+                          ? 'border-primary bg-primary-muted text-primary'
+                          : 'border-border bg-surface-muted/40 text-muted hover:text-foreground'
+                      }`}
+                    >
+                      R={r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Diversity Strategy</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['round_robin', 'balanced', 'best'] as const).map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setDiversityMode(d)}
+                      className={`py-2 px-2 rounded-xl border text-body-xs font-medium capitalize transition-all ${
+                        diversityMode === d
+                          ? 'border-primary bg-primary-muted text-primary font-semibold'
+                          : 'border-border bg-surface-muted/40 text-muted hover:text-foreground'
+                      }`}
+                    >
+                      {d.replace('_', ' ')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Allowed Modalities</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: 'image', label: 'Image', icon: ImageIcon },
+                    { id: 'text', label: 'Text', icon: FileText },
+                    { id: 'audio', label: 'Audio', icon: Volume2 },
+                  ].map((m) => {
+                    const Icon = m.icon;
+                    const active = modalities.includes(m.id);
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => toggleModality(m.id)}
+                        className={`px-3 py-1.5 rounded-xl border text-body-xs font-medium inline-flex items-center gap-1.5 transition-all ${
+                          active
+                            ? 'border-primary bg-primary-muted text-primary'
+                            : 'border-border bg-surface-muted/40 text-muted'
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        {m.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-border space-y-2.5">
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full"
+                onClick={handleEncode}
+                loading={loading}
+                disabled={!message.trim()}
+                leftIcon={<Lock className="w-4 h-4" />}
+              >
+                Encode Sequence
+              </Button>
+              {result && !loading && (
+                <Button
+                  variant="secondary"
+                  size="md"
+                  className="w-full"
+                  onClick={handleOpenDecode}
+                  leftIcon={<ExternalLink className="w-4 h-4" />}
                 >
-                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-medium">Encoding failed</p>
-                    <p className="text-body-sm mt-1">{error}</p>
-                  </div>
-                </motion.div>
+                  Open in Decode Page
+                </Button>
               )}
             </div>
-          </div>
 
-          {/* Results Panel */}
-          <div className="space-y-6">
-            {loading && (
-              <Card>
-                <div className="text-center py-12">
-                  <LoadingSpinner size="lg" />
-                  <p className="text-muted mt-4">Chunking message and searching corpus...</p>
+            {error && (
+              <div className="mt-4 p-3 rounded-xl bg-error-muted border border-error/30 text-error text-body-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Right: Encoded Output */}
+        <div className="lg:col-span-7 space-y-5">
+          {loading ? (
+            <Card className="py-20 text-center">
+              <LoadingSpinner size="lg" />
+              <p className="text-body-sm text-muted mt-4">Selecting unmodified corpus carriers...</p>
+            </Card>
+          ) : result ? (
+            <>
+              <StatGrid
+                columns={4}
+                stats={[
+                  { label: 'Mode', value: result.mode.toUpperCase(), variant: 'info' },
+                  { label: 'Carriers', value: result.media_ids.length, variant: 'primary' },
+                  { label: 'RS Parity', value: `${result.ecc_parity_bytes ?? parityBytes}B`, variant: 'success' },
+                  { label: 'Elapsed', value: `${result.elapsed_ms.toFixed(1)} ms`, variant: 'neutral' },
+                ]}
+              />
+
+              <Card
+                title="Generated Carrier Sequence"
+                subtitle={`${result.media_ids.length} unmodified corpus files — click any carrier to view asset & disk location`}
+                action={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(result.media_ids.join(','));
+                      success('Copied', 'Carrier IDs copied to clipboard');
+                    }}
+                    leftIcon={<Copy className="w-3.5 h-3.5" />}
+                  >
+                    Copy IDs
+                  </Button>
+                }
+              >
+                <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
+                  {result.encoded.map((item, idx) => (
+                    <button
+                      type="button"
+                      key={`${item.media_id}_${idx}`}
+                      onClick={() =>
+                        setPreviewTarget({
+                          mediaId: item.media_id,
+                          filePath: item.file_path,
+                          seq: idx,
+                        })
+                      }
+                      className="w-full text-left p-3 rounded-xl bg-surface-muted/45 hover:bg-surface-muted border border-border hover:border-primary/60 transition-all flex flex-col gap-1 group"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="font-mono text-body-xs text-muted">#{idx}</span>
+                          <span className="font-mono text-body-xs font-semibold text-foreground group-hover:text-primary transition-colors truncate">
+                            {item.media_id}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge variant="info" size="sm">
+                            {item.modality}
+                          </Badge>
+                          <span className="text-[11px] font-mono text-muted group-hover:text-primary inline-flex items-center gap-1">
+                            <Eye className="w-3 h-3" />
+                            View
+                          </span>
+                        </div>
+                      </div>
+                      {item.content && (
+                        <p className="text-body-xs text-muted line-clamp-1">{item.content}</p>
+                      )}
+                      {item.file_path && (
+                        <p className="text-[10px] font-mono text-muted/80 truncate">
+                          {item.file_path}
+                        </p>
+                      )}
+                    </button>
+                  ))}
                 </div>
               </Card>
-            )}
-
-            {result && !loading && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4 }}
-              >
-                <Card>
-                  <h3 className="text-heading-sm font-semibold mb-4">Encoding Results</h3>
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <StatCard label="Mode" value={result.mode.toUpperCase()} variant="info" />
-                    <StatCard label="Elapsed" value={`${result.elapsed_ms.toFixed(1)} ms`} variant="primary" />
-                    <StatCard label="Carriers" value={result.media_ids.length} variant="success" />
-                    <StatCard label="ECC" value="Active (CRC-verified)" variant="success" />
-                    {result.bits_per_carrier && result.mode === 'dssc' && (
-                      <StatCard label="Density" value={`${result.bits_per_carrier} bits/carrier`} variant="warning" />
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {result.modality_breakdown && Object.entries(result.modality_breakdown).map(([mod, count]) => (
-                      <Badge key={mod} variant="info" className="gap-1.5">
-                        <span className={
-                          mod === 'image' ? 'text-blue-400' : mod === 'text' ? 'text-emerald-400' : 'text-purple-400'
-                        }>
-                          {modalityIcons[mod as keyof typeof modalityIcons]}
-                        </span>
-                        <span className="capitalize">{mod}</span>
-                        <span className="font-mono bg-surface px-1.5 py-0.5 rounded text-foreground">{count}</span>
-                      </Badge>
-                    ))}
-                  </div>
-                </Card>
-
-                <Card>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-heading-sm font-semibold">Media Sequence & File Locations</h3>
-                    <button
-                      onClick={() => copyToClipboard(result.media_ids.join(','))}
-                      className="btn-ghost btn-sm gap-1"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      Copy IDs
-                    </button>
-                  </div>
-                  <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                    {result.encoded.map((item, idx) => (
-                      <motion.div
-                        key={idx}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.02 }}
-                        className="bg-surface/50 border border-border/50 rounded-xl p-3"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-3">
-                            <span className="text-body-xs text-muted font-mono">#{idx + 1}</span>
-                            <span className="font-mono text-sm text-primary">{item.media_id}</span>
-                          </div>
-                          <Badge variant="info" className="gap-1.5">
-                            <span className={
-                              item.modality === 'image' ? 'text-blue-400' : item.modality === 'text' ? 'text-emerald-400' : 'text-purple-400'
-                            }>
-                              {modalityIcons[item.modality as keyof typeof modalityIcons]}
-                            </span>
-                            <span className="capitalize">{item.modality}</span>
-                            <span className="font-mono text-body-xs bg-surface px-1.5 py-0.5 rounded text-foreground">
-                              {item.score ? (item.score * 100).toFixed(1) + '%' : '—'}
-                            </span>
-                          </Badge>
-                        </div>
-                        {item.content && (
-                          <div className="text-body-sm text-muted mb-2 line-clamp-2">{item.content}</div>
-                        )}
-                        {item.file_path && (
-                          <div className="text-body-xs text-muted font-mono break-all pt-2 border-t border-border/50">
-                            File: {item.file_path}
-                          </div>
-                        )}
-                      </motion.div>
-                    ))}
-                  </div>
-                </Card>
-              </motion.div>
-            )}
-
-            {!result && !loading && (
-              <Card className="text-center py-16">
-                <Shield className="w-12 h-12 text-muted/30 mx-auto mb-4" />
-                <h3 className="text-heading-sm font-semibold text-foreground mb-2">No results yet</h3>
-                <p className="text-muted">Enter a message and click "Encode" to generate a semantic media sequence</p>
-              </Card>
-            )}
-          </div>
+            </>
+          ) : (
+            <Card className="py-20 text-center">
+              <Lock className="w-9 h-9 text-muted/40 mx-auto mb-3" />
+              <h3 className="font-serif text-heading-md font-medium text-foreground">
+                Ready to encode
+              </h3>
+              <p className="text-body-sm text-muted mt-1 max-w-sm mx-auto">
+                Enter a message on the left to map each CRC-16 + RS-ECC codeword byte onto real
+                clickable corpus media.
+              </p>
+            </Card>
+          )}
         </div>
       </div>
+
+      <CarrierPreviewModal
+        target={previewTarget}
+        onClose={() => setPreviewTarget(null)}
+      />
     </PageWrapper>
   );
 }

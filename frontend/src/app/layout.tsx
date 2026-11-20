@@ -1,12 +1,12 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata } from 'next';
+import './globals.css';
 
-import { AuthProvider } from "@/lib/auth";
-import { ToastProvider } from "@/components/Toast";
+import { AuthProvider } from '@/lib/auth';
+import { ToastProvider } from '@/components/Toast';
 
 export const metadata: Metadata = {
-  title: "DCASS - Dynamic Context-Aware Semantic Steganography",
-  description: "Zero-modification semantic steganography system with AI-driven stealth",
+  title: 'DCASS · Semantic Steganography & RS-ECC Workspace',
+  description: 'Dynamic Context-Aware Semantic Steganography with live Reed-Solomon erasure recovery',
 };
 
 export default function RootLayout({
@@ -16,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">
+      <body className="antialiased bg-background text-foreground">
         <AuthProvider>
           <ToastProvider>{children}</ToastProvider>
         </AuthProvider>

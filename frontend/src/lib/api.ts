@@ -11,6 +11,33 @@ import axios, { AxiosInstance } from 'axios';
 const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export const API_BASE = `${API_ORIGIN.replace(/\/$/, '')}/api`;
 
+export function getApiBase(): string {
+  if (typeof window !== 'undefined') {
+    // NOTE: there is deliberately NO ?remote= query-param or localStorage
+    // override here. Letting a URL redirect API traffic to an arbitrary
+    // origin would exfiltrate the Bearer JWT (and all traffic) to that host.
+    const hostname = window.location.hostname;
+
+    // If accessed via a public tunnel (e.g. ngrok, localtunnel, cloudflare)
+    // or HTTPS origin with no port: use same-origin /api which Next.js proxies to backend!
+    if (
+      hostname.includes('ngrok') ||
+      hostname.includes('loca.lt') ||
+      hostname.includes('trycloudflare') ||
+      (window.location.protocol === 'https:' && !window.location.port)
+    ) {
+      return `${window.location.origin}/api`;
+    }
+
+    // Auto-detect LAN host when loaded from mobile or another network device
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      const protocol = window.location.protocol || 'http:';
+      return `${protocol}//${hostname}:8000/api`;
+    }
+  }
+  return API_BASE;
+}
+
 // Phase F auth: localStorage-backed JWT. See docs/GAN_RL_INTEGRATION_PLAN.md
 // Phase F.6 (R6) for the XSS caveat — fine for a research demo, not for
 // a public deployment.
@@ -68,9 +95,11 @@ export function setAuthToken(token: string | null): void {
 
 function _installAuthInterceptors(instance: AxiosInstance): AxiosInstance {
   instance.interceptors.request.use((config) => {
+    config.baseURL = getApiBase();
+    config.headers = config.headers ?? {};
+    config.headers['ngrok-skip-browser-warning'] = 'true';
     const token = getAuthToken();
     if (token) {
-      config.headers = config.headers ?? {};
       config.headers['Authorization'] = `Bearer ${token}`;
     }
     return config;
@@ -81,10 +110,21 @@ function _installAuthInterceptors(instance: AxiosInstance): AxiosInstance {
       // On 401, clear the stale token so the auth context notices and
       // bounces the user back to /login. Only clear for AUTHENTICATED
       // 401s (we had a token) to avoid an infinite loop on login/register.
+      // Skip entirely when already on /login or /register, or when the
+      // failing request is itself a login/register call — a bad credential
+      // attempt must not wipe the token or trigger a redirect loop.
       if (error?.response?.status === 401 && getAuthToken()) {
-        setAuthToken(null);
-        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-          window.location.href = '/login';
+        const requestUrl: string = error?.config?.url ?? '';
+        const onAuthPage =
+          typeof window !== 'undefined' &&
+          (window.location.pathname === '/login' || window.location.pathname === '/register');
+        const isAuthEndpoint =
+          requestUrl.endsWith('/auth/login') || requestUrl.endsWith('/auth/register');
+        if (!onAuthPage && !isAuthEndpoint) {
+          setAuthToken(null);
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
         }
       }
       return Promise.reject(error);
@@ -159,13 +199,15 @@ export interface EncodeResponse {
 }
 
 export interface DecodeRequest {
-  media_ids: string[];
+  media_ids: Array<string | null>;
   mode?: 'exact_vcp' | 'dssc';
+  diversity_mode?: 'best' | 'round_robin' | 'balanced';
   session_key_hex?: string;
   modalities?: string[];
   use_ecc?: boolean;
   ecc_parity_bytes?: number;
   context_epoch_hint?: string;
+  erasure_positions?: number[];
 }
 
 export interface DecodeResponse {
@@ -198,6 +240,7 @@ export interface DecodeResponse {
   elapsed_ms: number;
   ecc_success?: boolean;
   ecc_errors_fixed?: number[];
+  erasure_positions?: number[];
   payload_bytes?: number[];
   context_epoch_id?: string;
   cached?: boolean;
@@ -335,6 +378,9 @@ export interface TransmitRequest {
   media_ids: string[];
   recipient_username: string;
   mode?: 'static' | 'rl' | 'gan' | 'auto';
+  engine_mode?: 'exact_vcp' | 'dssc';
+  diversity_mode?: 'best' | 'round_robin' | 'balanced';
+  session_key_hex?: string;
   base_delay?: number;
   num_channels?: number;
   message?: string;
@@ -397,6 +443,69 @@ export async function deleteInboxSession(sessionId: string): Promise<{ success: 
 }
 
 // ============================================================================
+// Direct Messenger (WhatsApp / Telegram Stego Experience)
+// ============================================================================
+
+export interface ChatContact {
+  id: number;
+  username: string;
+  last_message: string;
+  last_timestamp: number;
+  online: boolean;
+}
+
+export interface CarrierDetail {
+  seq: number;
+  media_id: string;
+  modality: string;
+  channel_id: number;
+  channel_name: string;
+  content: string;
+  file_path: string;
+  packet_file: string;
+  verified: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  sender: string;
+  recipient: string;
+  text: string;
+  timestamp: number;
+  is_mine: boolean;
+  carrier_count: number;
+  conduits: string[];
+  carriers?: CarrierDetail[];
+  status: 'sent' | 'delivered' | 'verified';
+  verified: boolean;
+}
+
+export async function getChatContacts(): Promise<{ contacts: ChatContact[] }> {
+  const response = await api.get('/chat/contacts');
+  return response.data;
+}
+
+export async function getChatMessages(peer: string): Promise<{ messages: ChatMessage[]; peer: string }> {
+  const response = await api.get('/chat/messages', { params: { peer } });
+  return response.data;
+}
+
+export async function getChatCarriers(session_id: string): Promise<{
+  session_id: string;
+  carrier_count: number;
+  conduits: string[];
+  carriers: CarrierDetail[];
+}> {
+  const response = await api.get('/chat/carriers', { params: { session_id } });
+  return response.data;
+}
+
+export async function sendChatMessage(recipient_username: string, message: string, mode: string = 'exact_vcp'): Promise<ChatMessage> {
+  const response = await apiLongTimeout.post('/chat/send', { recipient_username, message, mode });
+  return response.data;
+}
+
+// ============================================================================
 // Wire / Telemetry
 // ============================================================================
 
@@ -408,6 +517,7 @@ export interface WirePacket {
   timestamp: number;
   mode_used: string;
   filename: string;
+  session_id?: string;
 }
 
 export interface WirePacketsResponse {
@@ -428,8 +538,8 @@ export interface TransmissionStatus {
   max_concurrent?: number;
 }
 
-export async function getWirePackets(): Promise<WirePacketsResponse> {
-  const response = await api.get('/wire/packets');
+export async function getWirePackets(params?: { recipient_username?: string; session_id?: string }): Promise<WirePacketsResponse> {
+  const response = await api.get('/wire/packets', { params });
   return response.data;
 }
 
@@ -440,6 +550,12 @@ export async function clearWirePackets(): Promise<{ success: boolean; deleted: n
 
 export async function getTransmissionStatus(): Promise<TransmissionStatus> {
   const response = await api.get('/transmit/status');
+  return response.data;
+}
+
+export async function stopTransmission(sessionId?: string): Promise<{ success: boolean; stopped: number }> {
+  const url = sessionId ? `/transmit/stop?session_id=${sessionId}` : '/transmit/stop';
+  const response = await api.post(url);
   return response.data;
 }
 
@@ -526,6 +642,299 @@ export async function runLiveSteganalysis(request: {
   sample_count?: number;
 }): Promise<LiveSteganalysisResponse> {
   const response = await apiLongTimeout.post('/demo/live-steganalysis', request);
+  return response.data;
+}
+
+// ============================================================================
+// Live RS-ECC Erasure & Packet-Loss Lab
+// ============================================================================
+
+export interface ErasureCarrierInfo {
+  seq: number;
+  media_id: string;
+  modality: string;
+  content: string;
+  file_path: string;
+  role: 'header' | 'payload' | 'parity' | string;
+  byte_indices: number[];
+  bytes_hex: string[];
+  bit_start: number;
+  bit_end: number;
+  char_preview?: string | null;
+  bits?: number;
+  family?: string;
+}
+
+export interface ErasureEncodeResponse {
+  message: string;
+  mode: 'exact_vcp' | 'dssc';
+  diversity_mode: 'best' | 'round_robin' | 'balanced';
+  ecc_parity_bytes: number;
+  session_key_hex?: string | null;
+  bits_per_carrier: number;
+  carrier_count: number;
+  header_bytes_len: number;
+  message_bytes_len: number;
+  framed_bytes_len: number;
+  codeword_bytes_len: number;
+  max_erasures: number;
+  max_errors: number;
+  codeword_hex: string[];
+  media_ids: string[];
+  carriers: ErasureCarrierInfo[];
+  elapsed_ms: number;
+}
+
+export interface ErasureFaultDetail {
+  seq: number;
+  fault_type: 'dropped' | 'corrupted';
+  original_media_id: string;
+  received_media_id: string | null;
+  byte_indices: number[];
+  original_hex: string[];
+  received_hex: string[];
+  repaired_hex: string[] | null;
+  recovered: boolean;
+}
+
+export interface ErasureTestResponse {
+  mode: 'exact_vcp' | 'dssc';
+  original_message: string;
+  reconstructed_message: string;
+  unprotected_preview: string;
+  ecc_success: boolean;
+  crc_verified: boolean;
+  exact_match: boolean;
+  bit_error_rate: number;
+  total_packets: number;
+  received_packet_count: number;
+  dropped_packet_count: number;
+  corrupted_packet_count: number;
+  drop_indices: number[];
+  corrupt_indices: number[];
+  verification_rate: number;
+  erased_byte_indices: number[];
+  corrupted_byte_indices: number[];
+  repaired_byte_indices: number[];
+  budget_used: number;
+  budget_max: number;
+  within_capacity: boolean;
+  fault_details: ErasureFaultDetail[];
+  elapsed_ms: number;
+}
+
+export interface ErasureSweepPoint {
+  dropped_packets: number;
+  trials: number;
+  recovered_exact: number;
+  recovery_rate_pct: number;
+  false_accepts: number;
+  mean_erased_bytes: number;
+}
+
+export interface ErasureSweepResponse {
+  mode: 'exact_vcp' | 'dssc';
+  ecc_parity_bytes: number;
+  total_packets: number;
+  trials_per_level: number;
+  points: ErasureSweepPoint[];
+  elapsed_ms: number;
+}
+
+export async function erasureEncode(request: {
+  message: string;
+  mode?: 'exact_vcp' | 'dssc';
+  diversity_mode?: 'best' | 'round_robin' | 'balanced';
+  ecc_parity_bytes?: number;
+  session_key_hex?: string;
+}): Promise<ErasureEncodeResponse> {
+  const response = await apiLongTimeout.post('/demo/erasure-encode', request);
+  return response.data;
+}
+
+export async function erasureTest(request: {
+  original_message: string;
+  media_ids: string[];
+  mode?: 'exact_vcp' | 'dssc';
+  diversity_mode?: 'best' | 'round_robin' | 'balanced';
+  ecc_parity_bytes?: number;
+  session_key_hex?: string | null;
+  drop_indices: number[];
+  corrupt_indices: number[];
+}): Promise<ErasureTestResponse> {
+  const response = await apiLongTimeout.post('/demo/erasure-test', request);
+  return response.data;
+}
+
+export async function erasureSweep(request: {
+  original_message: string;
+  media_ids: string[];
+  mode?: 'exact_vcp' | 'dssc';
+  diversity_mode?: 'best' | 'round_robin' | 'balanced';
+  ecc_parity_bytes?: number;
+  session_key_hex?: string | null;
+  trials_per_level?: number;
+}): Promise<ErasureSweepResponse> {
+  const response = await apiLongTimeout.post('/demo/erasure-sweep', request);
+  return response.data;
+}
+
+// ============================================================================
+// Real On-Disk Wire Session API (Transmit, Drop/Unlink, Tamper, Decode)
+// ============================================================================
+
+export interface WireSlot {
+  seq: number;
+  status: 'on_disk' | 'deleted' | 'tampered';
+  filename: string | null;
+  rel_path: string | null;
+  media_id: string | null;
+  original_media_id?: string | null;
+  modality: string;
+  channel_id: number;
+  delay_seconds: number;
+  timestamp: number | null;
+  role: 'header' | 'payload' | 'parity' | string;
+  bytes_hex: string[];
+  byte_indices?: number[];
+}
+
+export interface WireSessionSnapshot {
+  session_id: string;
+  sender_username: string;
+  recipient_username: string;
+  channel_dir: string;
+  engine_mode: 'exact_vcp' | 'dssc';
+  diversity_mode: 'best' | 'round_robin' | 'balanced';
+  mode_used: string;
+  ecc_parity_bytes: number;
+  bits_per_carrier: number;
+  total_items: number;
+  surviving_count: number;
+  dropped_count: number;
+  tampered_count: number;
+  dropped_sequences: number[];
+  tampered_sequences: number[];
+  erased_bytes_count?: number | null;
+  tampered_bytes_count?: number | null;
+  exact_fault_weight?: number | null;
+  channel_counts: Record<string, number>;
+  timestamp: number;
+  decoded: boolean;
+  last_decoded_message: string | null;
+  packets: WireSlot[];
+  elapsed_ms?: number;
+  deleted_files?: string[];
+  restored_files?: string[];
+}
+
+export interface WireSessionDecodeResult {
+  session_id: string;
+  channel_dir: string;
+  engine_mode: 'exact_vcp' | 'dssc';
+  ecc_parity_bytes: number;
+  total_packets: number;
+  surviving_packets: number;
+  dropped_packets: number;
+  tampered_packets: number;
+  dropped_sequences: number[];
+  tampered_sequences: number[];
+  ecc_success: boolean;
+  crc_verified: boolean;
+  reconstructed_message: string;
+  unprotected_preview: string;
+  repaired_byte_indices: number[];
+  verification_rate: number;
+  elapsed_ms: number;
+}
+
+export async function wireSendSession(request: {
+  message: string;
+  recipient_username?: string;
+  engine_mode?: 'exact_vcp' | 'dssc';
+  diversity_mode?: 'best' | 'round_robin' | 'balanced';
+  ecc_parity_bytes?: number;
+  stealth_mode?: 'static' | 'rl' | 'gan' | 'auto';
+}): Promise<WireSessionSnapshot> {
+  const response = await apiLongTimeout.post('/wire/send', request);
+  return response.data;
+}
+
+export async function getWireSessions(): Promise<{ sessions: WireSessionSnapshot[] }> {
+  const response = await api.get('/wire/sessions');
+  return response.data;
+}
+
+export async function getWireSession(sessionId: string): Promise<WireSessionSnapshot> {
+  const response = await api.get(`/wire/sessions/${sessionId}`);
+  return response.data;
+}
+
+export async function wireDropPacket(sessionId: string, seq: number): Promise<WireSessionSnapshot> {
+  const response = await api.delete(`/wire/sessions/${sessionId}/packets/${seq}`);
+  return response.data;
+}
+
+export async function wireDropBatch(sessionId: string, sequences: number[]): Promise<WireSessionSnapshot> {
+  const response = await api.post(`/wire/sessions/${sessionId}/drop`, { sequences });
+  return response.data;
+}
+
+export async function wireTamperPacket(sessionId: string, seq: number): Promise<WireSessionSnapshot> {
+  const response = await apiLongTimeout.post(`/wire/sessions/${sessionId}/tamper/${seq}`);
+  return response.data;
+}
+
+export async function wireRestorePackets(
+  sessionId: string,
+  sequences?: number[],
+): Promise<WireSessionSnapshot> {
+  const response = await api.post(
+    `/wire/sessions/${sessionId}/restore`,
+    sequences && sequences.length > 0 ? { sequences } : {},
+  );
+  return response.data;
+}
+
+export async function wireDecodeSession(sessionId: string): Promise<WireSessionDecodeResult> {
+  const response = await apiLongTimeout.post(`/wire/sessions/${sessionId}/decode`);
+  return response.data;
+}
+
+export async function wireDeleteSession(sessionId: string): Promise<{ success: boolean; deleted: number }> {
+  const response = await api.delete(`/wire/sessions/${sessionId}`);
+  return response.data;
+}
+
+export interface MediaInfoResponse {
+  media_id: string;
+  modality: string;
+  content: string;
+  file_path: string;
+  exists_on_disk: boolean;
+  size_bytes: number | null;
+  sha256: string | null;
+  bytes_modified: number;
+  is_image: boolean;
+  is_audio_playable: boolean;
+  file_url: string;
+  metadata: Record<string, string | number | boolean>;
+}
+
+export async function getMediaInfo(mediaId: string, path?: string): Promise<MediaInfoResponse> {
+  const response = await api.get('/media/info', {
+    params: { media_id: mediaId, ...(path ? { path } : {}) },
+  });
+  return response.data;
+}
+
+/**
+ * Fetch a wire packet JSON through the authenticated API client (so the
+ * Bearer token is attached and the server can authorize the caller) instead
+ * of a raw fetch that would hit an unauthenticated endpoint.
+ */
+export async function getMediaPacket(path: string): Promise<unknown> {
+  const response = await api.get('/media/packet', { params: { path } });
   return response.data;
 }
 

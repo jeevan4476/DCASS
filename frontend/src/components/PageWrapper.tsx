@@ -3,7 +3,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import Navigation from './Navigation';
-import { Card, StatCard, EmptyState, Separator } from './UI';
+import { StatCard, EmptyState } from './UI';
 
 interface PageWrapperProps {
   children: React.ReactNode;
@@ -12,6 +12,7 @@ interface PageWrapperProps {
   action?: React.ReactNode;
   className?: string;
   fullWidth?: boolean;
+  hideNav?: boolean;
 }
 
 export function PageWrapper({
@@ -21,32 +22,43 @@ export function PageWrapper({
   action,
   className = '',
   fullWidth = false,
+  hideNav = false,
 }: PageWrapperProps) {
+  if (hideNav) {
+    return (
+      <div className={`min-h-screen bg-background text-foreground ${className}`}>
+        {children}
+      </div>
+    );
+  }
+
   return (
-    <div className={`min-h-screen bg-background ${className}`}>
+    <div className={`min-h-screen flex flex-col md:flex-row bg-background text-foreground ${className}`}>
       <Navigation />
-      <main className={`pt-4 ${fullWidth ? 'px-4' : 'container mx-auto px-4'}`}>
-        {(title || description || action) && (
-          <motion.header
-            className="page-header py-4"
-            initial={{ opacity: 0, y: -20 }}
+      <main className="flex-1 min-w-0 px-4 sm:px-8 lg:px-10 py-6 sm:py-8">
+        <div className={fullWidth ? 'w-full' : 'max-w-6xl mx-auto'}>
+          {(title || description || action) && (
+            <motion.header
+              className="page-header"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+            >
+              <div className="min-w-0">
+                {title && <h1 className="page-title">{title}</h1>}
+                {description && <p className="page-description">{description}</p>}
+              </div>
+              {action && <div className="shrink-0">{action}</div>}
+            </motion.header>
+          )}
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1] }}
+            transition={{ duration: 0.25, delay: 0.04 }}
           >
-            <div>
-              {title && <h1 className="page-title">{title}</h1>}
-              {description && <p className="page-description mt-1">{description}</p>}
-            </div>
-            {action && <div>{action}</div>}
-          </motion.header>
-        )}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1], delay: 0.1 }}
-        >
-          {children}
-        </motion.div>
+            {children}
+          </motion.div>
+        </div>
       </main>
     </div>
   );
@@ -69,7 +81,7 @@ export function Section({
   action,
   className = '',
   columns = 1,
-  gap = 6,
+  gap = 5,
 }: SectionProps) {
   const gridClasses = {
     1: 'grid-cols-1',
@@ -82,31 +94,25 @@ export function Section({
     2: 'gap-2',
     3: 'gap-3',
     4: 'gap-4',
+    5: 'gap-5',
     6: 'gap-6',
-    8: 'gap-8',
   };
 
   return (
-    <motion.section
-      className={`${className}`}
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-100px' }}
-      transition={{ duration: 0.5, ease: [0.19, 1, 0.22, 1] }}
-    >
+    <section className={`mb-8 last:mb-0 ${className}`}>
       {(title || action) && (
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
           <div>
             {title && <h2 className="section-title">{title}</h2>}
             {subtitle && <p className="section-subtitle">{subtitle}</p>}
           </div>
-          {action && <div className="mt-4 sm:mt-0">{action}</div>}
+          {action && <div>{action}</div>}
         </div>
       )}
-      <div className={`grid w-full ${gapClasses[gap] || 'gap-6'} ${gridClasses[columns]}`}>
+      <div className={`grid w-full ${gapClasses[gap] || 'gap-5'} ${gridClasses[columns]}`}>
         {children}
       </div>
-    </motion.section>
+    </section>
   );
 }
 
@@ -125,21 +131,14 @@ interface StatGridProps {
 export function StatGrid({ stats, columns = 4, className = '' }: StatGridProps) {
   const gridClasses = {
     2: 'grid-cols-1 sm:grid-cols-2',
-    3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
-    4: 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4',
+    3: 'grid-cols-1 sm:grid-cols-3',
+    4: 'grid-cols-2 lg:grid-cols-4',
   };
 
   return (
-    <div className={`grid w-full gap-4 ${gridClasses[columns]} ${className}`}>
+    <div className={`grid w-full gap-3.5 ${gridClasses[columns]} ${className}`}>
       {stats.map((stat, i) => (
-        <motion.div
-          key={i}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1], delay: i * 0.05 }}
-        >
-          <StatCard {...stat} />
-        </motion.div>
+        <StatCard key={i} {...stat} />
       ))}
     </div>
   );
@@ -167,48 +166,45 @@ export function DataTable<T>({
   keyExtractor,
   emptyMessage = 'No data available',
   emptyAction,
-  striped = true,
+  striped = false,
   hoverable = true,
   className = '',
 }: DataTableProps<T>) {
   if (data.length === 0) {
     return (
       <EmptyState
-        title="No data"
+        title="No records"
         description={emptyMessage}
         action={emptyAction}
-        className="py-12"
+        className="py-10"
       />
     );
   }
 
   return (
     <div className={`overflow-x-auto ${className}`}>
-      <table className="w-full text-left">
+      <table className="w-full text-left border-collapse">
         <thead>
-          <tr className="border-b border-border-strong">
+          <tr className="border-b border-border bg-surface-muted/60">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`px-4 py-3 text-body-sm font-semibold text-muted uppercase tracking-wider ${col.className || ''}`}
+                className={`px-4 py-2.5 text-[11px] font-mono font-semibold text-muted uppercase tracking-wider ${col.className || ''}`}
               >
                 {col.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-border/70">
           {data.map((row, rowIndex) => (
             <tr
               key={keyExtractor(row)}
-              className={`transition-colors ${striped && rowIndex % 2 === 1 ? 'bg-surface/50' : ''} ${hoverable ? 'hover:bg-surface-hover' : ''}`}
+              className={`transition-colors ${striped && rowIndex % 2 === 1 ? 'bg-surface-muted/35' : ''} ${hoverable ? 'hover:bg-surface-muted/50' : ''}`}
             >
               {columns.map((col) => (
-                <td
-                  key={col.key}
-                  className={`px-4 py-3 text-body-md ${col.className || ''}`}
-                >
-                  {col.render ? col.render(row) : (row as any)[col.key]}
+                <td key={col.key} className={`px-4 py-3 text-body-sm ${col.className || ''}`}>
+                  {col.render ? col.render(row) : (row as Record<string, React.ReactNode>)[col.key]}
                 </td>
               ))}
             </tr>
@@ -237,38 +233,37 @@ export function ProgressBar({
   size = 'md',
   showLabel = false,
   label,
-  animated = false,
   className = '',
 }: ProgressBarProps) {
-  const percentage = Math.min(Math.max((value / max) * 100, 0), 100);
-
+  const percentage = Math.min(Math.max((value / Math.max(max, 1)) * 100, 0), 100);
   const variants = {
     primary: 'bg-primary',
     success: 'bg-success',
     warning: 'bg-warning',
     error: 'bg-error',
   };
-
   const sizes = {
     sm: 'h-1.5',
-    md: 'h-2.5',
-    lg: 'h-4',
+    md: 'h-2',
+    lg: 'h-3',
   };
 
   return (
-    <div className={`${className} w-full`}>
+    <div className={`w-full ${className}`}>
       {(showLabel || label) && (
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-body-sm font-medium text-foreground">{label || `${Math.round(percentage)}%`}</span>
-          {showLabel && <span className="text-body-sm text-muted tabular-nums">{value} / {max}</span>}
+        <div className="flex items-center justify-between mb-1.5 text-body-xs">
+          <span className="font-medium text-foreground">{label || `${Math.round(percentage)}%`}</span>
+          {showLabel && (
+            <span className="text-muted font-mono tabular-nums">
+              {value} / {max}
+            </span>
+          )}
         </div>
       )}
-      <div className={`relative w-full bg-border rounded-full overflow-hidden ${sizes[size]}`}>
-        <motion.div
-          className={`${variants[variant]} h-full rounded-full transition-all duration-500 ease-[cubic-bezier(0.19,1,0.22,1)] ${animated ? 'animate-pulse-soft' : ''}`}
-          initial={{ width: 0 }}
-          animate={{ width: `${percentage}%` }}
-          style={{ boxShadow: `0 0 8px rgb(var(--color-${variant}-rgb) / 0.4)` }}
+      <div className={`w-full bg-surface-muted border border-border/60 rounded-full overflow-hidden ${sizes[size]}`}>
+        <div
+          className={`${variants[variant]} h-full rounded-full transition-all duration-300`}
+          style={{ width: `${percentage}%` }}
         />
       </div>
     </div>
@@ -283,40 +278,36 @@ interface TabsProps {
   variant?: 'line' | 'pills';
 }
 
-export function Tabs({ tabs, activeTab, onChange, className = '', variant = 'line' }: TabsProps) {
+export function Tabs({ tabs, activeTab, onChange, className = '' }: TabsProps) {
   return (
-    <div className={`flex gap-1 overflow-x-auto max-w-full pb-1 ${variant === 'pills' ? 'bg-surface p-1 rounded-xl' : 'border-b border-border'} ${className}`}>
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => onChange(tab.id)}
-          className={`relative flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-body-sm font-medium transition-all duration-fast shrink-0 ${
-            activeTab === tab.id
-              ? variant === 'line'
-                ? 'text-primary'
-                : 'bg-background text-foreground shadow-card'
-              : 'text-muted hover:text-foreground hover:bg-surface'
-          }`}
-        >
-          {tab.icon && <span>{tab.icon}</span>}
-          {tab.label}
-          {tab.count !== undefined && (
-            <span className={`px-2 py-0.5 text-body-xs rounded-full ${activeTab === tab.id ? 'bg-primary/20 text-primary' : 'bg-border text-muted'}`}>
-              {tab.count}
-            </span>
-          )}
-        </button>
-      ))}
-      {variant === 'line' && (
-        <motion.div
-          className="absolute bottom-0 h-px bg-primary"
-          animate={{
-            width: `${(tabs.findIndex(t => t.id === activeTab) + 1) * (100 / tabs.length)}%`,
-            x: `${tabs.findIndex(t => t.id === activeTab) * (100 / tabs.length)}%`,
-          }}
-          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-        />
-      )}
+    <div className={`inline-flex flex-wrap gap-1 p-1 rounded-xl bg-surface-muted border border-border ${className}`}>
+      {tabs.map((tab) => {
+        const active = activeTab === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-body-xs font-medium transition-all ${
+              active
+                ? 'bg-surface text-foreground shadow-subtle border border-border'
+                : 'text-muted hover:text-foreground border border-transparent'
+            }`}
+          >
+            {tab.icon}
+            <span>{tab.label}</span>
+            {tab.count !== undefined && (
+              <span
+                className={`px-1.5 py-0.5 text-[11px] font-mono rounded-md ${
+                  active ? 'bg-primary-muted text-primary' : 'bg-surface/70 text-muted'
+                }`}
+              >
+                {tab.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
