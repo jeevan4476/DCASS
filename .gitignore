@@ -20,10 +20,6 @@ storage/*
 storage/models/*
 !storage/models/checkpoints_manifest.json
 
-# Benchmark Results, Publication Tables, and Plots (explicitly tracked)
-!storage/benchmarks/
-!storage/benchmarks/**
-
 # Legacy data directories (if any remain)
 data/raw/
 data/indices/
@@ -163,3 +159,39 @@ tmp/
 # Benchmark reference implementations and papers
 docs/benchmarking/papers/
 docs/benchmarking/official_impls/
+
+# Frontend backups
+frontend_v1_backup/
+frontend_v2_backup/
+
+# Local reports, papers, templates, and raw datasets
+*.docx
+/*.pdf
+/batchnumber.tex
+/DCASS_Research_Bundle.zip
+/Report Template_UE23CS441A/
+/Report Template_UE23CS441A.zip
+/Scenario-*.csv
+
+# Local paper/report generation scripts and sources
+scripts/utils/build_*.py
+scripts/utils/format_esa_report.py
+scripts/utils/render_*diagrams.py
+scripts/utils/test_ieee_builder.py
+scripts/utils/paper.typ
+scripts/utils/references.bib
+
+# Local audit/benchmark notes and experiment pilot scripts
+docs/audit/
+docs/benchmarking/
+scripts/analysis/benchmark_iscx_csv_flows.py
+scripts/analysis/benchmark_lsapp_*.py
+scripts/analysis/capture_tor_session.py
+scripts/analysis/evaluate_tor_packet_pilot.py
+scripts/analysis/ingest_lsapp.py
+scripts/analysis/inspect_tor_guards.py
+scripts/analysis/plot_lsapp_human_timing_comparison.py
+scripts/analysis/randomize_tor_pairs.py
+scripts/analysis/run_tpp_ppo_*.py
+scripts/analysis/tor_packet_protocol_v1.json
+scripts/analysis/tor_pilot_transport.py

@@ -1,229 +1,210 @@
 'use client';
 
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { Send, Mail, BarChart2, Terminal, Shield, Network, Sparkles, Zap, Brain, Eye, FlaskConical } from 'lucide-react';
-import { Navigation, Card, Badge } from '@/components';
+import {
+  MessageSquare,
+  ShieldCheck,
+  Activity,
+  Lock,
+  Unlock,
+  LayoutGrid,
+  Inbox,
+  ArrowUpRight,
+  Sparkles,
+  Layers,
+  Network,
+  Database,
+} from 'lucide-react';
+import { PageWrapper, Badge } from '@/components';
+import { getStatus, StatusResponse } from '@/lib/api';
 
-const features = [
+const SYSTEM_PILLARS = [
   {
-    title: 'Zero-Modification',
-    description: 'No changes to carrier media — resistant to classical steganalysis',
-    icon: Shield,
+    title: 'Zero-Modification Carriers',
+    detail: '245,279 unmodified image, text, and audio items across Flickr30k, Wikipedia, and Libretta.',
+    icon: Database,
   },
   {
-    title: 'Multi-Modal',
-    description: 'Support for text, image, and audio semantic encoding',
-    icon: Sparkles,
+    title: 'VCP & DSSC Codecs',
+    detail: 'Byte-exact Voronoi Codebook Partitioning (8 bpc) and keyed Dynamic State-Space Coding (~13.6 bpc).',
+    icon: Layers,
   },
   {
-    title: 'Dynamic Fallback',
-    description: 'Auto mode tries RL → GAN → Static scheduling',
-    icon: Brain,
+    title: 'Neural Multi-Channel Stealth',
+    detail: 'WGAN-GP timing mimicry and PPO routing disperse packets across 3 independent conduits.',
+    icon: Network,
   },
   {
-    title: 'Behavioral Stealth',
-    description: 'Human-like transmission patterns with noise injection',
-    icon: Eye,
+    title: 'RS-ECC Erasure Recovery',
+    detail: 'CRC-16 framing plus GF(2^8) Reed-Solomon parity recovers messages even after packet loss on disk.',
+    icon: ShieldCheck,
   },
 ];
 
-const quickActions = [
-  { href: '/send', label: 'Send', description: 'Encode and transmit a secret message', icon: Send, color: 'text-primary' },
-  { href: '/inbox', label: 'Inbox', description: 'View and decode received messages', icon: Mail, color: 'text-success' },
-  { href: '/status', label: 'Panel', description: 'System monitoring and telemetry', icon: BarChart2, color: 'text-info' },
-  { href: '/encode', label: 'Encode', description: 'Generate media sequences standalone', icon: Terminal, color: 'text-warning' },
-  { href: '/decode', label: 'Decode', description: 'Reconstruct meaning from media IDs', icon: Shield, color: 'text-purple-400' },
-  { href: '/wire', label: 'Wire', description: 'Real-time transmission telemetry', icon: Network, color: 'text-primary' },
-  { href: '/showcase', label: 'Showcase', description: 'Live laboratory and integrity proofs', icon: FlaskConical, color: 'text-success' },
+const WORKSPACE_CARDS = [
+  {
+    href: '/chat',
+    title: 'Covert Chat',
+    description: 'Two-way steganographic messenger with multimodal carrier inspection, asset previews, and packet JSON views.',
+    icon: MessageSquare,
+    tag: 'Messenger',
+  },
+  {
+    href: '/erasure',
+    title: 'RS-ECC Lab',
+    description: 'Transmit real carrier files onto disk, inspect or delete individual packets, and verify 100% erasure recovery.',
+    icon: ShieldCheck,
+    tag: 'Fault Tolerance',
+  },
+  {
+    href: '/wire',
+    title: 'Live Wire',
+    description: 'Monitor real packet JSON files in storage/shared_channel, inspect channel dispersion, and drop packets live.',
+    icon: Activity,
+    tag: 'Telemetry',
+  },
+  {
+    href: '/encode',
+    title: 'Encode',
+    description: 'Encode any plaintext into clickable corpus carriers with selectable codec mode and Reed-Solomon parity.',
+    icon: Lock,
+    tag: 'Codec',
+  },
+  {
+    href: '/decode',
+    title: 'Decode',
+    description: 'Reconstruct plaintext from carrier sequences with clickable asset inspection and slot-level erasure controls.',
+    icon: Unlock,
+    tag: 'Codec',
+  },
+  {
+    href: '/status',
+    title: 'System Panel',
+    description: 'Check live FAISS index counts, WGAN/PPO stealth checkpoints, compute device, and registered accounts.',
+    icon: LayoutGrid,
+    tag: 'Monitoring',
+  },
+  {
+    href: '/inbox',
+    title: 'Inbox',
+    description: 'View addressed sessions and decode complete or packet-dropped transmissions directly from disk.',
+    icon: Inbox,
+    tag: 'Receiver',
+  },
 ];
 
-export default function Home() {
+export default function HomePage() {
+  const [status, setStatus] = useState<StatusResponse | null>(null);
+
+  useEffect(() => {
+    getStatus()
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, []);
+
   return (
-    <>
-      <Navigation />
-      <main className="min-h-screen bg-background relative overflow-hidden">
-        {/* Subtle background pattern */}
-        <div className="absolute inset-0 opacity-30" aria-hidden="true">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--color-primary)/0.03,_transparent_70%)]" />
-        </div>
+    <PageWrapper>
+      <div className="max-w-5xl mx-auto py-4 sm:py-8 space-y-10">
+        {/* Editorial Hero */}
+        <section className="space-y-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-muted border border-primary/20 text-primary text-body-xs font-medium">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>DCASS &middot; Semantic Covert Channels</span>
+          </div>
 
-        <div className="container mx-auto px-4 py-16 lg:py-24 relative z-10">
-          {/* Hero */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.19, 1, 0.22, 1] }}
-            className="max-w-4xl mx-auto text-center mb-16 lg:mb-24"
-          >
-            <Badge variant="primary" className="mb-6 inline-flex" size="lg">
-              <Zap className="w-3 h-3 mr-1" />
-              DCASS v0.1.0
-            </Badge>
-            <h1 className="text-display-xl font-bold text-foreground mb-6">
-              Dynamic Context-Aware
-              <br />
-              <span className="text-primary">Semantic Steganography</span>
-            </h1>
-            <p className="text-body-lg text-muted mb-10 max-w-2xl mx-auto">
-              Zero-modification semantic steganography system with AI-driven stealth.
-              Encode messages using semantically aligned media without altering any carrier content.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link href="/send" className="btn-primary btn-lg">
-                <Send className="w-5 h-5" />
-                Send a Message
-              </Link>
-              <Link href="/status" className="btn-secondary btn-lg">
-                <BarChart2 className="w-5 h-5" />
-                View Panel
-              </Link>
-            </div>
-          </motion.div>
+          <h1 className="font-serif text-3xl sm:text-[2.75rem] font-medium text-foreground leading-[1.14] tracking-tight max-w-3xl">
+            Dynamic Context-Aware Semantic Steganography.
+          </h1>
 
-          {/* Quick Actions */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.19, 1, 0.22, 1], delay: 0.1 }}
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-16">
-              {quickActions.map((action, i) => {
-                const Icon = action.icon;
-                return (
-                  <Link
-                    key={action.href}
-                    href={action.href}
-                    className="card-hover group text-center py-8 px-6 relative overflow-hidden"
-                    style={{ transitionDelay: `${i * 50}ms` }}
-                  >
-                    <div className={`w-14 h-14 rounded-xl mx-auto mb-4 flex items-center justify-center ${action.color} bg-current/10 group-hover:bg-current/20 transition-colors`}>
-                      <Icon className="w-7 h-7" />
-                    </div>
-                    <h3 className="font-semibold text-foreground mb-1">{action.label}</h3>
-                    <p className="text-body-sm text-muted">{action.description}</p>
-                    {/* Shimmer overlay on hover */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-primary/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                  </Link>
-                );
-              })}
-            </div>
-          </motion.div>
+          <p className="text-body-lg text-muted max-w-2xl leading-relaxed">
+            Communicate covertly by transmitting unmodified references to public images, text
+            passages, and audio clips across multiple channels, backed by neural stealth scheduling
+            and Reed-Solomon error correction.
+          </p>
 
-          {/* Features */}
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-100px' }}
-            transition={{ duration: 0.6, ease: [0.19, 1, 0.22, 1], delay: 0.2 }}
-            className="mb-16"
-          >
-            <div className="text-center mb-10">
-              <h2 className="text-heading-xl font-bold text-foreground mb-3">Key Capabilities</h2>
-              <p className="text-body-lg text-muted max-w-2xl mx-auto">
-                Built on semantic vector spaces with dynamic scheduling for covert communication.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {features.map((feature, i) => {
-                const Icon = feature.icon;
-                return (
-                  <motion.div
-                    key={feature.title}
-                    whileHover={{ y: -4, boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)' }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                    className="group"
-                  >
-                    <Card className="hover:border-primary/50 h-full">
-                      <div className="flex items-start gap-4">
-                        <motion.div
-                          whileHover={{ scale: 1.1, rotate: 6 }}
-                          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                          className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary/20 transition-all duration-300"
-                        >
-                          <Icon className="w-6 h-6" />
-                        </motion.div>
-                        <div>
-                          <h3 className="font-semibold text-foreground mb-1">{feature.title}</h3>
-                          <p className="text-body-sm text-muted">{feature.description}</p>
-                        </div>
-                      </div>
-                    </Card>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </motion.section>
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <Link href="/chat" className="btn-primary btn-lg">
+              <MessageSquare className="w-4 h-4" />
+              Open Covert Chat
+            </Link>
+            <Link href="/erasure" className="btn-secondary btn-lg">
+              <ShieldCheck className="w-4 h-4" />
+              RS-ECC Lab
+            </Link>
+            <Link href="/wire" className="btn-secondary btn-lg">
+              <Activity className="w-4 h-4" />
+              Live Wire
+            </Link>
+            {status && (
+              <Badge variant="success" size="lg" dot className="ml-1">
+                {status.total_items.toLocaleString()} vectors &middot; {status.device.toUpperCase()}
+              </Badge>
+            )}
+          </div>
+        </section>
 
-          {/* Tech Stack / Stats */}
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-100px' }}
-            transition={{ duration: 0.6, ease: [0.19, 1, 0.22, 1], delay: 0.3 }}
-          >
-            <Card className="relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-info/5" />
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center relative z-10">
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.4, type: 'spring', stiffness: 300, damping: 20 }}
-                  className="p-4"
-                >
-                  <p className="stat-value text-primary">512</p>
-                  <p className="stat-label mt-1">Vector Dimensions</p>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.45, type: 'spring', stiffness: 300, damping: 20 }}
-                  className="p-4"
-                >
-                  <p className="stat-value text-success">256</p>
-                  <p className="stat-label mt-1">Codebook Centroids</p>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.5, type: 'spring', stiffness: 300, damping: 20 }}
-                  className="p-4"
-                >
-                  <p className="stat-value text-info">3</p>
-                  <p className="stat-label mt-1">Modalities</p>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.55, type: 'spring', stiffness: 300, damping: 20 }}
-                  className="p-4"
-                >
-                  <p className="stat-value text-warning">0%</p>
-                  <p className="stat-label mt-1">Clean-channel BER</p>
-                </motion.div>
+        {/* Architecture Pillars */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {SYSTEM_PILLARS.map((pillar) => {
+            const Icon = pillar.icon;
+            return (
+              <div
+                key={pillar.title}
+                className="bg-surface border border-border rounded-2xl p-4 shadow-subtle space-y-2"
+              >
+                <div className="w-8 h-8 rounded-xl bg-surface-muted border border-border flex items-center justify-center text-primary">
+                  <Icon className="w-4 h-4" />
+                </div>
+                <h2 className="font-serif text-[1.05rem] font-medium text-foreground leading-snug">
+                  {pillar.title}
+                </h2>
+                <p className="text-body-xs text-muted leading-relaxed">{pillar.detail}</p>
               </div>
-            </Card>
-          </motion.section>
+            );
+          })}
+        </section>
 
-          {/* Footer CTA */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.19, 1, 0.22, 1], delay: 0.4 }}
-            className="text-center mt-16"
-          >
-            <p className="text-body-md text-muted mb-4">Ready to try DCASS?</p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link href="/register" className="btn-primary btn-lg">
-                Create Free Account
-              </Link>
-              <Link href="/login" className="btn-secondary btn-lg">
-                Sign In
-              </Link>
-            </div>
-          </motion.div>
-        </div>
-      </main>
-    </>
+        {/* Workspace Grid */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="section-title">System Modules</h2>
+            <p className="section-subtitle">
+              Every module runs live against the local FAISS corpus and shared channel filesystem
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {WORKSPACE_CARDS.map((card) => {
+              const Icon = card.icon;
+              return (
+                <Link
+                  key={card.href}
+                  href={card.href}
+                  className="group bg-surface border border-border hover:border-border-strong rounded-2xl p-5 shadow-subtle hover:shadow-elevated transition-all flex flex-col justify-between gap-4"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="w-9 h-9 rounded-xl bg-surface-muted border border-border flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white group-hover:border-primary transition-colors">
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <span className="text-[11px] font-mono text-muted">{card.tag}</span>
+                    </div>
+                    <div>
+                      <h3 className="font-serif text-[1.2rem] font-medium text-foreground group-hover:text-primary transition-colors flex items-center gap-1">
+                        <span>{card.title}</span>
+                        <ArrowUpRight className="w-4 h-4 opacity-0 -translate-y-0.5 group-hover:opacity-100 group-hover:translate-y-0 transition-all" />
+                      </h3>
+                      <p className="text-body-sm text-muted mt-1 leading-relaxed">
+                        {card.description}
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+    </PageWrapper>
   );
 }

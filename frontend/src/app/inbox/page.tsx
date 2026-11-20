@@ -1,16 +1,44 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { Mail, Send, Loader2, RefreshCw, LogOut, MessageSquare, Trash2, Eye, Shield, CheckCircle, AlertCircle, Clock, User, X } from 'lucide-react';
+import {
+  Mail,
+  RefreshCw,
+  Trash2,
+  Eye,
+  ShieldCheck,
+  AlertCircle,
+  Clock,
+  User,
+  MessageSquare,
+  CheckCircle2,
+  XCircle,
+} from 'lucide-react';
 
 import { useRequireAuth } from '@/lib/auth';
-import { InboxItem, InboxDecodeResponse, decodeInboxSession, deleteInboxSession, getInbox, getErrorMessage } from '@/lib/api';
-import { PageWrapper, Card, Badge, LoadingSpinner, EmptyState, useToastHelpers, Tooltip } from '@/components';
+import {
+  InboxItem,
+  InboxDecodeResponse,
+  decodeInboxSession,
+  deleteInboxSession,
+  getInbox,
+  getErrorMessage,
+} from '@/lib/api';
+import {
+  PageWrapper,
+  Card,
+  Badge,
+  Button,
+  LoadingSpinner,
+  EmptyState,
+  CarrierPreviewModal,
+  CarrierPreviewTarget,
+  useToastHelpers,
+} from '@/components';
 
 export default function InboxPage() {
-  const { user, loading: authLoading, logout } = useRequireAuth();
+  const { user, loading: authLoading } = useRequireAuth();
   const { success, error: showError } = useToastHelpers();
 
   const [items, setItems] = useState<InboxItem[]>([]);
@@ -18,6 +46,7 @@ export default function InboxPage() {
   const [error, setError] = useState<string | null>(null);
   const [decoded, setDecoded] = useState<Record<string, InboxDecodeResponse>>({});
   const [busySession, setBusySession] = useState<string | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<CarrierPreviewTarget | null>(null);
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -26,9 +55,8 @@ export default function InboxPage() {
     try {
       const resp = await getInbox();
       setItems(resp.items);
-    } catch (err: unknown) {
-      const message = getErrorMessage(err, 'Failed to load inbox');
-      setError(message);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to load inbox'));
     } finally {
       setLoading(false);
     }
@@ -40,25 +68,34 @@ export default function InboxPage() {
 
   const onDecode = async (sessionId: string) => {
     setBusySession(sessionId);
+    setError(null);
     try {
       const resp = await decodeInboxSession(sessionId);
       setDecoded((prev) => ({ ...prev, [sessionId]: resp }));
       setItems((prev) =>
-        prev.map((it) => (it.session_id === sessionId ? { ...it, decoded: true } : it)),
+        prev.map((it) => (it.session_id === sessionId ? { ...it, decoded: resp.ecc_success } : it)),
       );
-      const rate = typeof resp.verification_rate === 'number' ? (resp.verification_rate * 100).toFixed(1) : '100.0';
-      success('Decoded', `Message recovered with ${rate}% verification`);
-    } catch (err: unknown) {
-      const message = getErrorMessage(err, 'Decode failed');
-      setError(message);
-      showError('Decode failed', message);
+      if (resp.ecc_success) {
+        success(
+          'Decoded from Disk',
+          resp.ecc_errors_fixed?.length
+            ? `Recovered 100% via RS-ECC (${resp.ecc_errors_fixed.length} byte(s) repaired)`
+            : 'Message decoded and CRC-16 verified',
+        );
+      } else {
+        showError('Fail-Closed Rejection', 'Missing packets exceeded Reed-Solomon parity budget');
+      }
+    } catch (err) {
+      const msg = getErrorMessage(err, 'Decode failed');
+      setError(msg);
+      showError('Decode failed', msg);
     } finally {
       setBusySession(null);
     }
   };
 
   const onDelete = async (sessionId: string) => {
-    if (!confirm('Delete this message? This cannot be undone.')) return;
+    if (!confirm('Delete this session and all its on-disk packets?')) return;
     setBusySession(sessionId);
     try {
       await deleteInboxSession(sessionId);
@@ -67,11 +104,9 @@ export default function InboxPage() {
         const { [sessionId]: _, ...rest } = prev;
         return rest;
       });
-      success('Deleted', 'Message removed from inbox');
-    } catch (err: unknown) {
-      const message = getErrorMessage(err, 'Delete failed');
-      setError(message);
-      showError('Delete failed', message);
+      success('Deleted', 'Session removed from inbox');
+    } catch (err) {
+      showError('Delete failed', getErrorMessage(err));
     } finally {
       setBusySession(null);
     }
@@ -79,207 +114,211 @@ export default function InboxPage() {
 
   if (authLoading || !user) {
     return (
-      <PageWrapper fullWidth>
-        <LoadingSpinner size="lg" />
+      <PageWrapper>
+        <div className="py-24 flex justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
       </PageWrapper>
     );
   }
 
-  const getModeColor = (mode?: string | null) => {
-    switch (mode?.toLowerCase()) {
-      case 'rl': return 'success';
-      case 'gan': return 'info';
-      case 'static': return 'warning';
-      default: return 'neutral';
-    }
-  };
-
   return (
     <PageWrapper
       title="Inbox"
-      description={`Messages addressed to ${user.username}`}
+      description={`Sessions addressed to @${user.username} — incomplete sessions decode directly via RS-ECC erasure recovery`}
       action={
         <div className="flex items-center gap-2">
-          <Link href="/send" className="btn-secondary btn-sm">
-            <Send className="w-4 h-4" />
-            Send
+          <Link href="/erasure" className="btn-secondary btn-sm">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            RS-ECC Lab
           </Link>
-          <button onClick={refresh} disabled={loading} className="btn-ghost btn-sm">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={refresh}
+            disabled={loading}
+            leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
+          >
             Refresh
-          </button>
+          </Button>
         </div>
       }
     >
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl space-y-4 pb-12">
         {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6 flex items-start gap-3 p-4 bg-error/10 border border-error/20 rounded-xl text-error"
-            role="alert"
-          >
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium">Failed to load inbox</p>
-              <p className="text-body-sm mt-1">{error}</p>
-              <button onClick={refresh} className="mt-2 text-body-sm text-primary hover:underline">Retry</button>
-            </div>
-          </motion.div>
+          <div className="p-4 rounded-xl bg-error-muted border border-error/30 text-error text-body-sm flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
         )}
 
         {items.length === 0 && !loading ? (
-          <Card className="text-center py-16">
+          <Card>
             <EmptyState
-              icon={<Mail className="w-12 h-12" />}
+              icon={<Mail className="w-10 h-10" />}
               title="Inbox is empty"
-              description="No messages have been sent to you yet. Send a test message to yourself or ask another user to transmit."
+              description="Messages sent to you via Covert Chat or RS-ECC Lab appear here for on-demand decoding."
               action={
-                <Link href="/send" className="btn-primary">
-                  <Send className="w-4 h-4" />
-                  Send a Message
+                <Link href="/chat" className="btn-primary">
+                  <MessageSquare className="w-4 h-4" />
+                  Open Covert Chat
                 </Link>
               }
             />
           </Card>
         ) : (
-          <div className="space-y-3">
-            {items.map((item) => {
-              const complete = item.received_packets >= item.total_items;
-              const detail = decoded[item.session_id];
-              const isDecoding = busySession === item.session_id;
+          items.map((item) => {
+            const missingCount = Math.max(0, item.total_items - item.received_packets);
+            const detail = decoded[item.session_id];
+            const busy = busySession === item.session_id;
 
-              return (
-                <motion.article
-                  key={item.session_id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <Card className="overflow-hidden">
-                      <div className="flex items-start justify-between gap-4 p-4 flex-wrap sm:flex-nowrap">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <div className="flex items-center gap-2">
-                            <User className="w-5 h-5 text-muted" />
-                            <span className="font-medium text-foreground">
-                              {item.sender_username || '(unknown)'}
-                            </span>
-                          </div>
-                          {item.mode_used && (
-                            <Tooltip content={`Transmission mode: ${item.mode_used.toUpperCase()}`}>
-                              <Badge variant={getModeColor(item.mode_used)} dot size="sm">
-                                {item.mode_used.toUpperCase()}
-                              </Badge>
-                            </Tooltip>
-                          )}
-                          <span className="text-body-xs text-muted px-2 py-0.5 bg-surface rounded">
-                            #{item.session_id.slice(0, 8)}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-4 mt-2 text-body-sm text-muted flex-wrap">
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5" />
-                            {new Date(item.timestamp * 1000).toLocaleString()}
-                          </span>
-                          <span className="flex items-center gap-1 font-mono tabular-nums">
-                            <MessageSquare className="w-3.5 h-3.5" />
-                            {item.received_packets}/{item.total_items} packets
-                          </span>
-                          {!complete && (
-                            <span className="flex items-center gap-1 text-warning">
-                              <AlertCircle className="w-3.5 h-3.5" />
-                              Incomplete
-                            </span>
-                          )}
-                        </div>
+            return (
+              <Card key={item.session_id} className="p-0 overflow-hidden">
+                <div className="p-5 flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-foreground capitalize">
+                        <User className="w-4 h-4 text-primary" />
+                        {item.sender_username || '(unknown)'}
+                      </span>
+                      <span className="font-mono text-body-xs px-2 py-0.5 rounded-md bg-surface-muted border border-border text-muted">
+                        {item.session_id}
+                      </span>
+                      {item.mode_used && (
+                        <Badge variant="info" size="sm">
+                          {item.mode_used.toUpperCase()}
+                        </Badge>
+                      )}
+                      {missingCount > 0 ? (
+                        <Badge variant="warning" size="sm" dot>
+                          {missingCount} packet(s) dropped on wire
+                        </Badge>
+                      ) : (
+                        <Badge variant="success" size="sm" dot>
+                          Complete
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4 text-body-xs text-muted flex-wrap font-mono">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        {new Date(item.timestamp * 1000).toLocaleString()}
+                      </span>
+                      <span>
+                        {item.received_packets}/{item.total_items} packet files on disk
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Link
+                      href={`/erasure?session=${encodeURIComponent(item.session_id)}`}
+                      className="btn-secondary btn-sm"
+                    >
+                      Inspect Wire
+                    </Link>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => onDecode(item.session_id)}
+                      disabled={item.received_packets === 0 || busy}
+                      loading={busy}
+                      leftIcon={detail ? <Eye className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                    >
+                      {missingCount > 0 ? 'Recover with RS-ECC' : detail ? 'Re-read' : 'Decode'}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(item.session_id)}
+                      disabled={busy}
+                      className="btn-ghost btn-sm text-muted hover:text-error"
+                      aria-label="Delete session"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {detail && (
+                  <div className="border-t border-border bg-surface-muted/45 p-5 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-body-sm font-medium">
+                        {detail.ecc_success ? (
+                          <CheckCircle2 className="w-4 h-4 text-success" />
+                        ) : (
+                          <XCircle className="w-4 h-4 text-error" />
+                        )}
+                        <span className={detail.ecc_success ? 'text-success' : 'text-error'}>
+                          {detail.ecc_success
+                            ? 'Recovered Plaintext (CRC-16 Verified)'
+                            : 'Fail-Closed Rejection (Beyond Parity Budget)'}
+                        </span>
                       </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Tooltip content="Decode message">
-                          <button
-                            onClick={() => onDecode(item.session_id)}
-                            disabled={!complete || isDecoding}
-                            className="btn-primary btn-sm gap-2"
-                          >
-                            {isDecoding ? (
-                              <>
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                Decoding…
-                              </>
-                            ) : detail ? (
-                              <>
-                                <Eye className="w-4 h-4" />
-                                View
-                              </>
-                            ) : (
-                              <>
-                                <Shield className="w-4 h-4" />
-                                Decode
-                              </>
-                            )}
-                          </button>
-                        </Tooltip>
-                        <Tooltip content="Delete message">
-                          <button
-                            onClick={() => onDelete(item.session_id)}
-                            disabled={isDecoding}
-                            className="btn-ghost btn-sm text-error hover:text-error hover:bg-error/10"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </Tooltip>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="info" size="sm">
+                          {(detail.verification_rate * 100).toFixed(1)}% packets on disk
+                        </Badge>
+                        {detail.ecc_errors_fixed?.length > 0 && (
+                          <Badge variant="primary" size="sm">
+                            RS-ECC repaired {detail.ecc_errors_fixed.length} byte(s)
+                          </Badge>
+                        )}
+                        {typeof detail.elapsed_ms === 'number' && (
+                          <Badge variant="neutral" size="sm">
+                            {detail.elapsed_ms.toFixed(1)} ms
+                          </Badge>
+                        )}
                       </div>
                     </div>
 
-                    {detail && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="border-t border-border bg-surface/50"
-                      >
-                        <div className="p-4 space-y-3">
-                          <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <h4 className="font-semibold text-foreground">Decoded Message</h4>
-                            <div className="flex items-center gap-2 text-body-xs flex-wrap">
-                              <Badge variant={detail.ecc_success ? 'success' : 'error'} dot size="sm">
-                                {detail.ecc_success ? 'ECC OK' : 'ECC FAILED'}
-                              </Badge>
-                              <Badge variant="info" size="sm">
-                                {(typeof detail.verification_rate === 'number' ? (detail.verification_rate * 100).toFixed(1) : '100.0')}% verified
-                              </Badge>
-                              {Array.isArray(detail.ecc_errors_fixed) && detail.ecc_errors_fixed.length > 0 && (
-                                <Badge variant="warning" size="sm">
-                                  Fixed {detail.ecc_errors_fixed.length} errors
-                                </Badge>
-                              )}
-                              {detail.cached && (
-                                <Badge variant="neutral" size="sm">Cached</Badge>
-                              )}
-                            </div>
-                          </div>
-                          <div className="bg-background border border-border rounded-lg p-4 font-mono text-body-sm text-foreground whitespace-pre-wrap max-h-60 overflow-y-auto">
-                            {detail.reconstructed_meaning || '(empty)'}
-                          </div>
-                          <div className="flex items-center gap-4 text-body-xs text-muted flex-wrap">
-                            {typeof detail.elapsed_ms === 'number' && (
-                              <span>Decoded in {detail.elapsed_ms.toFixed(1)}ms</span>
-                            )}
-                            {Array.isArray(detail.ecc_errors_fixed) && detail.ecc_errors_fixed.length > 0 && (
-                              <span>Corrected errors: {detail.ecc_errors_fixed.join(', ')}</span>
-                            )}
-                          </div>
+                    <div className="p-4 rounded-xl bg-surface border border-border font-mono text-body-sm text-foreground whitespace-pre-wrap break-words">
+                      {detail.ecc_success
+                        ? detail.reconstructed_meaning
+                        : '(Corrupted beyond RS-ECC capacity — cleanly rejected)'}
+                    </div>
+
+                    {Array.isArray(detail.items) && detail.items.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="text-[11px] font-mono text-muted uppercase tracking-wider">
+                          Carrier Files ({detail.items.length}) — click to view
                         </div>
-                      </motion.div>
+                        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                          {detail.items.map((carrier, idx) => {
+                            const dropped = !carrier.verified || carrier.media_id === '[DROPPED]';
+                            return dropped ? (
+                              <span
+                                key={idx}
+                                className="px-2 py-0.5 rounded-md bg-error-muted border border-error/30 font-mono text-[11px] text-error"
+                              >
+                                #{idx} DROPPED
+                              </span>
+                            ) : (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => setPreviewTarget({ mediaId: carrier.media_id, seq: idx })}
+                                className="px-2 py-0.5 rounded-md bg-surface hover:border-primary border border-border font-mono text-[11px] text-foreground hover:text-primary transition-colors"
+                              >
+                                #{idx} {carrier.media_id}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
-                  </Card>
-                </motion.article>
-              );
-            })}
-          </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })
         )}
       </div>
+
+      <CarrierPreviewModal
+        target={previewTarget}
+        onClose={() => setPreviewTarget(null)}
+      />
     </PageWrapper>
   );
 }
