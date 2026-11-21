@@ -22,11 +22,16 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError as JWTError
 from passlib.context import CryptContext
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
-DB_PATH = _PROJECT_ROOT / "storage" / "auth.db"
+DB_PATH = (
+    Path(os.environ["DCASS_DB_PATH"])
+    if os.environ.get("DCASS_DB_PATH")
+    else (_PROJECT_ROOT / "storage" / "auth.db")
+)
 
 _pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 _bearer_scheme = HTTPBearer(auto_error=False)

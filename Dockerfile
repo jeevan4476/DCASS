@@ -1,15 +1,11 @@
-# Dockerfile for DCASS Steganography System
-# Optimized multi-stage build for minimal image size
-#
-# Build: docker build -t dcass:latest .
-# Size: ~2.5GB (optimized from ~4GB+)
+# Dockerfile for DCASS Backend API & Engine
+# Multi-stage CPU build aligned with Python 3.11 CI
 
 # ============================================================================
 # Stage 1: Base with system dependencies
 # ============================================================================
-FROM python:3.10-slim AS base
+FROM python:3.11-slim AS base
 
-# Set environment variables for optimization
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -17,8 +13,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install minimal system dependencies in single layer
-# Clean up in same layer to reduce image size
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
@@ -31,93 +25,75 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ============================================================================
 FROM base AS builder
 
-# Copy requirements first (better layer caching)
 COPY requirements.txt .
 
-# Install Python packages with optimizations
-# Using --no-cache-dir to prevent pip cache buildup
+# Install CPU-only PyTorch first so downstream requirements do not pull CUDA wheels,
+# then install runtime requirements (filtering dev/notebook packages) and CLIP.
 RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Install PyTorch CPU-only (significantly smaller than full torch)
-# Using index-url for CPU-only wheels
-RUN pip install --no-cache-dir \
-    torch==2.0.1+cpu \
-    torchvision==0.15.2+cpu \
-    torchaudio==2.0.2+cpu \
-    --index-url https://download.pytorch.org/whl/cpu
-
-# Install additional RL/GAN dependencies
-RUN pip install --no-cache-dir \
-    gymnasium==0.29.1 \
-    tensorboard==2.14.0
-
-# Install CLIP (lighter installation)
-RUN pip install --no-cache-dir \
-    ftfy \
-    regex \
-    && pip install --no-cache-dir git+https://github.com/openai/CLIP.git@main
+    pip install --no-cache-dir \
+        torch torchvision \
+        --index-url https://download.pytorch.org/whl/cpu && \
+    grep -vE '^(torch|torchvision|jupyter|ipykernel|pytest|pytest-cov|black|ruff)([<>=!~ ]|$)' \
+        requirements.txt > /tmp/requirements-runtime.txt && \
+    pip install --no-cache-dir -r /tmp/requirements-runtime.txt \
+        --extra-index-url https://download.pytorch.org/whl/cpu && \
+    rm -f /tmp/requirements-runtime.txt && \
+    pip install --no-cache-dir ftfy regex && \
+    pip install --no-cache-dir --no-deps git+https://github.com/openai/CLIP.git@main && \
+    python -c "import nltk; nltk.download('punkt', download_dir='/usr/local/share/nltk_data', quiet=True); nltk.download('punkt_tab', download_dir='/usr/local/share/nltk_data', quiet=True)"
 
 # ============================================================================
-# Stage 3: Production image (minimal)
+# Stage 3: Production image
 # ============================================================================
-FROM python:3.10-slim AS production
+FROM python:3.11-slim AS production
 
-# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH="/app:${PYTHONPATH}" \
-    # Reduce memory usage
+    PYTHONPATH="/app" \
+    NLTK_DATA="/usr/local/share/nltk_data" \
     OMP_NUM_THREADS=1 \
-    MKL_NUM_THREADS=1
+    MKL_NUM_THREADS=1 \
+    DCASS_DB_PATH="/app/storage/db/auth.db"
 
 WORKDIR /app
 
-# Copy only the installed packages from builder
-COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /usr/local/share/nltk_data /usr/local/share/nltk_data
 
-# Install runtime-only system dependencies (no build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Create necessary directories with proper permissions
-RUN mkdir -p /app/storage/data /app/storage/models /app/storage/checkpoints /app/storage/logs /app/storage/shared_channel \
-    && chmod -R 755 /app
+RUN mkdir -p /app/storage/data /app/storage/models /app/storage/db /app/storage/checkpoints /app/storage/logs /app/storage/shared_channel && \
+    chmod -R 755 /app
 
-# Copy application code
-# Use .dockerignore to exclude unnecessary files
 COPY src/ /app/src/
 COPY scripts/ /app/scripts/
 COPY requirements.txt /app/
 
-# Create non-root user for security (optional but recommended)
 RUN useradd --create-home --shell /bin/bash dcass && \
     chown -R dcass:dcass /app
-# Uncomment to run as non-root:
+# Optional: enable when host bind-mount permissions match the dcass UID.
 # USER dcass
 
-# Expose ports
-EXPOSE 8888 6006
+EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import torch; print('OK')" || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)" || exit 1
 
-# Default command
-CMD ["python", "-u", "src/cli/main.py"]
+# Single worker: in-memory transmission session state and _engine_work_lock live per-process.
+CMD ["python", "-m", "uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
 
 # ============================================================================
-# Stage 4: Development image (with all tools)
+# Stage 4: Development image
 # ============================================================================
 FROM production AS development
 
-# Switch to root for installing dev tools
 USER root
 
-# Install development dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
@@ -125,18 +101,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     htop \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dev Python packages
 RUN pip install --no-cache-dir \
     pytest \
     pytest-cov \
     black \
-    ruff \
-    ipython
+    ruff
 
-# Copy all source files for development
 COPY . /app/
 
-# Restore user
-# USER dcass
-
-CMD ["python", "-u", "src/cli/main.py"]
+CMD ["python", "-m", "uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

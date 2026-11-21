@@ -4,6 +4,7 @@
 # ============================================================================
 
 # Data directories - mounted at runtime via volumes
+storage/
 data/
 models/
 checkpoints/
@@ -48,10 +49,12 @@ env/
 # Testing
 tests/
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 .tox/
 .nox/
+uv.lock
 
 # Documentation (not needed in runtime image)
 docs/
@@ -59,9 +62,19 @@ document/
 *.md
 !README.md
 
-# Frontend (separate container if needed)
+# Frontend and local backups (frontend builds in its own image)
 frontend/
+frontend_v*_backup/
 node_modules/
+
+# Local reports, templates, and raw datasets
+*.docx
+*.pdf
+*.csv
+batchnumber.tex
+Report Template_UE23CS441A*/
+DCASS_Research_Bundle.zip
+.superpowers/
 
 # Development files
 *.log

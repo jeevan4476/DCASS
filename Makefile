@@ -16,7 +16,7 @@
 .PHONY: frontend-dev stack stop logs
 .PHONY: lan-setup lan-setup-full lan-stop full
 .PHONY: tunnel tunnel-ngrok tunnel-stop clean-users clean-logs backup-logs
-.PHONY: docker-build docker-send docker-train docker-pipeline docker-clean docker-gen-data
+.PHONY: docker-build docker-web docker-web-down docker-proxy docker-send docker-train docker-pipeline docker-clean docker-gen-data
 
 # Load local overrides from .env (gitignored; template in .env.example) and
 # pass the DCASS_* / NEXT_PUBLIC_* settings through to child processes.
@@ -90,7 +90,7 @@ help:
 	@echo "  make lint            - Run code linting"
 	@echo "  make format          - Format code with black"
 	@echo "  make clean           - Remove cache files and build artifacts"
-	@echo "  make download-data   - Download Flickr8k dataset"
+	@echo "  make download-data   - Download Flickr30k dataset"
 	@echo "  make build-index     - Build FAISS indices"
 	@echo "  make run             - Run the CLI"
 	@echo ""
@@ -112,7 +112,10 @@ help:
 	@echo "  make venv            - Create .venv and install backend dependencies"
 	@echo ""
 	@echo "Docker commands:"
-	@echo "  make docker-build    - Build Docker images"
+	@echo "  make docker-build    - Build Docker images (web + sandbox)"
+	@echo "  make docker-web      - Start production API + frontend web stack"
+	@echo "  make docker-proxy    - Start web stack behind Caddy HTTPS reverse proxy"
+	@echo "  make docker-web-down - Stop web stack (keeps persistent volumes)"
 	@echo "  make docker-send     - Send sequence (auto: rl->gan->static fallback)"
 	@echo "  make docker-gen-data - Generate synthetic human traffic data"
 	@echo "  make docker-train    - Gen data + train GAN + train RL"
@@ -151,7 +154,7 @@ clean:
 
 # Download datasets
 download-data:
-	python scripts/data/download_flickr8k.py
+	python scripts/data/download_flickr30k.py
 
 # Build FAISS indices
 build-index:
@@ -299,7 +302,19 @@ logs:
 
 # Build Docker images
 docker-build:
-	docker compose build
+	docker compose --profile web build
+
+# Start production web stack (FastAPI + Next.js)
+docker-web:
+	docker compose --profile web up -d --build
+
+# Start production web stack behind Caddy HTTPS proxy
+docker-proxy:
+	docker compose --profile web --profile proxy up -d --build
+
+# Stop web stack without removing database/proxy volumes
+docker-web-down:
+	docker compose --profile web --profile proxy down --remove-orphans
 
 # Send sequence with auto fallback (rl → gan → static)
 docker-send:

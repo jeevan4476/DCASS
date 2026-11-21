@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import secrets
 import time
 import json
 import threading
@@ -23,6 +24,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt.exceptions import InvalidTokenError as JWTError
 from pydantic import BaseModel, Field
 
 from src.corpus.index.unified_index import resolve_indices_base_path
@@ -67,22 +69,37 @@ def require_api_token(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
 ) -> None:
     """
-    Gate sensitive routes when DCASS_API_TOKEN is configured.
+    Gate sensitive routes with either a static DCASS_API_TOKEN or a valid user JWT.
 
-    When the env var is unset in development, auth is skipped (local/dev).
-    Under DCASS_ENV=production an unset DCASS_API_TOKEN is a configuration
-    error, not a decision: the request fails closed with 503, because the
-    alternative is serving sensitive routes to anonymous callers silently.
+    When a Bearer token is supplied, it passes if it matches DCASS_API_TOKEN (when
+    configured) or decodes to an existing user account JWT. When no token is
+    supplied: dev mode allows access unless DCASS_API_TOKEN is set, while
+    DCASS_ENV=production fails closed (401 when DCASS_API_TOKEN is set, 503 when
+    DCASS_API_TOKEN is unset).
     """
     expected = os.environ.get("DCASS_API_TOKEN")
+    token = (
+        credentials.credentials
+        if credentials is not None
+        and credentials.scheme.lower() == "bearer"
+        and credentials.credentials
+        else None
+    )
+
+    if token is not None:
+        if expected and secrets.compare_digest(token, expected):
+            return
+        try:
+            payload = _auth.decode_access_token(token)
+            user_id = int(payload["sub"])
+        except (JWTError, KeyError, ValueError, RuntimeError):
+            user_id = None
+        if user_id is not None and _auth.get_user_by_id(user_id) is not None:
+            return
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     if expected:
-        if (
-            credentials is None
-            or credentials.scheme.lower() != "bearer"
-            or credentials.credentials != expected
-        ):
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        return
+        raise HTTPException(status_code=401, detail="Unauthorized")
     if _auth._is_production():
         raise HTTPException(
             status_code=503,

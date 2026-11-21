@@ -82,7 +82,7 @@ class TestApiAuth:
     def test_valid_token_for_unknown_user_is_rejected_not_fallback(self, client):
         """A structurally valid token for a missing user must never become alice."""
         import time as _time
-        from jose import jwt as _jwt
+        import jwt as _jwt
 
         from src.api import auth as _auth
 
@@ -95,6 +95,77 @@ class TestApiAuth:
 
         assert client.get("/api/auth/me", headers=headers).status_code == 401
         assert client.get("/api/users", headers=headers).status_code == 401
+
+    def test_production_accepts_valid_user_jwt_on_token_guarded_routes(
+        self, client, monkeypatch, tmp_path
+    ):
+        """Logged-in user JWTs must pass require_api_token in production."""
+        from src.api import auth as _auth
+
+        monkeypatch.setattr(_auth, "DB_PATH", tmp_path / "auth.db")
+        monkeypatch.setenv("DCASS_ENV", "production")
+        monkeypatch.setenv("DCASS_JWT_SECRET", "test-jwt-secret")
+        monkeypatch.delenv("DCASS_API_TOKEN", raising=False)
+        _auth.init_db()
+        user = _auth.create_user("alice_prod", "prod-password-1")
+        jwt_token = _auth.create_access_token(user.id, user.username)
+        headers = {"Authorization": f"Bearer {jwt_token}"}
+
+        # Without DCASS_API_TOKEN set: unauthenticated -> 503, user JWT -> passes auth.
+        assert client.get("/api/doctor").status_code == 503
+        assert (
+            client.post("/api/demo/erasure-encode", json={"message": "   "}).status_code
+            == 503
+        )
+        doctor_res = client.get("/api/doctor", headers=headers)
+        assert doctor_res.status_code != 401 and doctor_res.status_code != 503
+        erasure_res = client.post(
+            "/api/demo/erasure-encode",
+            headers=headers,
+            json={"message": "   "},
+        )
+        assert erasure_res.status_code == 400
+
+        # With DCASS_API_TOKEN also configured: user JWT still works alongside static token.
+        monkeypatch.setenv("DCASS_API_TOKEN", "static-service-token")
+        assert client.get("/api/doctor").status_code == 401
+        assert client.get("/api/doctor", headers=headers).status_code != 401
+        assert (
+            client.post(
+                "/api/demo/erasure-encode",
+                headers=headers,
+                json={"message": "   "},
+            ).status_code
+            == 400
+        )
+
+    def test_token_guarded_routes_reject_forged_or_unknown_user_jwt(
+        self, client, monkeypatch, tmp_path
+    ):
+        import jwt as _jwt
+        from src.api import auth as _auth
+
+        monkeypatch.setattr(_auth, "DB_PATH", tmp_path / "auth.db")
+        monkeypatch.setenv("DCASS_ENV", "production")
+        monkeypatch.setenv("DCASS_JWT_SECRET", "test-jwt-secret")
+        monkeypatch.setenv("DCASS_API_TOKEN", "static-service-token")
+        _auth.init_db()
+
+        unknown_jwt = _jwt.encode(
+            {"sub": "999999"}, "test-jwt-secret", algorithm="HS256"
+        )
+        assert (
+            client.get(
+                "/api/doctor", headers={"Authorization": f"Bearer {unknown_jwt}"}
+            ).status_code
+            == 401
+        )
+        assert (
+            client.get(
+                "/api/doctor", headers={"Authorization": "Bearer not-a-valid-token"}
+            ).status_code
+            == 401
+        )
 
 
 class TestTransmitPathSanitization:

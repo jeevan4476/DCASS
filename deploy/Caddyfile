@@ -1,0 +1,11 @@
+{$DOMAIN:localhost} {
+	encode gzip zstd
+
+	handle /api/* {
+		reverse_proxy dcass-api:8000
+	}
+
+	handle {
+		reverse_proxy dcass-frontend:3001
+	}
+}

@@ -1,50 +1,24 @@
 # Dependency Security Advisories and Dispositions
 
-This document records the disposition of third-party package vulnerabilities identified during the Python and frontend dependency security audits.
+This document records resolved vulnerabilities and dependency dispositions across the Python and frontend stacks.
 
-Last audited: October 2026.
-Audit tools: `pip-audit` 2.10.1 against PyPI and OSV databases, and `npm audit` against the npm registry.
-
----
-
-## 1. Resolved vulnerabilities
-
-The following packages were updated to secure releases, eliminating 53 known CVEs:
-
-- `pillow`: Upgraded to 13.0.0, resolving arbitrary code execution, buffer overflow, and memory disclosure vulnerabilities in legacy image codecs. The test suite verified all image loading, transform, and CLIP encoding paths with 419 passing tests.
-- `brotli`: Upgraded to 1.2.1, addressing decompression buffer overflow risks.
-- `certifi`: Upgraded to 2026.10.23, updating trusted root certificates.
-- `filelock`: Upgraded to 4.2.4, fixing race conditions in inter-process lock files.
-- `opentelemetry-api`: Upgraded to 1.45.1, patching telemetry context leakage.
-- `setuptools`: Upgraded to 84.2.1, patching build-time package archive traversal risks.
-- `axios` in `frontend/package-lock.json`: Patched to current secure patch level, eliminating SSRF and prototype pollution advisories.
+Last audited: November 2026.
 
 ---
 
-## 2. Dispositions for unpatched upstream advisories
+## 1. Python dependencies
 
-Three packages report open advisories with no patched upstream release available at this time. Each item was audited against the DCASS codebase to verify absence of exploitable attack surface.
+- **`PyJWT` (`>=2.9.0`) replaces `python-jose[cryptography]`**: Eliminates the unpatched `python-jose` algorithm-confusion advisory (`CVE-2026-85394`) and transitive `ecdsa` side-channel advisory (`CVE-2024-23342`). `src/api/auth.py` continues to enforce `algorithms=["HS256"]` with symmetric HMAC secrets.
+- **`nltk` (`>=3.10.4`)**: Upgraded from `3.10.3` to patch all 33 NLTK advisories, including critical `CVE-2026-128138`.
+- **`opentelemetry-api` (`>=1.45.2`)**: Upgraded from `1.45.1`.
+- **`pillow` (`>=13.0.0`), `brotli` (`>=1.2.1`), `certifi` (`>=2026.10.23`), `filelock` (`>=4.2.4`), `setuptools` (`>=84.2.1`)**: Kept at patched floor versions in `requirements.txt`.
+- **Optional notebook stack and unused lockfile removed**: Dropped `jupyter` and `ipykernel` from `requirements.txt` and removed `uv.lock`, clearing all stale lockfile alerts (`aiohttp`, `tornado`, `jupyterlab`, `notebook`, `nbconvert`, `pyasn1`, `soupsieve`, `urllib3`, `black`, `multidict`).
 
-### 2.1 ecdsa 0.19.2
+---
 
-- **Advisory identifier:** PYSEC-2026-1325, GHSA-wj6h-64fc-37mp, CVE-2024-23342.
-- **Description:** Minerva timing side-channel attack on P-256 curve during `ecdsa.SigningKey.sign_digest()`. An attacker observing signing latency can recover private nonce bits.
-- **Upstream status:** The upstream maintainers consider side-channel attacks out of scope, and no fix is planned.
-- **DCASS call-site analysis:** Zero exposure. `ecdsa` is an indirect dependency introduced transitively through `python-jose[cryptography]`. DCASS does not instantiate ECDSA keys, does not sign digests using elliptic curves, and does not perform ECDH key exchange. Authentication in `src/api/auth.py` uses symmetric HMAC-SHA256 tokens only.
-- **Disposition:** Accepted risk. The vulnerable code paths are never called by any DCASS module.
+## 2. Frontend dependencies
 
-### 2.2 nltk 3.10.3
-
-- **Advisory identifier:** PYSEC-2026-3740, GHSA-8mgp-746c-j5xp, CVE-2026-81726.
-- **Description:** File sandbox bypass in model persistence helpers, including `TransitionParser.train`, `TransitionParser.parse`, `AveragedPerceptron.save`, `AveragedPerceptron.load`, and `PerceptronTagger.save_to_json`. These functions call built-in `open()` on caller-provided model paths without checking sandbox boundaries.
-- **Upstream status:** No patched release published yet.
-- **DCASS call-site analysis:** Zero exposure. DCASS imports only `nltk.tokenize.sent_tokenize` and `nltk.tokenize.word_tokenize` in `src/engine/chunker.py` to divide user secret text into semantic phrases. DCASS never invokes parsers, taggers, or model persistence APIs. No user-supplied file path is passed to any NLTK function.
-- **Disposition:** Accepted risk. The vulnerable model-loading submodules are not imported or reachable in DCASS.
-
-### 2.3 python-jose 3.5.0
-
-- **Advisory identifier:** PYSEC-2026-4298, GHSA-3qf3-8w2g-rqmx, CVE-2026-85394.
-- **Description:** Failure to properly validate asymmetric keys in HMAC initialization. An attacker holding a service public key can forge HS256 tokens if algorithm validation is omitted during token verification.
-- **Upstream status:** No patched release published yet.
-- **DCASS call-site analysis:** Mitigated by application architecture. In `src/api/auth.py`, `jwt.decode` explicitly pins `algorithms=["HS256"]`. The backend does not use asymmetric public keys for token authentication. The signing key is a private symmetric secret, `JWT_SECRET`, generated randomly on server startup or read from an environment variable. Because the algorithm is pinned to HS256 and no public keys exist, key-confusion attacks cannot succeed.
-- **Disposition:** Mitigated in code through strict algorithm pinning in `src/api/auth.py`.
+- **`next` and `eslint-config-next` (`15.5.29`)**: Upgraded from `14.2.x`, resolving critical Image Optimization RCEs, Server Actions DoS (`CVE-2026-94482`), and cross-client response injection (`CVE-2026-119348`).
+- **`follow-redirects` (`>=1.16.3`) and `postcss` (`>=8.5.33`)**: Pinned via `overrides` in `frontend/package.json` to resolve cross-realm header/credential leakage (`CVE-2026-116689`) and PostCSS path/XSS advisories.
+- **`minimatch`**: Updated to patched release (`11.0.9` in `@typescript-eslint`) resolving `CVE-2026-118764`.
+- **`axios`**: Upgraded to `>=1.18.0` via `bun install`, resolving all prototype pollution, SSRF, and ReDoS advisories.

@@ -1,15 +1,14 @@
-# docker-compose.yml for DCASS Simulation Sandbox
-# Optimized for minimal resource usage and faster startup
+# docker-compose.yml for DCASS Simulation Sandbox & Production Web Stack
 #
 # Quick start:
-#   docker compose up                                    # sender + receiver (production)
-#   docker compose up --build                            # rebuild and start
-#   docker compose --profile web up                      # web UI (frontend + backend API)
-#   docker compose --profile training run dcass-gen-traffic   # generate data
-#   docker compose --profile training run dcass-train-gan     # train GAN
-#   docker compose --profile training run dcass-train-rl      # train RL
-#   docker compose --profile monitoring up tensorboard        # TensorBoard
-#   docker compose down -v                               # cleanup volumes
+#   docker compose --profile web up -d --build                 # web UI + backend API
+#   docker compose --profile web --profile proxy up -d --build # web UI + API + Caddy HTTPS
+#   docker compose up                                          # sender + receiver CLI sandbox
+#   docker compose --profile training run dcass-gen-traffic    # generate behavioral traffic
+#   docker compose --profile training run dcass-train-gan      # train GAN
+#   docker compose --profile training run dcass-train-rl       # train RL
+#   docker compose --profile monitoring up tensorboard         # TensorBoard
+#   docker compose --profile web --profile proxy down          # stop web stack
 
 # ============================================================================
 # Shared configuration (reusable YAML anchors)
@@ -17,7 +16,6 @@
 x-common-env: &common-env
   PYTHONUNBUFFERED: "1"
   CUDA_VISIBLE_DEVICES: ""
-  # Memory optimization
   OMP_NUM_THREADS: "1"
   MKL_NUM_THREADS: "1"
   PYTORCH_CUDA_ALLOC_CONF: "garbage_collection_threshold:0.6"
@@ -37,17 +35,13 @@ x-resource-limits: &resource-limits
 # ============================================================================
 services:
   # ─────────────────────────────────────────────────────────────────────────
-  # Alice: The Sender
-  # Review demo uses the static NoiseController (no model checkpoints
-  # required). Override with `DCASS_MODE=gan|rl|auto` once checkpoints are
-  # trained (see docker-compose profile `training`).
+  # Alice: The Sender (CLI simulation sandbox)
   # ─────────────────────────────────────────────────────────────────────────
   dcass-sender:
     build:
       context: .
       dockerfile: Dockerfile
       target: production
-      # Build cache optimization
       cache_from:
         - dcass:latest
     image: dcass:sender
@@ -84,8 +78,7 @@ services:
     restart: "no"
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Bob: The Receiver
-  # Watches shared_channel/ for incoming JSON packet metadata
+  # Bob: The Receiver (CLI simulation sandbox)
   # ─────────────────────────────────────────────────────────────────────────
   dcass-receiver:
     build:
@@ -123,18 +116,7 @@ services:
 
   # ─────────────────────────────────────────────────────────────────────────
   # Training Services (profile: training)
-  # Run with: docker compose --profile training run <service>
-  #
-  # The training profile is runnable end to end: step 0 generates the
-  # behavioral corpus, step 1 trains the generator and its warden, and step
-  # 2 trains the RL policy against the frozen warden.
   # ─────────────────────────────────────────────────────────────────────────
-
-  # Step 0: Generate synthetic human traffic data
-  #
-  # The corpus is synthetic: it models human browsing as a mixture of
-  # regimes, it is not a recording of any real person. A detector or a
-  # generator trained on it learns that structure, not human behaviour.
   dcass-gen-traffic:
     build:
       context: .
@@ -145,12 +127,12 @@ services:
     environment:
       <<: *common-env
     volumes:
-      - ./storage/data:/app/data:rw
+      - ./storage/data:/app/storage/data:rw
     command: >
       python -u scripts/stealth/generate_traffic_dataset.py
         --num-sessions ${TRAFFIC_SESSIONS:-2000}
         --num-channels ${NUM_CHANNELS:-3}
-        --output /app/data/behavioral/human_traffic.json
+        --output /app/storage/data/behavioral/human_traffic.json
     profiles:
       - training
     deploy:
@@ -159,7 +141,6 @@ services:
           memory: 1G
           cpus: '1.0'
 
-  # Step 1: Train the GAN stealth scheduler
   dcass-train-gan:
     build:
       context: .
@@ -170,16 +151,16 @@ services:
     environment:
       <<: *common-env
     volumes:
-      - ./storage/data:/app/data:ro
-      - ./storage/models:/app/models:rw
+      - ./storage/data:/app/storage/data:ro
+      - ./storage/models:/app/storage/models:rw
       - ./storage/logs/train-gan:/app/logs:rw
     command: >
       python -u scripts/stealth/train_gan.py
-        --data /app/data/behavioral/human_traffic.json
+        --data /app/storage/data/behavioral/human_traffic.json
         --epochs ${GAN_EPOCHS:-50}
         --batch-size ${GAN_BATCH_SIZE:-32}
-        --checkpoint-dir /app/models/gan
-        --out /app/models/gan_generator.pt
+        --checkpoint-dir /app/storage/models/gan
+        --out /app/storage/models/gan_generator.pt
         --device cpu
     profiles:
       - training
@@ -191,7 +172,6 @@ services:
         reservations:
           memory: 2G
 
-  # Step 2: Train the RL stealth policy agent
   dcass-train-rl:
     build:
       context: .
@@ -202,15 +182,15 @@ services:
     environment:
       <<: *common-env
     volumes:
-      - ./storage/data:/app/data:ro
-      - ./storage/models:/app/models:rw
+      - ./storage/data:/app/storage/data:ro
+      - ./storage/models:/app/storage/models:rw
       - ./storage/logs/train-rl:/app/logs:rw
     command: >
       python -u scripts/stealth/train_rl.py
         --episodes ${RL_EPISODES:-1000}
         --num-channels ${NUM_CHANNELS:-3}
-        --warden-checkpoint /app/models/gan_generator.pt
-        --out /app/models/rl_agent.pt
+        --warden-checkpoint /app/storage/models/gan_generator.pt
+        --out /app/storage/models/rl_agent.pt
         --device cpu
     profiles:
       - training
@@ -247,10 +227,7 @@ services:
 
   # ─────────────────────────────────────────────────────────────────────────
   # Web Services (profile: web)
-  # Run with: docker compose --profile web up
   # ─────────────────────────────────────────────────────────────────────────
-  
-  # Backend API Server
   dcass-api:
     build:
       context: .
@@ -262,48 +239,60 @@ services:
     environment:
       <<: *common-env
       DCASS_ROLE: api
+      DCASS_DB_PATH: /app/storage/db/auth.db
+      DCASS_ENV: ${DCASS_ENV:-development}
+      DCASS_JWT_SECRET: ${DCASS_JWT_SECRET:-}
+      DCASS_API_TOKEN: ${DCASS_API_TOKEN:-}
+      DCASS_CORS_ORIGINS: ${DCASS_CORS_ORIGINS:-http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001}
+      DCASS_CONTEXT_SECRET: ${DCASS_CONTEXT_SECRET:-}
+      DCASS_DEVICE: ${DCASS_DEVICE:-cpu}
+      DCASS_MAX_CONCURRENT_TRANSMISSIONS: ${DCASS_MAX_CONCURRENT_TRANSMISSIONS:-4}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
+      - dcass-db:/app/storage/db:rw
       - ./storage/shared_channel:/app/storage/shared_channel:rw
       - ./storage/data:/app/storage/data:ro
       - ./storage/models:/app/storage/models:ro
     networks:
       - dcass-network
     command: >
-      python -m uvicorn src.api.server:app 
-        --host 0.0.0.0 
+      python -m uvicorn src.api.server:app
+        --host 0.0.0.0
         --port 8000
+        --workers 1
     profiles:
       - web
     healthcheck:
-      # The slim production image has no curl; use python's stdlib instead.
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)"]
-      interval: 10s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
+      interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 6G
           cpus: '2.0'
+        reservations:
+          memory: 2G
     restart: unless-stopped
 
-  # Frontend (Next.js)
   dcass-frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        API_INTERNAL_URL: http://dcass-api:8000
     image: dcass:frontend
     container_name: dcass-frontend
     hostname: frontend
     ports:
       - "${FRONTEND_PORT:-3001}:3001"
     environment:
-      # NEXT_PUBLIC_* is baked into the browser bundle, so this must be a URL
-      # the USER'S BROWSER can resolve, not a container-internal hostname.
-      - NEXT_PUBLIC_API_URL=http://localhost:${API_PORT:-8000}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - API_INTERNAL_URL=http://dcass-api:8000
     networks:
       - dcass-network
     depends_on:
@@ -311,11 +300,43 @@ services:
         condition: service_healthy
     profiles:
       - web
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     deploy:
       resources:
         limits:
           memory: 1G
           cpus: '1.0'
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Automatic HTTPS Reverse Proxy (profile: proxy, pair with --profile web)
+  # ─────────────────────────────────────────────────────────────────────────
+  dcass-caddy:
+    image: caddy:2-alpine
+    container_name: dcass-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - dcass-network
+    depends_on:
+      dcass-api:
+        condition: service_healthy
+      dcass-frontend:
+        condition: service_healthy
+    profiles:
+      - proxy
     restart: unless-stopped
 
 # ============================================================================
@@ -332,6 +353,12 @@ networks:
 # Volumes (named volumes for persistence)
 # ============================================================================
 volumes:
+  dcass-db:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
   shared_channel:
     driver: local
   models:
